@@ -50,7 +50,7 @@ def make_ground_truth(df, sample = None, chrs = None):
             last_end = 0
             for chr in chrs:
                 ground_truth = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sims/sim_3admix/output/local_ancestry_chr' + str(chr) +'_' +str(sample)+'.csv', names = ['startpos', 'endpos', 'dest'])
-                df = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sims/sim_3admix/input_files/example_chr' + str(chr) + '_'+str(sample) +'.coaltimes', sep = ' ', usecols=['startpos', 'endpos'])
+                df = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sims/sim_3admix/input_files/relate_chr' + str(chr) + '_'+str(sample) +'.coaltimes', sep = ' ', usecols=['startpos', 'endpos'])
                 for j in range(len(ground_truth)):
                     indices = np.array(df[(df['startpos'] >= ground_truth['startpos'].loc[j]) & (df['endpos']  <= ground_truth['endpos'].loc[j])].index.tolist(), dtype=np.int64)
                     ground_truth_membership_one_hot[int(ground_truth['dest'].loc[j]) - 1, indices+last_end] = 1
@@ -278,13 +278,13 @@ def main(sample_id, plot = False, gamma_arr = None):
     dtype_dict = {}
     for i in range(0,610):
         dtype_dict[str(i)] = "float32"  ##open the coalescene time as dtype int16
-    df = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sims/sim_3admix/input_files/example_merged_'+str(sample_id) +'.coaltimes', sep = ' ', dtype=dtype_dict)
+    df = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sims/sim_3admix/input_files/relate_merged_'+str(sample_id) +'.coaltimes', sep = ' ', dtype=dtype_dict)
     print(df.info())
     print("Dataframe shape = " + str(df.shape))
     # df = df.sample(100000).reset_index(drop=True)#df.loc[0:100000]#
     df = df.dropna(axis=1)
     cols = df.columns[2:2+sample_id].tolist() + df.columns[3+sample_id:].tolist() # run EM for 40 steps
-    # cols =  df.columns[312:].tolist() #df.columns[2:2+sample_id].tolist() + df.columns[3+sample_id:12].tolist() +  #run EM for 40 steps
+    # cols =  df.columns[311:].tolist() #df.columns[2:2+sample_id].tolist() + df.columns[3+sample_id:12].tolist() +  #run EM for 40 steps
     print(cols)
     df_arr = df[cols].values.T
     del(df)
@@ -295,7 +295,7 @@ def main(sample_id, plot = False, gamma_arr = None):
     membership = [(0,9),(9,109),(109,209),(209,309),(309,409),(409,509),(509,609)]
     # membership = [(0,9),(9,109),(109,209),(209,309)]
     # membership = [(0,100),(100,200),(200,300)]
-    own_membership = np.random.dirichlet(np.ones(num_clusters), df_arr.shape[1]).T #make_ground_truth(df)[:,sample_id] #
+    own_membership = np.random.dirichlet(5*np.ones(num_clusters), df_arr.shape[1]).T #make_ground_truth(df)[:,sample_id] #
     # r1 = compute_coalscene_event_matrix(df_arr)
     num, denom = fixed_parameters(df_arr, ni, cols, membership)
     log_likelihood_arr = []
@@ -350,8 +350,8 @@ def main(sample_id, plot = False, gamma_arr = None):
         for j in range(len(own_membership)):
             own_membership_update[j] *= tau[j]
         # own_membership_update = own_membership_update + 1e-300
-        print(own_membership_update)
         own_membership_update = np.maximum(own_membership_update, 1e-300)
+        print(own_membership_update)
         own_membership_update = own_membership_update/(np.sum(own_membership_update, axis = 0))
         own_membership = own_membership_update
         # membership_thresh = own_membership > 0.5
@@ -370,11 +370,11 @@ def main(sample_id, plot = False, gamma_arr = None):
             plt.clf()
             for j in range(gamma_arr.shape[1]):
                 plt.plot(gamma_arr[i][j], marker = 'o')        
-            plt.legend(['pop A', 'pop B', 'pop C', 'pop D', 'pop E', 'pop F'], fontsize = 14)
+            plt.legend(['admix', 'pop A', 'pop B', 'pop C', 'pop D', 'pop E', 'pop F'], fontsize = 14)
             plt.xlabel('Epochs', fontsize=14)
             plt.ylabel('Gamma', fontsize = 14)
             plt.show()
-            plt.savefig('gamma_' + str(i) + '_iter_' + str(epoch) + '.png')
+            plt.savefig('relate_gamma_' + str(i) + '_iter_' + str(epoch) + '.png')
             plt.close()  
 
         if epoch > 10: ##min-iters = 10
