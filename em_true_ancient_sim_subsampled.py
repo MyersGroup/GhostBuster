@@ -14,10 +14,16 @@ import tskit
 from sklearn.calibration import calibration_curve
 import argparse
 import distutils
+import pickle
 
-epoch_intervals = np.array([-np.inf] + np.linspace(3 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])
+#epoch_intervals = np.array([-np.inf] + np.linspace(3 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])
+
+epoch_intervals = np.array([-np.inf] + np.linspace(4 - math.log(28,10),7 - math.log(28,10), 9).tolist() + [np.inf])
 # epoch_intervals = np.array([-np.inf] + np.linspace(5 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])  ### recent modification (only ancient past)
 epoch_intervals_pow = np.power(10, epoch_intervals)
+
+path="/well/myers/speidel/SharedWithHrushi/stdpopsim_Han/"
+#path="/data/smew1/speidel/genomics/relate_analyses/MixedCoalRates/stdpopsim_homsap/"
 
 def boolean(v):
     if isinstance(v, bool):
@@ -45,26 +51,70 @@ def make_one_hot(X, max_X):
 def make_ground_truth(ts_list, num_trees, target_group, window_size, sample = None, chrs = None):
     ## Extracts the ground truth membership from the simulations
     start_time = time.time()
+    print(num_trees)
     print("Calculating the ground truth local ancestry..")
-    ground_truth_membership_one_hot = np.zeros((9, num_trees))
-    ground_truth_membership_one_hot[target_group] = 1
+
+
+    true_assignment_chr = []
+    true_assignment_bp  = []
+    true_assignment_group = []
+
+
+    ind = 106
+    with open(path + "/assignment.txt", 'r') as fp:
+
+        line = fp.readline().split()
+        line = fp.readline().split()
+        while line:
+            true_assignment_chr.append(str(line[0]))
+            true_assignment_bp.append(int(line[1]))
+            true_assignment_group.append(line[ind+2])
+            line = fp.readline().split()
+
+    true_assignment_group = pd.Series(true_assignment_group).astype('category')
+    true_assignment_group = true_assignment_group.cat.codes
+
+    ground_truth_membership_one_hot = np.zeros((max(true_assignment_group)+1, num_trees))
     count = 0
+    num_tree = 0
     for chr in chrs:
         ts = ts_list[count]
         count += 1
-        ground_truth = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/stdpopsim_homsap_sim/output/local_ancestry_chr' + str(chr) +'_' +str(sample)+'.csv', names = ['startpos', 'endpos', 'dest'])
+        #ground_truth = pd.read_csv(path + '/stdpopsim_homsap/output/local_ancestry_chr' + str(chr) +'_' + str(sample)+'.csv', names = ['startpos', 'endpos', 'dest'])
         tree = ts.first()
-        prev_interval = tree.interval[0]
-        num_tree = 0
+        #prev_interval = tree.interval[0]
+        prev_interval = 0
+        #num_tree = 0
         for tid in range(len(list(ts.trees()))): #len(list(ts.trees()))
-            if (tree.interval[0] >= prev_interval + window_size) and (tree.num_sites > 0):
-                prev_interval = tree.interval[0]  
-                for j in range(len(ground_truth)):
-                    if tree.interval[0] >= ground_truth['startpos'].loc[j] and tree.interval[1] <= ground_truth['endpos'].loc[j]:
-                        ground_truth_membership_one_hot[int(ground_truth['dest'].loc[j]), num_tree] = 1
-                        ground_truth_membership_one_hot[target_group, num_tree] = 0
+            if (tree.interval[1] >= prev_interval + window_size):
+                prev_interval = prev_interval + window_size 
+
+                assigned = False
+                for j in range(0,len(true_assignment_bp)):
+                    #print([tree.interval, true_assignment_bp[j], true_assignment_bp[j+1], true_assignment_chr[j+1] == str(chr), chr])
+                    if true_assignment_chr[j] != str(chr):
+                        continue
+                    if true_assignment_chr[j] == str(chr) and j+1 == len(true_assignment_bp):
+                        ground_truth_membership_one_hot[true_assignment_group[j], num_tree] = 1
+                        assigned = True
+                        break
+                    if true_assignment_chr[j] == str(chr) and true_assignment_chr[j+1] != str(chr):
+                        ground_truth_membership_one_hot[true_assignment_group[j], num_tree] = 1
+                        assigned = True
+                        break
+                    if true_assignment_chr[j] == str(chr) and tree.interval[0] < true_assignment_bp[j+1] and tree.interval[1] >= true_assignment_bp[j]:
+                        #print(true_assignment_group[j])
+                        ground_truth_membership_one_hot[true_assignment_group[j], num_tree] = 1
+                        assigned = True
+                        break
+                if assigned == False:
+                    print(chr, tree.interval)
+                
                 num_tree += 1
             tree.next()
+   
+    print(ground_truth_membership_one_hot.sum(axis = 0))
+    print(all(ground_truth_membership_one_hot.sum(axis = 0)))
     print("Done in " + str(time.time() - start_time))
     return ground_truth_membership_one_hot
 
@@ -81,10 +131,10 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
         tree = ts.first()
         prev_interval = tree.interval[0]
         for tid in tqdm(range(len(list(ts.trees())))): #len(list(ts.trees()))
-            if (tree.num_sites == 0) or (tree.interval[0] < prev_interval + window_size):
+            if (tree.interval[1] < prev_interval + window_size):
                 tree.next()
                 continue
-            prev_interval = tree.interval[0]
+            prev_interval = prev_interval + window_size
             count_mut_trees += 1
             ## Make the coalescene table and sort it
             coal_events_matrix = []
@@ -142,6 +192,11 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                         prev_branch_length = prev_branch_length - lineage_content[a]/(sum(lineage_content[a]))
                     else:
                         lineage_content[c] = lineage_content[a] + lineage_content[b]
+                        if sum(lineage_content[a]) == 0 or sum(lineage_content[b]) == 0:
+                            print(tree.interval)
+                            print(a,b)
+                            print(lineage_content[a])
+                            print(lineage_content[b])
                         prev_branch_length = prev_branch_length - lineage_content[a]/(sum(lineage_content[a])) - lineage_content[b]/(sum(lineage_content[b])) + lineage_content[c]/(sum(lineage_content[c]))
                     lineage_content[a] = 0 
                     lineage_content[b] = 0
@@ -200,66 +255,127 @@ def compute_tree_stats(ts_list, chrs, window_size):
     count = 0
     for chr in chrs:
         print(chr)
-        recomb_map = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/recomb_maps/msprime_maps/genetic_map_GRCh37_chr'+ str(chr) +'.txt.gz', sep = '\t')
+        recomb_map = pd.read_csv(path + '/msprime_maps/genetic_map_GRCh37_chr'+ str(chr) +'.txt.gz', sep = '\t')
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
         recomb_map['Start Position(bp)'] = np.array([0] + recomb_map_arr[:-1,0].tolist())
-        relate_quality_output = pd.read_csv('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/stdpopsim_homsap_sim/relate_new/relate_homsap_ne_chr' + str(chr) + '.qual', sep = ' ')
+        relate_quality_output = pd.read_csv(path + '/stdpopsim_homsap/Han/relate_homsap_ne_chr' + str(chr) + '.qual', sep = ' ')
+        #relate_quality_output = pd.read_csv(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr' + str(chr) + '.qual', sep = ' ')
         ts = ts_list[count]
         count += 1
         tree = ts.first()
-        prev_interval = tree.interval[0]
+        prev_interval = 0
+        i = 0
         for tid in range(ts.num_trees): #len(list(ts.trees()))
-            if (tree.interval[0] >= prev_interval + window_size) and (tree.num_sites > 0):
-                prev_interval = tree.interval[0]
+            if (tree.interval[1] >= prev_interval + window_size):
+                prev_interval = prev_interval + window_size
                 recomb_events = recomb_map[~((recomb_map['Start Position(bp)'] > tree.interval[1]) | (recomb_map['Position(bp)'] < tree.interval[0]))]
                 recomb_rates.append(np.mean(recomb_events['Rate(cM/Mb)']))
+
+                #num_snps_on_tree.append(relate_quality_output[str(106)][i])
+                #num_snps_on_tree.append(relate_quality_output[str(0)][i])
                 num_trees += 1
+                i         += 1
                 tree_size.append(tree.interval[1] - tree.interval[0])
                 no_of_mutations.append(tree.num_mutations)  ###changed to mutations from sites
                 tmrca.append(tree.time(tree.root))
                 relate_quality = relate_quality_output[(relate_quality_output.pos < tree.interval[1]) & (relate_quality_output.pos >= tree.interval[0])].iloc[0]
                 frac_branches_with_snp.append(relate_quality['frac_branches_with_snp'])
                 num_snps_on_tree.append(relate_quality['num_snps_on_tree'])
-                fraction_snps_not_mapping.append(relate_quality['fraction_snps_not_mapping'])
+                fraction_snps_not_mapping.append(relate_quality['fraction_snps_not_mapping']) 
+            
+
             tree.next()
+       
         del(tree)
         del(ts)
     return tree_size, no_of_mutations, tmrca, recomb_rates, frac_branches_with_snp, num_snps_on_tree, fraction_snps_not_mapping
 
-# def mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree):
-#     mask = (frac_branches_with_snp > np.percentile(frac_branches_with_snp, 80)) & (num_snps_on_tree > np.percentile(num_snps_on_tree, 80))
-#     return mask
-def mask_for_dodgy_trees(recomb_rates, masking_thresh):
-    mask = (recomb_rates < np.percentile(recomb_rates, masking_thresh*100))
+def mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, masking_thresh):
+    print( np.percentile(frac_branches_with_snp, masking_thresh*100)  )
+    print( np.percentile(num_snps_on_tree, masking_thresh*100) )
+    mask = (frac_branches_with_snp > np.percentile(frac_branches_with_snp, masking_thresh*100)) & (num_snps_on_tree > np.percentile(num_snps_on_tree, masking_thresh*100))
     return mask
+#def mask_for_dodgy_trees(recomb_rates, masking_thresh):
+#    mask = (recomb_rates < np.percentile(recomb_rates, masking_thresh*100))
+#    return mask
+
+def write_coal(gamma_arr, filename, is_relate):
+    
+    if is_relate:
+        filename = "RelateTrees_" + filename
+    else:
+        filename = "TrueTrees_" + filename
+
+    #labs = ['Mbuti', 'LBK', 'Sardinian', 'Loschbour', 'MA1', 'Han', 'UstIshim', 'Neanderthal']
+    #labs = ['Mbuti', 'Sardinian', 'Han']
+    labs = ['Han', 'Neanderthal']
+    f = open(filename, "w")
+    f.write(' '.join(labs) + '\n')
+    for val in epoch_intervals_pow:
+        f.write("%s " % val)
+    f.write("\n")
+    for i in range(gamma_arr.shape[0]):
+        for j in range(gamma_arr.shape[1]):
+            f.write( str(i) + ' ' + str(j) + ' ')
+            for e in range(gamma_arr.shape[2]):
+              f.write( str(gamma_arr[i][j][e]) + ' ')
+            f.write("\n")
+
+    f.close()
 
 def main(args, plot = False, gamma_arr = None):
     start_time = time.time()
     num_clusters = 2
-    membership = [(0,50,0), (50,52,1), (52,102,2), (102,104,3), (104,106,4), (106,156,5), (156,158,6), (158, 160, 7)]   ## (startpos, endpos, groupid)
-    # membership = [(0,50,0), (50,100,1), (100, 150, 2)]   ## (startpos, endpos, groupid)
+    #membership = [(0,50,0), (50,52,1), (52,102,2), (102,104,3), (104,106,4), (106,156,5), (156,158,6), (158, 160, 7)]   ## (startpos, endpos, groupid)
+    #membership = [(0,50,0), (50,100,1), (100, 150, 2)]   ## (startpos, endpos, groupid)
+    membership = [(0,50,0), (50, 52, 1)]   ## (startpos, endpos, groupid)
     ts_list = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
     for chr in chrs:
         if args.relate_trees:
-            ts = tskit.load('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/stdpopsim_homsap_sim/relate_new/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
+            #ts = tskit.load(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
+            #ts = tskit.load(path + '/stdpopsim_homsap/moderns_only/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
+            ts = tskit.load(path + '/stdpopsim_homsap/Han/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
         else:
-            ts = tskit.load('/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/stdpopsim_homsap_sim/stdpopsim_homsap_'+ str(chr) + '.trees')  ## true trees
+            ts = tskit.load(path + '/stdpopsim_homsap/true_trees/stdpopsim_homsap_'+ str(chr) + '.trees')  ## true trees
         ts_list.append(ts)
+
+    filename = ".treepos"
+    if args.relate_trees:
+        filename = "Relate" + filename
+    else:
+        filename = "True" + filename
+    f = open(filename, "w")
+
     num_trees = 0
     for ts in ts_list:
         tree = ts.first()
-        prev_interval = tree.interval[0]
+        #prev_interval = tree.interval[0]
+        prev_interval = 0
         for tid in range(len(list(ts.trees()))): #len(list(ts.trees()))
-            if (tree.interval[0] >= prev_interval + args.window_size) and (tree.num_sites > 0):
-                prev_interval = tree.interval[0]
+            if (tree.interval[1] >= prev_interval + args.window_size):
+                f.write(str(tree.interval[0]) + ' ' + str(tree.interval[1]) + '\n')
+                prev_interval = prev_interval + args.window_size
                 num_trees += 1
             tree.next()
+    f.close()
     print("Total number of trees = " + str(num_trees))
     if args.relate_trees:
-        tree_size, no_of_mutations, tmrca, recomb_rates, frac_branches_with_snp, num_snps_on_tree, fraction_snps_not_mapping = compute_tree_stats(ts_list, chrs = chrs, window_size=args.window_size)
-        mask_dodgy = mask_for_dodgy_trees(recomb_rates, args.masking_threshold)
+        if True:
+            tree_size, no_of_mutations, tmrca, recomb_rates, frac_branches_with_snp, num_snps_on_tree, fraction_snps_not_mapping = compute_tree_stats(ts_list, chrs = chrs, window_size=args.window_size)
+            mask_dodgy = mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, args.masking_threshold)
+
+            f_pkl = open("tmp.pkl", "wb")
+            pickle.dump([tree_size, no_of_mutations, tmrca, recomb_rates, frac_branches_with_snp, num_snps_on_tree, fraction_snps_not_mapping,mask_dodgy], f_pkl)
+            f_pkl.close()
+
+        f_pkl = open("tmp.pkl", "rb")
+        tree_size, no_of_mutations, tmrca, recomb_rates, frac_branches_with_snp, num_snps_on_tree, fraction_snps_not_mapping, mask_dodgy = pickle.load(f_pkl)
+        mask_dodgy = mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, args.masking_threshold)
+        f_pkl.close()
+
+        #mask_dodgy = mask_for_dodgy_trees(recomb_rates, args.masking_threshold)
     else:
         mask_dodgy = np.ones(num_trees, dtype=bool) ## No masking needed for true trees
     plt.figure(figsize=(40,4))
@@ -269,15 +385,54 @@ def main(args, plot = False, gamma_arr = None):
     print("Trees with high certainty = " + str(np.sum(mask_dodgy)))
     # ground_truth_membership = make_ground_truth(ts, num_trees, sample = sample_id, chrs = [5]) 
     # ground_truth_membership = make_ground_truth(ts, num_trees, target_group = 2, sample = sample_id, chrs = [1])[[2,3,7,8]]
-    ground_truth_membership = make_ground_truth(ts_list, num_trees, target_group = 5, window_size = args.window_size, sample = args.sample_id, chrs = chrs)[[5,7]]
-    print(np.mean(ground_truth_membership, axis = 1))
-    num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(ts_list, membership, num_trees, args.window_size, args.sample_id)
+    #ground_truth_membership = make_ground_truth(ts_list, num_trees, target_group = 5, window_size = args.window_size, sample = args.sample_id, chrs = chrs)
+    #num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(ts_list, membership, num_trees, args.window_size, args.sample_id)
+
+    if args.relate_trees:
+        if True:
+                ground_truth_membership = make_ground_truth(ts_list, num_trees, target_group = 5, window_size = args.window_size, sample = args.sample_id, chrs = chrs)
+                num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(ts_list, membership, num_trees, args.window_size, args.sample_id)
+                f_pkl = open("tmp2.pkl", "wb")
+                pickle.dump([num, denom, proportion_of_coalescing_all, epoch_index_all, ground_truth_membership], f_pkl)
+                f_pkl.close()
+
+        f_pkl = open("tmp2.pkl", "rb")
+        num, denom, proportion_of_coalescing_all, epoch_index_all, ground_truth_membership = pickle.load(f_pkl)
+        f_pkl.close()
+    else:
+        ground_truth_membership = make_ground_truth(ts_list, num_trees, target_group = 5, window_size = args.window_size, sample = args.sample_id, chrs = chrs)
+        num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(ts_list, membership, num_trees, args.window_size, args.sample_id)
+
+    foo = np.mean(ground_truth_membership * mask_dodgy, axis = 1)
+    print(foo/sum(foo))
+    #initialise membership
+    #if args.relate_trees:
+    #    with open('groundtruth_membership.npy', 'rb') as f:
+    #        ground_truth_membership = np.load(f)
+
     own_membership = ground_truth_membership #np.random.dirichlet(np.ones(num_clusters), num_trees).T
+    #foo = np.random.dirichlet(np.ones(num_clusters), num_trees).T 
+    #own_membership += foo
+    #foo = np.sum(own_membership, axis = 0)
+    #for i in range(len(foo)):
+    #    own_membership[0][i] /= foo[i]
+    #    own_membership[1][i] /= foo[i]
+    
+    #own_membership = np.random.dirichlet(np.ones(num_clusters), num_trees).T 
+
+    #own_membership    = np.random.dirichlet(np.ones(num_clusters), num_trees).T 
+    #random_membership = np.random.dirichlet(np.ones(num_clusters-1), num_trees).T 
+    #own_membership[0] = ground_truth_membership[1]
+    #for i in range(1,num_clusters):
+    #    own_membership[i] = np.multiply( (1-own_membership[0]), random_membership[i-1] )
+    print(all(own_membership.sum(axis = 0)))
+
+    #print(own_membership)
     log_likelihood_arr = []
     start_time_em = time.time()
     eps = 1e-100
     print("Starting the EM..")
-    for epoch in range(200):  ## max-iters = 40
+    for epoch in range(500):  ## max-iters = 40
         gamma_arr = np.zeros((len(own_membership), len(membership), len(epoch_intervals) - 1))        
         for j in range(len(own_membership)):
             if epoch == 0:
@@ -292,7 +447,8 @@ def main(args, plot = False, gamma_arr = None):
         for j in range(len(own_membership)):
             tau[j] = np.clip(np.sum(own_membership[j])/own_membership[j].shape[0],1e-10, 1-1e-10)
         if args.verbose:
-            print(gamma_arr)
+            #print(gamma_arr)
+            print("Iter" + str(epoch))
             print(tau)
 
         ## E-step
@@ -366,27 +522,33 @@ def main(args, plot = False, gamma_arr = None):
 
         ## Gamma plots
         if args.plot_intermediate_gammas:
-            for i in range(gamma_arr.shape[0]):
-                plt.clf()
-                for j in range(gamma_arr.shape[1]):
-                    plt.plot(gamma_arr[i][j], marker = 'o')        
-                plt.legend(['Mbuti', 'LBK', 'Sardinian', 'Loschbour', 'MA1', 'Han', 'UstIshim', 'Neanderthal'], fontsize = 14)
-                plt.xlabel('Epochs', fontsize=14)
-                plt.ylabel('Gamma', fontsize = 14)
-                plt.ylim(0,4e-4)
-                plt.show()
-                plt.savefig('ancient_sim_true_gamma_' + str(i) + '_iter_' + str(epoch) + '.png')
-                plt.close()  
+            write_coal(gamma_arr, "stdpopsim_iter" + str(epoch) + ".coal", args.relate_trees) 
+            filename = "membership.npy"
+            if args.relate_trees:
+                filename = "RelateTrees_" + filename
+            else:
+                filename = "TrueTrees_" + filename
+            with open(filename, 'wb') as f:
+                np.save(f, own_membership * mask_dodgy)
         
         ## Early-stopping
-        print("log-likelihood = " + str(log_likelihood_arr[-1]))
-        if epoch > 100: ##min-iters = 100
-            if np.abs((log_likelihood_arr[-1] - log_likelihood_arr[-2])/log_likelihood_arr[-2]) < 0.00001:
-                break ## stop if log-likelihood isn't changing much
+        print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
+        #if epoch > 100: ##min-iters = 100
+        #    if np.abs((log_likelihood_arr[-1] - log_likelihood_arr[-2])/log_likelihood_arr[-2]) < 0.00001:
+        #        break ## stop if log-likelihood isn't changing much
     
     print("Sample = " + str(args.sample_id) + " Epochs = " + str(epoch) + " Total time = " + str(time.time() - start_time) + " EM time = " + str(time.time() - start_time_em))
-    
+  
+    filename = "membership.npy"
+    if args.relate_trees:
+        filename = "RelateTrees_" + filename
+    else:
+        filename = "TrueTrees_" + filename
+    with open(filename, 'wb') as f:
+        np.save(f, own_membership * mask_dodgy)
+
     ## gamma plots
+    write_coal(gamma_arr, "stdpopsim.coal", args.relate_trees) 
     for i in range(gamma_arr.shape[0]):
         plt.clf()
         for j in range(gamma_arr.shape[1]):
@@ -437,7 +599,7 @@ parser.add_argument(
     "-window_size", "--window_size", help="Window size to subsample the trees", type=int, default=50000
 )
 parser.add_argument(
-    "-relate_trees", '--relate_trees', help="Do you wish to worl with Relate trees", type=boolean, default=True
+    "-relate_trees", '--relate_trees', help="Do you wish to work with Relate trees", type=boolean, default=True
 )
 parser.add_argument(
     "-plot_int", "--plot_intermediate_gammas", help="Plotting gammas for each iteration", type=boolean, default=False
