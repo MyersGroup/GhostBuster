@@ -635,7 +635,10 @@ def main(args, plot=False, gamma_arr=None):
     #    with open('groundtruth_membership.npy', 'rb') as f:
     #        ground_truth_membership = np.load(f)
 
-    own_membership = ground_truth_membership  # np.random.dirichlet(np.ones(num_clusters), num_trees).T
+    if args.init_at_truth:
+        own_membership = ground_truth_membership
+    else:
+        own_membership = np.random.dirichlet(np.ones(num_clusters), num_trees).T
     # foo = np.random.dirichlet(np.ones(num_clusters), num_trees).T
     # own_membership += foo
     # foo = np.sum(own_membership, axis = 0)
@@ -975,6 +978,13 @@ parser.add_argument(
     "-verbose",
     "--verbose",
     help="Print intermediate results",
+    type=boolean,
+    default=True,
+)
+parser.add_argument(
+    "-init_at_truth",
+    "--init_at_truth",
+    help="Do you wish to initialize at ground-truth",
     type=boolean,
     default=True,
 )
