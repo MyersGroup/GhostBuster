@@ -16,13 +16,15 @@ from sklearn.calibration import calibration_curve
 import argparse
 import distutils
 import pickle
+import copy
 
 # epoch_intervals = np.array([-np.inf] + np.linspace(3 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])
 
 epoch_intervals = np.array(
     [-np.inf]
     + np.linspace(4 - math.log(28, 10), 7 - math.log(28, 10), 9).tolist()
-    + [np.inf]
+    + [np.inf],
+    dtype="float64",
 )
 # epoch_intervals = np.array([-np.inf] + np.linspace(5 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])  ### recent modification (only ancient past)
 epoch_intervals_pow = np.power(10, epoch_intervals)
@@ -92,8 +94,8 @@ def make_ground_truth(
         count += 1
         # ground_truth = pd.read_csv(path + '/stdpopsim_homsap/output/local_ancestry_chr' + str(chr) +'_' + str(sample)+'.csv', names = ['startpos', 'endpos', 'dest'])
         tree = ts.first()
-        # prev_interval = tree.interval[0]
-        prev_interval = 0
+        prev_interval = tree.interval[0]
+        # prev_interval = 0
         # num_tree = 0
         for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
             if tree.interval[1] >= prev_interval + window_size:
@@ -146,8 +148,12 @@ def make_ground_truth(
 def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
     eps = 1e-20
     num_samples = len(list(ts_list[0].first().samples()))
-    coal_count = np.zeros((len(membership), len(epoch_intervals_pow) - 1, num_trees))
-    opportunity = np.zeros((len(membership), len(epoch_intervals_pow) - 1, num_trees))
+    coal_count = np.zeros(
+        (len(membership), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
+    )
+    opportunity = np.zeros(
+        (len(membership), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
+    )
     proportion_of_coalescing_all = []
     coalescene_times_all = []
     epoch_index_all = []
@@ -180,11 +186,13 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                     coal_events_matrix.append(
                         [int(mapping[a]), int(mapping[b]), int(mapping[c]), t]
                     )
-            coal_events_matrix = np.array(coal_events_matrix)
+            coal_events_matrix = np.array(coal_events_matrix, dtype="float64")
             coal_events_matrix = coal_events_matrix[
                 coal_events_matrix[:, 3].argsort()
             ]  ## sorting based on coalescene times
-            lineage_content = np.zeros((2 * num_samples - 1, len(membership)))
+            lineage_content = np.zeros(
+                (2 * num_samples - 1, len(membership)), dtype="float64"
+            )
             target_seq = target_seq_
             for m in membership:
                 lineage_content[m[0] : m[1], m[2]] = 1
@@ -213,9 +221,11 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                         prev_branch_length
                     )
                     if a == target_seq:
-                        proportion_of_coalescing = lineage_content[b] / (
-                            sum(lineage_content[b])
-                        )
+                        proportion_of_coalescing = copy.deepcopy(
+                            lineage_content[b]
+                        )  # / (
+                        #     sum(lineage_content[b])
+                        # )
                         coal_count[
                             :, epoch, count_mut_trees
                         ] += proportion_of_coalescing
@@ -229,9 +239,11 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                             sum(lineage_content[b])
                         )
                     elif b == target_seq:
-                        proportion_of_coalescing = lineage_content[a] / (
-                            sum(lineage_content[a])
-                        )  ## sum() faster than np.sum()
+                        proportion_of_coalescing = copy.deepcopy(
+                            lineage_content[a]
+                        )  # / (
+                        # sum(lineage_content[a])
+                        # )  ## sum() faster than np.sum()
                         coal_count[
                             :, epoch, count_mut_trees
                         ] += proportion_of_coalescing
@@ -246,6 +258,7 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                         )
                     else:
                         lineage_content[c] = lineage_content[a] + lineage_content[b]
+
                         if sum(lineage_content[a]) == 0 or sum(lineage_content[b]) == 0:
                             print(tree.interval)
                             print(a, b)
@@ -264,7 +277,7 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                     opportunity[:, epoch, count_mut_trees] += (
                         epoch_intervals_pow[epoch + 1] - tprev
                     ) * (prev_branch_length)
-                if (event_count == num_samples - 1) and epoch < len(
+                if (event_count == num_samples - 1) and epoch <= len(
                     epoch_intervals_pow
                 ) - 2:
                     opportunity[:, epoch + 1 :, count_mut_trees] = 0.0
@@ -272,6 +285,42 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
             proportion_of_coalescing_all.append(proportion_of_coalescing_in_tree)
             epoch_index_all.append(epoch_index_in_tree)
             tree.next()
+
+    ## correcting opportunity for ancestral samples
+    for epoch in range(len(epoch_intervals_pow) - 1):
+        for m in range(len(membership)):
+            if membership[m][3] >= epoch_intervals_pow[epoch + 1]:
+                opportunity[m, epoch, :] -= (membership[m][1] - membership[m][0]) * (
+                    epoch_intervals_pow[epoch + 1] - epoch_intervals_pow[epoch]
+                )
+            elif (
+                membership[m][3] > epoch_intervals_pow[epoch]
+                and membership[m][3] < epoch_intervals_pow[epoch + 1]
+            ):
+                opportunity[m, epoch, :] -= (membership[m][1] - membership[m][0]) * (
+                    membership[m][3] - epoch_intervals_pow[epoch]
+                )
+
+    ## sanity check
+    count_mut_trees = 0
+    for ts in ts_list:
+        tree = ts.first()
+        for tid in range(ts.num_trees):
+            if tree.interval[1] < prev_interval + window_size:
+                tree.next()
+            total_branch_length = sum(tree.branch_length(u) for u in tree.nodes())
+            tmrca = tree.time(tree.root)
+            assert (
+                np.abs(
+                    np.sum(opportunity[:, :, count_mut_trees])
+                    - total_branch_length
+                    + tmrca
+                )
+                < 1e-9
+            )
+            count_mut_trees += 1
+            tree.next()
+
     return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
 
 
@@ -282,7 +331,9 @@ def compute_gamma_num(
     epoch_index_all,
     num_ref_groups,
 ):
-    num_full_tree = np.zeros((num_ref_groups, len(epoch_intervals) - 1))
+    num_full_tree = np.zeros(
+        (num_ref_groups, len(epoch_intervals) - 1), dtype="float64"
+    )
     if not (isinstance(prev_gamma, np.ndarray)):
         for tid in range(len(proportion_of_coalescing_all)):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
@@ -300,15 +351,15 @@ def compute_gamma_num(
                 epoch = epoch_index_in_tree[i]
                 prev_gamma_e = prev_gamma[:, epoch]
                 num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
-                if np.sum(num) > 0:
-                    num = num / np.sum(num)
+                # if np.sum(num) > 0:
+                num = num / np.sum(num)
                 num_full_tree[:, epoch] += own_membership[tid] * num
     return num_full_tree
 
 
 def compute_gamma_denom(own_membership, denom):
     eps = 1e-200
-    denom_1 = np.zeros(len(epoch_intervals) - 1)
+    denom_1 = np.zeros(len(epoch_intervals) - 1, dtype="float64")
     for epoch in range(len(epoch_intervals) - 1):  #
         denom_1[epoch] = sum(denom[epoch] * own_membership)
     return denom_1 + eps
@@ -345,7 +396,8 @@ def compute_tree_stats(ts_list, chrs, window_size):
         ts = ts_list[count]
         count += 1
         tree = ts.first()
-        prev_interval = 0
+        # prev_interval = 0
+        prev_interval = tree.interval[0]
         i = 0
         for tid in range(ts.num_trees):  # len(list(ts.trees()))
             if tree.interval[1] >= prev_interval + window_size:
@@ -437,7 +489,10 @@ def main(args, plot=False, gamma_arr=None):
     num_clusters = 2
     # membership = [(0,50,0), (50,52,1), (52,102,2), (102,104,3), (104,106,4), (106,156,5), (156,158,6), (158, 160, 7)]   ## (startpos, endpos, groupid)
     # membership = [(0,50,0), (50,100,1), (100, 150, 2)]   ## (startpos, endpos, groupid)
-    membership = [(0, 50, 0), (50, 52, 1)]  ## (startpos, endpos, groupid)
+    membership = [
+        (0, 50, 0, 0),
+        (50, 52, 1, 2000),
+    ]  ## (startpos, endpos, groupid, sampling_time)
     ts_list = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
@@ -496,8 +551,8 @@ def main(args, plot=False, gamma_arr=None):
     num_trees = 0
     for ts in ts_list:
         tree = ts.first()
-        # prev_interval = tree.interval[0]
-        prev_interval = 0
+        prev_interval = tree.interval[0]
+        # prev_interval = 0
         for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
             if tree.interval[1] >= prev_interval + args.window_size:
                 f.write(str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n")
@@ -636,9 +691,15 @@ def main(args, plot=False, gamma_arr=None):
     #        ground_truth_membership = np.load(f)
 
     if args.init_at_truth:
+        # own_membership = np.clip(
+        #     np.array(ground_truth_membership, dtype="float64"), 0.01, 0.99
+        # )
+        print(ground_truth_membership)
         own_membership = ground_truth_membership
     else:
-        own_membership = np.random.dirichlet(np.ones(num_clusters), num_trees).T
+        own_membership = np.array(
+            np.random.dirichlet(np.ones(num_clusters), num_trees).T, dtype="float64"
+        )
     # foo = np.random.dirichlet(np.ones(num_clusters), num_trees).T
     # own_membership += foo
     # foo = np.sum(own_membership, axis = 0)
@@ -661,7 +722,8 @@ def main(args, plot=False, gamma_arr=None):
     print("Starting the EM..")
     for epoch in range(100):  ## max-iters = 40
         gamma_arr = np.zeros(
-            (len(own_membership), len(membership), len(epoch_intervals) - 1)
+            (len(own_membership), len(membership), len(epoch_intervals) - 1),
+            dtype="float64",
         )
         for j in range(len(own_membership)):
             if epoch == 0:
@@ -682,39 +744,48 @@ def main(args, plot=False, gamma_arr=None):
                 )  # compute_gamma_num(own_membership[j], prev_gamma[j], proportion_of_coalescing_all, epoch_index_all, len(unique_groups))
             for i in range(len(membership)):
                 d = compute_gamma_denom(own_membership[j] * mask_dodgy, denom[i])
-                gamma_arr[j][i] = n[i] / d  # n/d #
+                gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
+
+        if epoch == 0 and args.load_gamma != None:
+            print("Using initial gamma specified in file: " + str(args.load_gamma))
+            gamma_arr = np.load(args.load_gamma)
+
         assert (gamma_arr >= 0).all()
-        prev_gamma = gamma_arr
-        tau = np.ones(len(own_membership)) / len(own_membership)
+        prev_gamma = copy.deepcopy(gamma_arr)
+        tau = np.ones(len(own_membership), dtype="float64") / len(own_membership)
         for j in range(len(own_membership)):
-            tau[j] = np.clip(
-                np.sum(own_membership[j]) / own_membership[j].shape[0], 1e-10, 1 - 1e-10
-            )
+            tau[j] = np.sum(own_membership[j]) / own_membership[j].shape[0]
+            # tau[j] = np.clip(
+            #     np.sum(own_membership[j]) / own_membership[j].shape[0], 1e-10, 1 - 1e-10
+            # )
         if args.verbose:
-            # print(gamma_arr)
+            print(gamma_arr)
             print("Iter" + str(epoch))
             print(tau)
-
+        assert gamma_arr.dtype == np.float64
+        assert tau.dtype == np.float64
         ## E-step
-        own_membership_update = np.ones((len(own_membership), num_trees))
+        own_membership_update = np.ones(
+            (len(own_membership), num_trees), dtype="float64"
+        )
 
-        log_num_em = np.zeros((len(own_membership), num_trees))
-        log_denom_em = np.zeros((len(own_membership), num_trees))
+        log_num_em = np.zeros((len(own_membership), num_trees), dtype="float64")
+        log_denom_em = np.zeros((len(own_membership), num_trees), dtype="float64")
         for tid in range(num_trees):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
             for i in range(len(proportion_of_coalescing_in_tree)):
-                assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
+                # assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
                 assert (np.array(proportion_of_coalescing_in_tree[i]) >= 0).any()
                 for j in range(len(own_membership)):
                     log_num_em_j_i = np.log(
-                        np.maximum(
-                            np.sum(
-                                gamma_arr[j, :, epoch_index_in_tree[i]]
-                                * proportion_of_coalescing_in_tree[i]
-                            ),
-                            1e-300,
-                        )
+                        # np.maximum(
+                        np.sum(
+                            gamma_arr[j, :, epoch_index_in_tree[i]]
+                            * proportion_of_coalescing_in_tree[i]
+                        ),
+                        #     1e-300,
+                        # )
                     )
                     log_num_em[j, tid] += log_num_em_j_i
             max_epoch_index = int(
@@ -728,23 +799,23 @@ def main(args, plot=False, gamma_arr=None):
         own_membership_update = np.exp(
             log_num_em
             + log_denom_em
-            - np.repeat(
-                np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-                len(own_membership),
-                axis=1,
-            ).T
+            # - np.repeat(
+            #     np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
+            #     len(own_membership),
+            #     axis=1,
+            # ).T
         )
         for j in range(len(own_membership)):
             own_membership_update[j] *= tau[j]
         log_likelihood = np.sum(
             np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
-            + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
+            # + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
         )
         log_likelihood_arr.append(log_likelihood)
         own_membership_update = own_membership_update / (
             np.sum(own_membership_update, axis=0)
         )
-        own_membership = own_membership_update
+        own_membership = copy.deepcopy(own_membership_update)
         membership_thresh = make_one_hot(
             np.argmax(own_membership, axis=0), len(own_membership)
         )
@@ -838,6 +909,9 @@ def main(args, plot=False, gamma_arr=None):
             write_coal(
                 gamma_arr, "stdpopsim_iter" + str(epoch) + ".coal", args.relate_trees
             )
+            with open("gamma_iter" + str(epoch) + ".npy", "wb") as f:
+                np.save(f, gamma_arr)
+
             filename = "membership.npy"
             if args.relate_trees:
                 filename = "RelateTrees_" + filename
@@ -987,6 +1061,13 @@ parser.add_argument(
     help="Do you wish to initialize at ground-truth",
     type=boolean,
     default=True,
+)
+parser.add_argument(
+    "-load_gamma",
+    "--load_gamma",
+    help="Starting gamma values written in a file",
+    type=str,
+    default=None,
 )
 args = parser.parse_args()
 acc = main(args, plot=False, gamma_arr=None)  ##Han(106), Sardinian(52)
