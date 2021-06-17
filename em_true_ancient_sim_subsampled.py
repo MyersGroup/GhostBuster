@@ -725,6 +725,7 @@ def main(args, plot=False, gamma_arr=None):
             (len(own_membership), len(membership), len(epoch_intervals) - 1),
             dtype="float64",
         )
+        num_of_gamma = np.zeros((len(own_membership)))
         for j in range(len(own_membership)):
             if epoch == 0:
                 n = compute_gamma_num(
@@ -742,6 +743,7 @@ def main(args, plot=False, gamma_arr=None):
                     epoch_index_all,
                     len(membership),
                 )  # compute_gamma_num(own_membership[j], prev_gamma[j], proportion_of_coalescing_all, epoch_index_all, len(unique_groups))
+            num_of_gamma[j] = np.sum(n)
             for i in range(len(membership)):
                 d = compute_gamma_denom(own_membership[j] * mask_dodgy, denom[i])
                 gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
@@ -752,12 +754,17 @@ def main(args, plot=False, gamma_arr=None):
 
         assert (gamma_arr >= 0).all()
         prev_gamma = copy.deepcopy(gamma_arr)
-        tau = np.ones(len(own_membership), dtype="float64") / len(own_membership)
-        for j in range(len(own_membership)):
-            tau[j] = np.sum(own_membership[j]) / own_membership[j].shape[0]
-            # tau[j] = np.clip(
-            #     np.sum(own_membership[j]) / own_membership[j].shape[0], 1e-10, 1 - 1e-10
-            # )
+        # tau = np.ones(len(own_membership), dtype="float64") / len(own_membership)
+        # for j in range(len(own_membership)):
+        #     tau[j] = np.sum(own_membership[j]) / own_membership[j].shape[0]
+        #     # tau[j] = np.clip(
+        #     #     np.sum(own_membership[j]) / own_membership[j].shape[0], 1e-10, 1 - 1e-10
+        #     # )
+        if epoch == 0:
+            tau = np.clip(own_membership / np.sum(own_membership), 1e-10, 1 - 1e-10)
+        else:
+            tau = np.clip(num_of_gamma / np.sum(num_of_gamma), 1e-10, 1 - 1e-10)
+
         if args.verbose:
             print(gamma_arr)
             print("Iter" + str(epoch))
