@@ -221,11 +221,9 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                         prev_branch_length
                     )
                     if a == target_seq:
-                        proportion_of_coalescing = copy.deepcopy(
-                            lineage_content[b]
-                        )  # / (
-                        #     sum(lineage_content[b])
-                        # )
+                        proportion_of_coalescing = copy.deepcopy(lineage_content[b]) / (
+                            sum(lineage_content[b])
+                        )
                         coal_count[
                             :, epoch, count_mut_trees
                         ] += proportion_of_coalescing
@@ -239,11 +237,9 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                             sum(lineage_content[b])
                         )
                     elif b == target_seq:
-                        proportion_of_coalescing = copy.deepcopy(
-                            lineage_content[a]
-                        )  # / (
-                        # sum(lineage_content[a])
-                        # )  ## sum() faster than np.sum()
+                        proportion_of_coalescing = copy.deepcopy(lineage_content[a]) / (
+                            sum(lineage_content[a])
+                        )  ## sum() faster than np.sum()
                         coal_count[
                             :, epoch, count_mut_trees
                         ] += proportion_of_coalescing
@@ -318,6 +314,9 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                 )
                 < 1e-9
             )
+            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
+            for i in proportion_of_coalescing_in_tree:
+                assert np.sum(i) == 1.0
             count_mut_trees += 1
             tree.next()
 
@@ -337,7 +336,7 @@ def compute_gamma_num(
     if not (isinstance(prev_gamma, np.ndarray)):
         for tid in range(len(proportion_of_coalescing_all)):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            epoch_index_in_tree = epoch_index_all[tid]
+            epoch_index_in_tree = copy.deepcopy(epoch_index_all[tid])
             for i in range(len(proportion_of_coalescing_in_tree)):
                 epoch = epoch_index_in_tree[i]
                 num = proportion_of_coalescing_in_tree[i]
@@ -346,13 +345,14 @@ def compute_gamma_num(
     else:
         for tid in range(len(proportion_of_coalescing_all)):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            epoch_index_in_tree = epoch_index_all[tid]
+            epoch_index_in_tree = copy.deepcopy(epoch_index_all[tid])
             for i in range(len(proportion_of_coalescing_in_tree)):
                 epoch = epoch_index_in_tree[i]
                 prev_gamma_e = prev_gamma[:, epoch]
                 num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
                 # if np.sum(num) > 0:
                 num = num / np.sum(num)
+                assert np.abs(np.sum(num) - 1.0) < 1e-9
                 num_full_tree[:, epoch] += own_membership[tid] * num
     return num_full_tree
 
@@ -482,6 +482,10 @@ def write_coal(gamma_arr, filename, is_relate):
             f.write("\n")
 
     f.close()
+
+
+def get_exp_logl(tau, num_of_gamma):
+    return np.sum(np.log(tau) * num_of_gamma)
 
 
 def main(args, plot=False, gamma_arr=None):
@@ -700,20 +704,7 @@ def main(args, plot=False, gamma_arr=None):
         own_membership = np.array(
             np.random.dirichlet(np.ones(num_clusters), num_trees).T, dtype="float64"
         )
-    # foo = np.random.dirichlet(np.ones(num_clusters), num_trees).T
-    # own_membership += foo
-    # foo = np.sum(own_membership, axis = 0)
-    # for i in range(len(foo)):
-    #    own_membership[0][i] /= foo[i]
-    #    own_membership[1][i] /= foo[i]
 
-    # own_membership = np.random.dirichlet(np.ones(num_clusters), num_trees).T
-
-    # own_membership    = np.random.dirichlet(np.ones(num_clusters), num_trees).T
-    # random_membership = np.random.dirichlet(np.ones(num_clusters-1), num_trees).T
-    # own_membership[0] = ground_truth_membership[1]
-    # for i in range(1,num_clusters):
-    #    own_membership[i] = np.multiply( (1-own_membership[0]), random_membership[i-1] )
     print(all(own_membership.sum(axis=0)))
 
     # print(own_membership)
@@ -725,7 +716,6 @@ def main(args, plot=False, gamma_arr=None):
             (len(own_membership), len(membership), len(epoch_intervals) - 1),
             dtype="float64",
         )
-        num_of_gamma = np.zeros((len(own_membership)))
         for j in range(len(own_membership)):
             if epoch == 0:
                 n = compute_gamma_num(
@@ -743,7 +733,6 @@ def main(args, plot=False, gamma_arr=None):
                     epoch_index_all,
                     len(membership),
                 )  # compute_gamma_num(own_membership[j], prev_gamma[j], proportion_of_coalescing_all, epoch_index_all, len(unique_groups))
-            num_of_gamma[j] = np.sum(n)
             for i in range(len(membership)):
                 d = compute_gamma_denom(own_membership[j] * mask_dodgy, denom[i])
                 gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
@@ -754,16 +743,14 @@ def main(args, plot=False, gamma_arr=None):
 
         assert (gamma_arr >= 0).all()
         prev_gamma = copy.deepcopy(gamma_arr)
-        # tau = np.ones(len(own_membership), dtype="float64") / len(own_membership)
-        # for j in range(len(own_membership)):
-        #     tau[j] = np.sum(own_membership[j]) / own_membership[j].shape[0]
-        #     # tau[j] = np.clip(
-        #     #     np.sum(own_membership[j]) / own_membership[j].shape[0], 1e-10, 1 - 1e-10
-        #     # )
-        if epoch == 0:
-            tau = np.clip(own_membership / np.sum(own_membership), 1e-10, 1 - 1e-10)
-        else:
-            tau = np.clip(num_of_gamma / np.sum(num_of_gamma), 1e-10, 1 - 1e-10)
+
+        tau = np.mean(own_membership[:, mask_dodgy], axis=1)
+
+        ## sanity check
+        for tid in range(len(proportion_of_coalescing_all)):
+            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
+            for i in proportion_of_coalescing_in_tree:
+                assert np.sum(i) == 1.0
 
         if args.verbose:
             print(gamma_arr)
@@ -782,7 +769,7 @@ def main(args, plot=False, gamma_arr=None):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
             for i in range(len(proportion_of_coalescing_in_tree)):
-                # assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
+                assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
                 assert (np.array(proportion_of_coalescing_in_tree[i]) >= 0).any()
                 for j in range(len(own_membership)):
                     log_num_em_j_i = np.log(
@@ -806,23 +793,20 @@ def main(args, plot=False, gamma_arr=None):
         own_membership_update = np.exp(
             log_num_em
             + log_denom_em
-            # - np.repeat(
-            #     np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-            #     len(own_membership),
-            #     axis=1,
-            # ).T
+            - np.repeat(
+                np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
+                len(own_membership),
+                axis=1,
+            ).T
         )
         for j in range(len(own_membership)):
             own_membership_update[j] *= tau[j]
         log_likelihood = np.sum(
             np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
-            # + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
+            + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
         )
         log_likelihood_arr.append(log_likelihood)
-        own_membership_update = own_membership_update / (
-            np.sum(own_membership_update, axis=0)
-        )
-        own_membership = copy.deepcopy(own_membership_update)
+        own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
         membership_thresh = make_one_hot(
             np.argmax(own_membership, axis=0), len(own_membership)
         )
