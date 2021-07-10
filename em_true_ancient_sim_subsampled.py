@@ -29,7 +29,7 @@ epoch_intervals = np.array(
 # epoch_intervals = np.array([-np.inf] + np.linspace(5 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])  ### recent modification (only ancient past)
 epoch_intervals_pow = np.power(10, epoch_intervals)
 
-path = "/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
+path = "/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sim_debug/transfer/transfer/input/"
 # path="/data/smew1/speidel/genomics/relate_analyses/MixedCoalRates/stdpopsim_homsap/"
 
 
@@ -352,7 +352,9 @@ def compute_gamma_num(
                 num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
                 # if np.sum(num) > 0:
                 num = num / np.sum(num)
-                assert np.abs(np.sum(num) - 1.0) < 1e-9
+                num = np.nan_to_num(
+                    num, nan=0
+                )  ## if num is all zeros, it should remain all zeros
                 num_full_tree[:, epoch] += own_membership[tid] * num
     return num_full_tree
 
@@ -378,7 +380,7 @@ def compute_tree_stats(ts_list, chrs, window_size):
     for chr in chrs:
         print(chr)
         recomb_map = pd.read_csv(
-            path
+            "/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
             + "/recomb_maps/msprime_maps/genetic_map_GRCh37_chr"
             + str(chr)
             + ".txt.gz",
@@ -389,7 +391,7 @@ def compute_tree_stats(ts_list, chrs, window_size):
             [0] + recomb_map_arr[:-1, 0].tolist()
         )
         relate_quality_output = pd.read_csv(
-            path + "/stdpopsim_homsap/Han/relate_homsap_ne_chr" + str(chr) + ".qual",
+            path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".qual",
             sep=" ",
         )
         # relate_quality_output = pd.read_csv(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr' + str(chr) + '.qual', sep = ' ')
@@ -493,10 +495,11 @@ def main(args, plot=False, gamma_arr=None):
     num_clusters = 2
     # membership = [(0,50,0), (50,52,1), (52,102,2), (102,104,3), (104,106,4), (106,156,5), (156,158,6), (158, 160, 7)]   ## (startpos, endpos, groupid)
     # membership = [(0,50,0), (50,100,1), (100, 150, 2)]   ## (startpos, endpos, groupid)
-    membership = [
-        (0, 50, 0, 0),
-        (50, 52, 1, 2000),
-    ]  ## (startpos, endpos, groupid, sampling_time)
+    # membership = [
+    #     (0, 50, 0, 0),
+    #     (50, 52, 1, 2000),
+    # ]  ## (startpos, endpos, groupid, sampling_time)
+    membership = [(0, 6, 0, 1964), (6, 102, 1, 0)]
     ts_list = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
@@ -531,17 +534,11 @@ def main(args, plot=False, gamma_arr=None):
             # ts = tskit.load(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
             # ts = tskit.load(path + '/stdpopsim_homsap/moderns_only/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
             ts = tskit.load(
-                path
-                + "/stdpopsim_homsap/Han/relate_homsap_ne_chr"
-                + str(chr)
-                + ".trees"
+                path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
             )  ## relate trees
         else:
             ts = tskit.load(
-                path
-                + "/stdpopsim_homsap/true_trees/stdpopsim_homsap_"
-                + str(chr)
-                + ".trees"
+                path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
             )  ## true trees
         ts_list.append(ts)
 
@@ -643,7 +640,7 @@ def main(args, plot=False, gamma_arr=None):
             print("Done loading fixed parameters from: " + str(fixed_params_file_name))
 
         except:
-            print("Fixed parameters file not found, calculating tree statistics..")
+            print("Fixed parameters file not found, calculating fixed parameters..")
             ground_truth_membership = make_ground_truth(
                 ts_list,
                 num_trees,
@@ -799,11 +796,23 @@ def main(args, plot=False, gamma_arr=None):
                 axis=1,
             ).T
         )
+
+        ## If all the ancestries are -inf, we should make that treeposition only depend on prior
+        mask_very_uncertain_trees = np.ones(own_membership_update.shape[1], dtype=bool)
+        for j in range(own_membership_update.shape[1]):
+            if np.isnan(own_membership_update[:, j]).all():
+                own_membership_update[:, j] = 1
+                mask_very_uncertain_trees[j] = False
+
         for j in range(len(own_membership)):
             own_membership_update[j] *= tau[j]
         log_likelihood = np.sum(
-            np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
-            + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
+            np.log(np.sum(own_membership_update, axis=0))[
+                mask_dodgy & mask_very_uncertain_trees
+            ]
+            + np.max(log_num_em + log_denom_em, axis=0)[
+                mask_dodgy & mask_very_uncertain_trees
+            ]
         )
         log_likelihood_arr.append(log_likelihood)
         own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
