@@ -18,6 +18,100 @@ import distutils
 import pickle
 import copy
 
+def boolean(v):
+  if isinstance(v, bool):
+    return v
+  if v.lower() in ("yes", "true", "t", "y", "1"):
+    return True
+  elif v.lower() in ("no", "false", "f", "n", "0"):
+    return False
+  else:
+    raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "-sample_id",
+    "--sample_id",
+    help="The index of the haplotype you wish local ancestry for",
+    type=int,
+    default=106,  ## 106 is for the first Han
+    )
+parser.add_argument(
+    "-window_size",
+    "--window_size",
+    help="Window size to subsample the trees",
+    type=int,
+    default=50000,
+    )
+parser.add_argument(
+    "-relate_trees",
+    "--relate_trees",
+    help="Do you wish to work with Relate trees",
+    type=boolean,
+    default=True,
+    )
+parser.add_argument(
+    "-plot_int",
+    "--plot_intermediate_gammas",
+    help="Plotting gammas for each iteration",
+    type=boolean,
+    default=False,
+    )
+parser.add_argument(
+    "-chrs",
+    "--chrs",
+    help="Comma-seperated list of chromosomes to be considered",
+    type=str,
+    default="1,2",
+    )
+parser.add_argument(
+    "-masking_thresh",
+    "--masking_threshold",
+    help="Remove top x cent of high recombination regions",
+    type=float,
+    default=0.8,
+    )
+parser.add_argument(
+    "-verbose",
+    "--verbose",
+    help="Print intermediate results",
+    type=boolean,
+    default=True,
+    )
+parser.add_argument(
+    "-init_at_truth",
+    "--init_at_truth",
+    help="Do you wish to initialize at ground-truth",
+    type=boolean,
+    default=True,
+    )
+parser.add_argument(
+    "-load_gamma",
+    "--load_gamma",
+    help="Starting gamma values written in a file",
+    type=str,
+    default=None,
+    )
+parser.add_argument(
+    "-path",
+    "--path",
+    help="Path",
+    type=str,
+    default=None,
+    )
+parser.add_argument(
+    "-trees",
+    "--trees",
+    help="trees",
+    type=str,
+    default=None,
+    )
+args = parser.parse_args()
+
+
+
+
 # epoch_intervals = np.array([-np.inf] + np.linspace(3 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])
 
 epoch_intervals = np.array(
@@ -29,20 +123,9 @@ epoch_intervals = np.array(
 # epoch_intervals = np.array([-np.inf] + np.linspace(5 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])  ### recent modification (only ancient past)
 epoch_intervals_pow = np.power(10, epoch_intervals)
 
-path = "/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sim_debug/transfer/transfer/input/"
+#path = "/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sim_debug/transfer/transfer/input/"
 # path="/data/smew1/speidel/genomics/relate_analyses/MixedCoalRates/stdpopsim_homsap/"
-
-
-def boolean(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
-
+path = args.path
 
 def make_one_hot(X, max_X):
     X = np.array(X, dtype="int")
@@ -70,7 +153,7 @@ def make_ground_truth(
     true_assignment_bp = []
     true_assignment_group = []
 
-    ind = 106
+    ind = sample
     with open(path + "/assignment.txt", "r") as fp:
 
         line = fp.readline().split()
@@ -306,17 +389,17 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                 tree.next()
             total_branch_length = sum(tree.branch_length(u) for u in tree.nodes())
             tmrca = tree.time(tree.root)
-            assert (
-                np.abs(
-                    np.sum(opportunity[:, :, count_mut_trees])
-                    - total_branch_length
-                    + tmrca
-                )
-                < 1e-9
-            )
+            #assert (
+            #    np.abs(
+            #        np.sum(opportunity[:, :, count_mut_trees])
+            #        - total_branch_length
+            #        + tmrca
+            #    )
+            #    < 1e-9
+            #)
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            for i in proportion_of_coalescing_in_tree:
-                assert np.sum(i) == 1.0
+            #for i in proportion_of_coalescing_in_tree:
+            #    assert np.sum(i) == 1.0
             count_mut_trees += 1
             tree.next()
 
@@ -380,10 +463,11 @@ def compute_tree_stats(ts_list, chrs, window_size):
     for chr in chrs:
         print(chr)
         recomb_map = pd.read_csv(
-            "/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
-            + "/recomb_maps/msprime_maps/genetic_map_GRCh37_chr"
+            #"/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
+            "/camp/lab/skoglundp/working/leo/datasets/human_genome/recomb_maps/HapmapII/genetic_map_GRCh37_chr"
+            #+ "/recomb_maps/msprime_maps/genetic_map_GRCh37_chr"
             + str(chr)
-            + ".txt.gz",
+            + ".txt",
             sep="\t",
         )
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
@@ -391,7 +475,8 @@ def compute_tree_stats(ts_list, chrs, window_size):
             [0] + recomb_map_arr[:-1, 0].tolist()
         )
         relate_quality_output = pd.read_csv(
-            path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".qual",
+            #path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".qual",
+            path + args.trees + "_chr" + str(chr) + ".qual",
             sep=" ",
         )
         # relate_quality_output = pd.read_csv(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr' + str(chr) + '.qual', sep = ' ')
@@ -499,7 +584,24 @@ def main(args, plot=False, gamma_arr=None):
     #     (0, 50, 0, 0),
     #     (50, 52, 1, 2000),
     # ]  ## (startpos, endpos, groupid, sampling_time)
-    membership = [(0, 6, 0, 1964), (6, 102, 1, 0)]
+    #membership = [(0, 6, 0, 1964), (6, 102, 1, 0)]
+
+    membership = []
+    with open(path + "/assignment.txt", "r") as fp:
+      line = fp.readline().split()
+      line = fp.readline().split()
+      group = 0
+      start = 2
+      current_group = line[2]
+      for i in range(2,len(line)):
+        if line[i] != current_group:
+          membership.append( (start-2, i-2, group, 0) )
+          group += 1
+          current_group = line[i]
+          start = i
+    membership.append( (start-2, len(line)-2, group, 0) )
+    print(membership)
+
     ts_list = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
@@ -534,11 +636,13 @@ def main(args, plot=False, gamma_arr=None):
             # ts = tskit.load(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
             # ts = tskit.load(path + '/stdpopsim_homsap/moderns_only/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
             ts = tskit.load(
-                path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
+                #path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
+                path + args.trees + "_chr" + str(chr) + ".trees"
             )  ## relate trees
         else:
             ts = tskit.load(
-                path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
+                #path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
+                path + args.trees + "_chr" + str(chr) + ".trees"
             )  ## true trees
         ts_list.append(ts)
 
@@ -746,8 +850,8 @@ def main(args, plot=False, gamma_arr=None):
         ## sanity check
         for tid in range(len(proportion_of_coalescing_all)):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            for i in proportion_of_coalescing_in_tree:
-                assert np.sum(i) == 1.0
+            #for i in proportion_of_coalescing_in_tree:
+            #    assert np.sum(i) == 1.0
 
         if args.verbose:
             print(gamma_arr)
@@ -766,8 +870,8 @@ def main(args, plot=False, gamma_arr=None):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
             for i in range(len(proportion_of_coalescing_in_tree)):
-                assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
-                assert (np.array(proportion_of_coalescing_in_tree[i]) >= 0).any()
+                #assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
+                #assert (np.array(proportion_of_coalescing_in_tree[i]) >= 0).any()
                 for j in range(len(own_membership)):
                     log_num_em_j_i = np.log(
                         # np.maximum(
@@ -907,12 +1011,12 @@ def main(args, plot=False, gamma_arr=None):
         ## Gamma plots
         if args.plot_intermediate_gammas:
             write_coal(
-                gamma_arr, "stdpopsim_iter" + str(epoch) + ".coal", args.relate_trees
+                gamma_arr, "stdpopsim_" + str(args.sample_id) + "_iter" + str(epoch) + ".coal", args.relate_trees
             )
-            with open("gamma_iter" + str(epoch) + ".npy", "wb") as f:
+            with open("gamma_" + str(args.sample_id) + "_iter" + str(epoch) + ".npy", "wb") as f:
                 np.save(f, gamma_arr)
 
-            filename = "membership.npy"
+            filename = "membership_" + str(args.sample_id) + ".npy"
             if args.relate_trees:
                 filename = "RelateTrees_" + filename
             else:
@@ -937,7 +1041,7 @@ def main(args, plot=False, gamma_arr=None):
         + str(time.time() - start_time_em)
     )
 
-    filename = "membership.npy"
+    filename = "membership_" + str(args.sample_id) + ".npy"
     if args.relate_trees:
         filename = "RelateTrees_" + filename
     else:
@@ -946,130 +1050,66 @@ def main(args, plot=False, gamma_arr=None):
         np.save(f, own_membership * mask_dodgy)
 
     ## gamma plots
-    write_coal(gamma_arr, "stdpopsim.coal", args.relate_trees)
-    for i in range(gamma_arr.shape[0]):
-        plt.clf()
-        for j in range(gamma_arr.shape[1]):
-            plt.plot(gamma_arr[i][j], marker="o")
-        plt.legend(
-            [
-                "Mbuti",
-                "LBK",
-                "Sardinian",
-                "Loschbour",
-                "MA1",
-                "Han",
-                "UstIshim",
-                "Neanderthal",
-            ],
-            fontsize=14,
-        )
-        plt.xlabel("Epochs", fontsize=14)
-        plt.ylabel("Gamma", fontsize=14)
-        plt.ylim(0, 4e-4)
-        plt.show()
-        plt.savefig("ancient_sim_true_gamma_" + str(i) + ".png")
-        plt.close()
+    write_coal(gamma_arr, "stdpopsim_" + str(args.sample_id) + ".coal", args.relate_trees)
+    if False:
+      for i in range(gamma_arr.shape[0]):
+          plt.clf()
+          for j in range(gamma_arr.shape[1]):
+              plt.plot(gamma_arr[i][j], marker="o")
+          plt.legend(
+              [
+                  "Mbuti",
+                  "LBK",
+                  "Sardinian",
+                  "Loschbour",
+                  "MA1",
+                  "Han",
+                  "UstIshim",
+                  "Neanderthal",
+              ],
+              fontsize=14,
+          )
+          plt.xlabel("Epochs", fontsize=14)
+          plt.ylabel("Gamma", fontsize=14)
+          plt.ylim(0, 4e-4)
+          plt.show()
+          plt.savefig("ancient_sim_true_gamma_" + str(i) + ".png")
+          plt.close()
 
-    # Calibration plots
-    mapping = np.argmax(acc_arr, axis=1)
-    y, x = calibration_curve(
-        ground_truth_membership[mapping[0]], own_membership[0], n_bins=20
-    )
-    plt.clf()
-    plt.plot(x, y, marker="o")
-    plt.plot(x, x, ":")
-    plt.ylabel("True Probability")
-    plt.xlabel("Predicted Probability")
-    plt.savefig("calibration_plot_relate.png")
-    plt.close()
+      # Calibration plots
+      mapping = np.argmax(acc_arr, axis=1)
+      y, x = calibration_curve(
+          ground_truth_membership[mapping[0]], own_membership[0], n_bins=20
+      )
+      plt.clf()
+      plt.plot(x, y, marker="o")
+      plt.plot(x, x, ":")
+      plt.ylabel("True Probability")
+      plt.xlabel("Predicted Probability")
+      plt.savefig("calibration_plot_relate.png")
+      plt.close()
 
-    ## Plotting the heatmaps and likelihood
-    plt.clf()
-    plt.plot(log_likelihood_arr)
-    plt.savefig("ancient_sim_true_log_likelihood.png")
-    plt.close()
-    plt.clf()
-    plt.figure(figsize=(40, 4))
-    sns.heatmap(own_membership)
-    plt.savefig("ancient_sim_true_own_membership_" + str(args.sample_id) + ".png")
-    plt.close()
-    plt.clf()
-    plt.figure(figsize=(40, 4))
-    sns.heatmap(ground_truth_membership)
-    plt.savefig(
-        "ancient_sim_true_ground_truth_membership_" + str(args.sample_id) + ".png"
-    )
-    plt.close()
+      ## Plotting the heatmaps and likelihood
+      plt.clf()
+      plt.plot(log_likelihood_arr)
+      plt.savefig("ancient_sim_true_log_likelihood.png")
+      plt.close()
+      plt.clf()
+      plt.figure(figsize=(40, 4))
+      sns.heatmap(own_membership)
+      plt.savefig("ancient_sim_true_own_membership_" + str(args.sample_id) + ".png")
+      plt.close()
+      plt.clf()
+      plt.figure(figsize=(40, 4))
+      sns.heatmap(ground_truth_membership)
+      plt.savefig(
+          "ancient_sim_true_ground_truth_membership_" + str(args.sample_id) + ".png"
+      )
+      plt.close()
+
 
     return overall_acc
 
-
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "-sample_id",
-    "--sample_id",
-    help="The index of the haplotype you wish local ancestry for",
-    type=int,
-    default=106,  ## 106 is for the first Han
-)
-parser.add_argument(
-    "-window_size",
-    "--window_size",
-    help="Window size to subsample the trees",
-    type=int,
-    default=50000,
-)
-parser.add_argument(
-    "-relate_trees",
-    "--relate_trees",
-    help="Do you wish to work with Relate trees",
-    type=boolean,
-    default=True,
-)
-parser.add_argument(
-    "-plot_int",
-    "--plot_intermediate_gammas",
-    help="Plotting gammas for each iteration",
-    type=boolean,
-    default=False,
-)
-parser.add_argument(
-    "-chrs",
-    "--chrs",
-    help="Comma-seperated list of chromosomes to be considered",
-    type=str,
-    default="1,2",
-)
-parser.add_argument(
-    "-masking_thresh",
-    "--masking_threshold",
-    help="Remove top x cent of high recombination regions",
-    type=float,
-    default=0.8,
-)
-parser.add_argument(
-    "-verbose",
-    "--verbose",
-    help="Print intermediate results",
-    type=boolean,
-    default=True,
-)
-parser.add_argument(
-    "-init_at_truth",
-    "--init_at_truth",
-    help="Do you wish to initialize at ground-truth",
-    type=boolean,
-    default=True,
-)
-parser.add_argument(
-    "-load_gamma",
-    "--load_gamma",
-    help="Starting gamma values written in a file",
-    type=str,
-    default=None,
-)
-args = parser.parse_args()
 acc = main(args, plot=False, gamma_arr=None)  ##Han(106), Sardinian(52)
 print("Average accuracy = " + str(acc))
 
