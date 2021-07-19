@@ -17,16 +17,19 @@ import argparse
 import distutils
 import pickle
 import copy
+import jax.numpy as jnp
+from jax import partial, jit, vmap
+
 
 def boolean(v):
-  if isinstance(v, bool):
-    return v
-  if v.lower() in ("yes", "true", "t", "y", "1"):
-    return True
-  elif v.lower() in ("no", "false", "f", "n", "0"):
-    return False
-  else:
-    raise argparse.ArgumentTypeError("Boolean value expected.")
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
 parser = argparse.ArgumentParser()
@@ -36,80 +39,78 @@ parser.add_argument(
     help="The index of the haplotype you wish local ancestry for",
     type=int,
     default=106,  ## 106 is for the first Han
-    )
+)
 parser.add_argument(
     "-window_size",
     "--window_size",
     help="Window size to subsample the trees",
     type=int,
     default=50000,
-    )
+)
 parser.add_argument(
     "-relate_trees",
     "--relate_trees",
     help="Do you wish to work with Relate trees",
     type=boolean,
     default=True,
-    )
+)
 parser.add_argument(
     "-plot_int",
     "--plot_intermediate_gammas",
     help="Plotting gammas for each iteration",
     type=boolean,
     default=False,
-    )
+)
 parser.add_argument(
     "-chrs",
     "--chrs",
     help="Comma-seperated list of chromosomes to be considered",
     type=str,
     default="1,2",
-    )
+)
 parser.add_argument(
     "-masking_thresh",
     "--masking_threshold",
     help="Remove top x cent of high recombination regions",
     type=float,
     default=0.8,
-    )
+)
 parser.add_argument(
     "-verbose",
     "--verbose",
     help="Print intermediate results",
     type=boolean,
     default=True,
-    )
+)
 parser.add_argument(
     "-init_at_truth",
     "--init_at_truth",
     help="Do you wish to initialize at ground-truth",
     type=boolean,
     default=True,
-    )
+)
 parser.add_argument(
     "-load_gamma",
     "--load_gamma",
     help="Starting gamma values written in a file",
     type=str,
     default=None,
-    )
+)
 parser.add_argument(
     "-path",
     "--path",
-    help="Path",
+    help="Location to the trees, ground truth assignments and recombination maps ",
     type=str,
     default=None,
-    )
+)
 parser.add_argument(
     "-trees",
     "--trees",
-    help="trees",
+    help="Prefix of the trees file present in args.path folder",
     type=str,
     default=None,
-    )
+)
 args = parser.parse_args()
-
-
 
 
 # epoch_intervals = np.array([-np.inf] + np.linspace(3 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])
@@ -123,9 +124,10 @@ epoch_intervals = np.array(
 # epoch_intervals = np.array([-np.inf] + np.linspace(5 - math.log(28,10),7 - math.log(28,10), 21).tolist() + [np.inf])  ### recent modification (only ancient past)
 epoch_intervals_pow = np.power(10, epoch_intervals)
 
-#path = "/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sim_debug/transfer/transfer/input/"
+# path = "/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sim_debug/transfer/transfer/input/"
 # path="/data/smew1/speidel/genomics/relate_analyses/MixedCoalRates/stdpopsim_homsap/"
 path = args.path
+
 
 def make_one_hot(X, max_X):
     X = np.array(X, dtype="int")
@@ -389,16 +391,16 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                 tree.next()
             total_branch_length = sum(tree.branch_length(u) for u in tree.nodes())
             tmrca = tree.time(tree.root)
-            #assert (
+            # assert (
             #    np.abs(
             #        np.sum(opportunity[:, :, count_mut_trees])
             #        - total_branch_length
             #        + tmrca
             #    )
             #    < 1e-9
-            #)
+            # )
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            #for i in proportion_of_coalescing_in_tree:
+            # for i in proportion_of_coalescing_in_tree:
             #    assert np.sum(i) == 1.0
             count_mut_trees += 1
             tree.next()
@@ -412,23 +414,26 @@ def compute_gamma_num(
     proportion_of_coalescing_all,
     epoch_index_all,
     num_ref_groups,
+    masked_trees_index,
 ):
     num_full_tree = np.zeros(
         (num_ref_groups, len(epoch_intervals) - 1), dtype="float64"
     )
+    count_masked_trees = 0
     if not (isinstance(prev_gamma, np.ndarray)):
-        for tid in range(len(proportion_of_coalescing_all)):
+        for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            epoch_index_in_tree = copy.deepcopy(epoch_index_all[tid])
+            epoch_index_in_tree = epoch_index_all[tid]
             for i in range(len(proportion_of_coalescing_in_tree)):
                 epoch = epoch_index_in_tree[i]
                 num = proportion_of_coalescing_in_tree[i]
                 num = num / np.sum(num)
-                num_full_tree[:, epoch] += own_membership[tid] * num
+                num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
+            count_masked_trees += 1
     else:
-        for tid in range(len(proportion_of_coalescing_all)):
+        for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            epoch_index_in_tree = copy.deepcopy(epoch_index_all[tid])
+            epoch_index_in_tree = epoch_index_all[tid]
             for i in range(len(proportion_of_coalescing_in_tree)):
                 epoch = epoch_index_in_tree[i]
                 prev_gamma_e = prev_gamma[:, epoch]
@@ -438,15 +443,16 @@ def compute_gamma_num(
                 num = np.nan_to_num(
                     num, nan=0
                 )  ## if num is all zeros, it should remain all zeros
-                num_full_tree[:, epoch] += own_membership[tid] * num
+                num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
+            count_masked_trees += 1
     return num_full_tree
 
 
-def compute_gamma_denom(own_membership, denom):
+def compute_gamma_denom(own_membership, denom, mask_dodgy):
     eps = 1e-200
     denom_1 = np.zeros(len(epoch_intervals) - 1, dtype="float64")
     for epoch in range(len(epoch_intervals) - 1):  #
-        denom_1[epoch] = sum(denom[epoch] * own_membership)
+        denom_1[epoch] = sum(denom[epoch][mask_dodgy] * own_membership)
     return denom_1 + eps
 
 
@@ -463,11 +469,10 @@ def compute_tree_stats(ts_list, chrs, window_size):
     for chr in chrs:
         print(chr)
         recomb_map = pd.read_csv(
-            #"/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
-            "/camp/lab/skoglundp/working/leo/datasets/human_genome/recomb_maps/HapmapII/genetic_map_GRCh37_chr"
-            #+ "/recomb_maps/msprime_maps/genetic_map_GRCh37_chr"
-            + str(chr)
-            + ".txt",
+            # "/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
+            # "/camp/lab/skoglundp/working/leo/datasets/human_genome/recomb_maps/HapmapII/genetic_map_GRCh37_chr"
+            # + "/recomb_maps/msprime_maps/genetic_map_GRCh37_chr"
+            args.path + "genetic_map_GRCh37_chr" + str(chr) + ".txt.gz",
             sep="\t",
         )
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
@@ -475,7 +480,7 @@ def compute_tree_stats(ts_list, chrs, window_size):
             [0] + recomb_map_arr[:-1, 0].tolist()
         )
         relate_quality_output = pd.read_csv(
-            #path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".qual",
+            # path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".qual",
             path + args.trees + "_chr" + str(chr) + ".qual",
             sep=" ",
         )
@@ -571,8 +576,36 @@ def write_coal(gamma_arr, filename, is_relate):
     f.close()
 
 
-def get_exp_logl(tau, num_of_gamma):
-    return np.sum(np.log(tau) * num_of_gamma)
+def update_membership(
+    proportion_of_coalescing_all,
+    epoch_index_all,
+    denom,
+    gamma_arr,
+    log_num_em,
+    log_denom_em,
+    num_clusters,
+    tid,
+    count_masked_trees,
+):
+    proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
+    epoch_index_in_tree = epoch_index_all[tid]
+    for i in range(len(proportion_of_coalescing_in_tree)):
+        for j in range(num_clusters):
+            log_num_em_j_i = np.log(
+                np.sum(
+                    gamma_arr[j, :, epoch_index_in_tree[i]]
+                    * proportion_of_coalescing_in_tree[i]
+                ),
+            )
+            log_num_em[j, count_masked_trees] += log_num_em_j_i
+    max_epoch_index = int(
+        np.minimum(epoch_index_in_tree[i] + 1, len(epoch_intervals_pow) - 1)
+    )
+    for j in range(num_clusters):
+        log_denom_em[j, count_masked_trees] = -np.sum(
+            gamma_arr[j, :, 0:max_epoch_index]
+            * denom[:, 0:max_epoch_index, count_masked_trees]
+        )  ## summing only till the maximum epoch in that tree
 
 
 def main(args, plot=False, gamma_arr=None):
@@ -584,23 +617,26 @@ def main(args, plot=False, gamma_arr=None):
     #     (0, 50, 0, 0),
     #     (50, 52, 1, 2000),
     # ]  ## (startpos, endpos, groupid, sampling_time)
-    #membership = [(0, 6, 0, 1964), (6, 102, 1, 0)]
+    # membership = [(0, 6, 0, 1964), (6, 102, 1, 0)]
 
     membership = []
     with open(path + "/assignment.txt", "r") as fp:
-      line = fp.readline().split()
-      line = fp.readline().split()
-      group = 0
-      start = 2
-      current_group = line[2]
-      for i in range(2,len(line)):
-        if line[i] != current_group:
-          membership.append( (start-2, i-2, group, 0) )
-          group += 1
-          current_group = line[i]
-          start = i
-    membership.append( (start-2, len(line)-2, group, 0) )
-    print(membership)
+        line = fp.readline().split()
+        line = fp.readline().split()
+        group = 0
+        start = 2
+        current_group = line[2]
+        for i in range(2, len(line)):
+            if line[i] != current_group:
+                membership.append((start - 2, i - 2, group, 0))
+                group += 1
+                current_group = line[i]
+                start = i
+    membership.append((start - 2, len(line) - 2, group, 0))
+    print(
+        "The membership configuration is (startpos, endpos, groupid, sampling_time) : "
+        + str(membership)
+    )
 
     ts_list = []
     chrs = list(map(int, args.chrs.split(",")))
@@ -636,13 +672,21 @@ def main(args, plot=False, gamma_arr=None):
             # ts = tskit.load(path + '/stdpopsim_homsap/relate_new/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
             # ts = tskit.load(path + '/stdpopsim_homsap/moderns_only/relate_homsap_ne_chr'+ str(chr) + '.trees')  ## relate trees
             ts = tskit.load(
-                #path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
-                path + args.trees + "_chr" + str(chr) + ".trees"
+                # path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
+                path
+                + args.trees
+                + "_chr"
+                + str(chr)
+                + ".trees"
             )  ## relate trees
         else:
             ts = tskit.load(
-                #path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
-                path + args.trees + "_chr" + str(chr) + ".trees"
+                # path + "SGDP_archaic_v1_EAS_chr" + str(chr) + ".trees"
+                path
+                + args.trees
+                + "_chr"
+                + str(chr)
+                + ".trees"
             )  ## true trees
         ts_list.append(ts)
 
@@ -719,11 +763,9 @@ def main(args, plot=False, gamma_arr=None):
         # mask_dodgy = mask_for_dodgy_trees(recomb_rates, args.masking_threshold)
     else:
         mask_dodgy = np.ones(num_trees, dtype=bool)  ## No masking needed for true trees
-    plt.figure(figsize=(40, 4))
-    sns.heatmap(mask_dodgy.reshape(1, -1))
-    plt.savefig("ancient_sim_true_mask_dodgy_" + str(args.sample_id) + ".png")
-    plt.close()
+
     print("Trees with high certainty = " + str(np.sum(mask_dodgy)))
+    masked_trees_index = np.arange(0, num_trees)[mask_dodgy]
     # ground_truth_membership = make_ground_truth(ts, num_trees, sample = sample_id, chrs = [5])
     # ground_truth_membership = make_ground_truth(ts, num_trees, target_group = 2, sample = sample_id, chrs = [1])[[2,3,7,8]]
     # ground_truth_membership = make_ground_truth(ts_list, num_trees, target_group = 5, window_size = args.window_size, sample = args.sample_id, chrs = chrs)
@@ -788,31 +830,21 @@ def main(args, plot=False, gamma_arr=None):
             ts_list, membership, num_trees, args.window_size, args.sample_id
         )
 
-    foo = np.mean(ground_truth_membership * mask_dodgy, axis=1)
-    print(foo / sum(foo))
-    # initialise membership
-    # if args.relate_trees:
-    #    with open('groundtruth_membership.npy', 'rb') as f:
-    #        ground_truth_membership = np.load(f)
-
     if args.init_at_truth:
         # own_membership = np.clip(
         #     np.array(ground_truth_membership, dtype="float64"), 0.01, 0.99
         # )
-        print(ground_truth_membership)
-        own_membership = ground_truth_membership
+        own_membership = ground_truth_membership[:, mask_dodgy]
     else:
         own_membership = np.array(
             np.random.dirichlet(np.ones(num_clusters), num_trees).T, dtype="float64"
-        )
+        )[:, mask_dodgy]
 
-    print(all(own_membership.sum(axis=0)))
-
-    # print(own_membership)
     log_likelihood_arr = []
     start_time_em = time.time()
     print("Starting the EM..")
     for epoch in range(100):  ## max-iters = 40
+        ## M-step
         gamma_arr = np.zeros(
             (len(own_membership), len(membership), len(epoch_intervals) - 1),
             dtype="float64",
@@ -820,22 +852,24 @@ def main(args, plot=False, gamma_arr=None):
         for j in range(len(own_membership)):
             if epoch == 0:
                 n = compute_gamma_num(
-                    own_membership[j] * mask_dodgy,
+                    own_membership[j],
                     None,
                     proportion_of_coalescing_all,
                     epoch_index_all,
                     len(membership),
+                    masked_trees_index,
                 )
             else:
                 n = compute_gamma_num(
-                    own_membership[j] * mask_dodgy,
+                    own_membership[j],
                     prev_gamma[j],
                     proportion_of_coalescing_all,
                     epoch_index_all,
                     len(membership),
-                )  # compute_gamma_num(own_membership[j], prev_gamma[j], proportion_of_coalescing_all, epoch_index_all, len(unique_groups))
+                    masked_trees_index,
+                )
             for i in range(len(membership)):
-                d = compute_gamma_denom(own_membership[j] * mask_dodgy, denom[i])
+                d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
                 gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
         if epoch == 0 and args.load_gamma != None:
@@ -845,52 +879,46 @@ def main(args, plot=False, gamma_arr=None):
         assert (gamma_arr >= 0).all()
         prev_gamma = copy.deepcopy(gamma_arr)
 
-        tau = np.mean(own_membership[:, mask_dodgy], axis=1)
-
-        ## sanity check
-        for tid in range(len(proportion_of_coalescing_all)):
-            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            #for i in proportion_of_coalescing_in_tree:
-            #    assert np.sum(i) == 1.0
+        tau = np.mean(own_membership, axis=1)
 
         if args.verbose:
             print(gamma_arr)
             print("Iter" + str(epoch))
             print(tau)
-        assert gamma_arr.dtype == np.float64
-        assert tau.dtype == np.float64
+
         ## E-step
         own_membership_update = np.ones(
-            (len(own_membership), num_trees), dtype="float64"
+            (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
         )
 
-        log_num_em = np.zeros((len(own_membership), num_trees), dtype="float64")
-        log_denom_em = np.zeros((len(own_membership), num_trees), dtype="float64")
-        for tid in range(num_trees):
+        log_num_em = np.zeros(
+            (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
+        )
+        log_denom_em = np.zeros(
+            (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
+        )
+        count_masked_trees = 0
+        for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
             for i in range(len(proportion_of_coalescing_in_tree)):
-                #assert np.sum(proportion_of_coalescing_in_tree[i]) == 1
-                #assert (np.array(proportion_of_coalescing_in_tree[i]) >= 0).any()
                 for j in range(len(own_membership)):
                     log_num_em_j_i = np.log(
-                        # np.maximum(
                         np.sum(
                             gamma_arr[j, :, epoch_index_in_tree[i]]
                             * proportion_of_coalescing_in_tree[i]
                         ),
-                        #     1e-300,
-                        # )
                     )
-                    log_num_em[j, tid] += log_num_em_j_i
+                    log_num_em[j, count_masked_trees] += log_num_em_j_i
             max_epoch_index = int(
                 np.minimum(epoch_index_in_tree[i] + 1, len(epoch_intervals_pow) - 1)
             )
             for j in range(len(own_membership)):
-                log_denom_em[j, tid] = -np.sum(
+                log_denom_em[j, count_masked_trees] = -np.sum(
                     gamma_arr[j, :, 0:max_epoch_index]
-                    * denom[:, 0:max_epoch_index, tid]
+                    * denom[:, 0:max_epoch_index, count_masked_trees]
                 )  ## summing only till the maximum epoch in that tree
+            count_masked_trees += 1
         own_membership_update = np.exp(
             log_num_em
             + log_denom_em
@@ -901,34 +929,26 @@ def main(args, plot=False, gamma_arr=None):
             ).T
         )
 
-        ## If all the ancestries are -inf, we should make that treeposition only depend on prior
-        mask_very_uncertain_trees = np.ones(own_membership_update.shape[1], dtype=bool)
-        for j in range(own_membership_update.shape[1]):
-            if np.isnan(own_membership_update[:, j]).all():
-                own_membership_update[:, j] = 1
-                mask_very_uncertain_trees[j] = False
-
         for j in range(len(own_membership)):
             own_membership_update[j] *= tau[j]
         log_likelihood = np.sum(
-            np.log(np.sum(own_membership_update, axis=0))[
-                mask_dodgy & mask_very_uncertain_trees
-            ]
-            + np.max(log_num_em + log_denom_em, axis=0)[
-                mask_dodgy & mask_very_uncertain_trees
-            ]
+            np.log(np.sum(own_membership_update, axis=0))
+            + np.max(log_num_em + log_denom_em, axis=0)
         )
         log_likelihood_arr.append(log_likelihood)
         own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
         membership_thresh = make_one_hot(
             np.argmax(own_membership, axis=0), len(own_membership)
         )
-
         ## Evaluate accuracy
-        acc_arr = np.zeros((len(own_membership), len(ground_truth_membership)))
+        acc_arr = np.zeros(
+            (len(own_membership), len(ground_truth_membership[:, mask_dodgy]))
+        )
         for i in range(len(own_membership)):
-            for j in range(0, len(ground_truth_membership)):
-                acc = np.sum(membership_thresh[i] == ground_truth_membership[j])
+            for j in range(0, len(ground_truth_membership[:, mask_dodgy])):
+                acc = np.sum(
+                    membership_thresh[i] == ground_truth_membership[j, mask_dodgy]
+                )
                 acc_arr[i][j] = acc
         overall_acc = (
             np.sum(np.max(acc_arr, axis=1))
@@ -954,25 +974,25 @@ def main(args, plot=False, gamma_arr=None):
             num_snps_x_all = []
             frac_snps_x_all = []
             for i in range(len(own_membership)):
-                tree_size_i = np.array(tree_size)[
+                tree_size_i = np.array(tree_size)[mask_dodgy][
                     np.argmax(own_membership, axis=0) == i
                 ]
-                num_mutations_i = np.array(no_of_mutations)[
+                num_mutations_i = np.array(no_of_mutations)[mask_dodgy][
                     np.argmax(own_membership, axis=0) == i
                 ]
-                recomb_rates_i = np.array(recomb_rates)[
+                recomb_rates_i = np.array(recomb_rates)[mask_dodgy][
                     np.argmax(own_membership, axis=0) == i
                 ]
                 recomb_rates_i = recomb_rates_i[~np.isnan(np.array(recomb_rates_i))]
-                frac_branches_with_snp_i = np.array(frac_branches_with_snp)[
+                frac_branches_with_snp_i = np.array(frac_branches_with_snp)[mask_dodgy][
                     np.argmax(own_membership, axis=0) == i
                 ]
-                num_snps_on_tree_i = np.array(num_snps_on_tree)[
+                num_snps_on_tree_i = np.array(num_snps_on_tree)[mask_dodgy][
                     np.argmax(own_membership, axis=0) == i
                 ]
                 fraction_snps_not_mapping_i = np.array(fraction_snps_not_mapping)[
-                    np.argmax(own_membership, axis=0) == i
-                ]
+                    mask_dodgy
+                ][np.argmax(own_membership, axis=0) == i]
                 frac_branch_x_all.extend(frac_branches_with_snp_i)
                 num_snps_x_all.extend(num_snps_on_tree_i)
                 frac_snps_x_all.extend(fraction_snps_not_mapping_i)
@@ -982,7 +1002,7 @@ def main(args, plot=False, gamma_arr=None):
                 recomb_y_all.extend(np.repeat(i, len(recomb_rates_i)))
                 size_y_all.extend(np.repeat(i, len(tree_size_i)))
                 muts_y_all.extend(np.repeat(i, len(num_mutations_i)))
-                proportion_of_coalescing_i = proportion_of_coalescing_top2[
+                proportion_of_coalescing_i = proportion_of_coalescing_top2[mask_dodgy][
                     np.argmax(own_membership, axis=0) == i
                 ]
                 print(
@@ -1011,9 +1031,13 @@ def main(args, plot=False, gamma_arr=None):
         ## Gamma plots
         if args.plot_intermediate_gammas:
             write_coal(
-                gamma_arr, "stdpopsim_" + str(args.sample_id) + "_iter" + str(epoch) + ".coal", args.relate_trees
+                gamma_arr,
+                "stdpopsim_" + str(args.sample_id) + "_iter" + str(epoch) + ".coal",
+                args.relate_trees,
             )
-            with open("gamma_" + str(args.sample_id) + "_iter" + str(epoch) + ".npy", "wb") as f:
+            with open(
+                "gamma_" + str(args.sample_id) + "_iter" + str(epoch) + ".npy", "wb"
+            ) as f:
                 np.save(f, gamma_arr)
 
             filename = "membership_" + str(args.sample_id) + ".npy"
@@ -1022,7 +1046,7 @@ def main(args, plot=False, gamma_arr=None):
             else:
                 filename = "TrueTrees_" + filename
             with open(filename, "wb") as f:
-                np.save(f, own_membership * mask_dodgy)
+                np.save(f, own_membership)
 
         ## Early-stopping
         print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
@@ -1047,68 +1071,58 @@ def main(args, plot=False, gamma_arr=None):
     else:
         filename = "TrueTrees_" + filename
     with open(filename, "wb") as f:
-        np.save(f, own_membership * mask_dodgy)
+        np.save(f, own_membership)
 
     ## gamma plots
-    write_coal(gamma_arr, "stdpopsim_" + str(args.sample_id) + ".coal", args.relate_trees)
-    if False:
-      for i in range(gamma_arr.shape[0]):
-          plt.clf()
-          for j in range(gamma_arr.shape[1]):
-              plt.plot(gamma_arr[i][j], marker="o")
-          plt.legend(
-              [
-                  "Mbuti",
-                  "LBK",
-                  "Sardinian",
-                  "Loschbour",
-                  "MA1",
-                  "Han",
-                  "UstIshim",
-                  "Neanderthal",
-              ],
-              fontsize=14,
-          )
-          plt.xlabel("Epochs", fontsize=14)
-          plt.ylabel("Gamma", fontsize=14)
-          plt.ylim(0, 4e-4)
-          plt.show()
-          plt.savefig("ancient_sim_true_gamma_" + str(i) + ".png")
-          plt.close()
+    write_coal(
+        gamma_arr, "stdpopsim_" + str(args.sample_id) + ".coal", args.relate_trees
+    )
 
-      # Calibration plots
-      mapping = np.argmax(acc_arr, axis=1)
-      y, x = calibration_curve(
-          ground_truth_membership[mapping[0]], own_membership[0], n_bins=20
-      )
-      plt.clf()
-      plt.plot(x, y, marker="o")
-      plt.plot(x, x, ":")
-      plt.ylabel("True Probability")
-      plt.xlabel("Predicted Probability")
-      plt.savefig("calibration_plot_relate.png")
-      plt.close()
+    ## Final local ancestry inference on all trees
+    own_membership_update = np.ones((len(own_membership), num_trees), dtype="float64")
 
-      ## Plotting the heatmaps and likelihood
-      plt.clf()
-      plt.plot(log_likelihood_arr)
-      plt.savefig("ancient_sim_true_log_likelihood.png")
-      plt.close()
-      plt.clf()
-      plt.figure(figsize=(40, 4))
-      sns.heatmap(own_membership)
-      plt.savefig("ancient_sim_true_own_membership_" + str(args.sample_id) + ".png")
-      plt.close()
-      plt.clf()
-      plt.figure(figsize=(40, 4))
-      sns.heatmap(ground_truth_membership)
-      plt.savefig(
-          "ancient_sim_true_ground_truth_membership_" + str(args.sample_id) + ".png"
-      )
-      plt.close()
+    log_num_em = np.zeros((len(own_membership), num_trees), dtype="float64")
+    log_denom_em = np.zeros((len(own_membership), num_trees), dtype="float64")
+    for tid in range(num_trees):
+        proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
+        epoch_index_in_tree = epoch_index_all[tid]
+        for i in range(len(proportion_of_coalescing_in_tree)):
+            for j in range(len(own_membership)):
+                log_num_em_j_i = np.log(
+                    np.sum(
+                        gamma_arr[j, :, epoch_index_in_tree[i]]
+                        * proportion_of_coalescing_in_tree[i]
+                    ),
+                )
+                log_num_em[j, tid] += log_num_em_j_i
+        max_epoch_index = int(
+            np.minimum(epoch_index_in_tree[i] + 1, len(epoch_intervals_pow) - 1)
+        )
+        for j in range(len(own_membership)):
+            log_denom_em[j, tid] = -np.sum(
+                gamma_arr[j, :, 0:max_epoch_index] * denom[:, 0:max_epoch_index, tid]
+            )  ## summing only till the maximum epoch in that tree
+    own_membership_update = np.exp(
+        log_num_em
+        + log_denom_em
+        - np.repeat(
+            np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
+            len(own_membership),
+            axis=1,
+        ).T
+    )
 
+    for j in range(len(own_membership)):
+        own_membership_update[j] *= tau[j]
+    log_likelihood = np.sum(
+        np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
+        + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
+    )
+    log_likelihood_arr.append(log_likelihood)
+    own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
     return overall_acc
+
 
 acc = main(args, plot=False, gamma_arr=None)  ##Han(106), Sardinian(52)
 print("Average accuracy = " + str(acc))
