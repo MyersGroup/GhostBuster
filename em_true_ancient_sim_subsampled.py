@@ -17,8 +17,6 @@ import argparse
 import distutils
 import pickle
 import copy
-import jax.numpy as jnp
-from jax import partial, jit, vmap
 
 
 def boolean(v):
@@ -427,7 +425,7 @@ def compute_gamma_num(
             for i in range(len(proportion_of_coalescing_in_tree)):
                 epoch = epoch_index_in_tree[i]
                 num = proportion_of_coalescing_in_tree[i]
-                num = num / np.sum(num)
+                num = num / sum(num)
                 num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
             count_masked_trees += 1
     else:
@@ -439,10 +437,10 @@ def compute_gamma_num(
                 prev_gamma_e = prev_gamma[:, epoch]
                 num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
                 # if np.sum(num) > 0:
-                num = num / np.sum(num)
-                num = np.nan_to_num(
-                    num, nan=0
-                )  ## if num is all zeros, it should remain all zeros
+                num = num / sum(num)
+                # num = np.nan_to_num(
+                #     num, nan=0
+                # )  ## if num is all zeros, it should remain all zeros
                 num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
             count_masked_trees += 1
     return num_full_tree
@@ -577,35 +575,23 @@ def write_coal(gamma_arr, filename, is_relate):
 
 
 def update_membership(
-    proportion_of_coalescing_all,
-    epoch_index_all,
+    proportion_of_coalescing_in_tree,
+    epoch_index_in_tree,
     denom,
     gamma_arr,
-    log_num_em,
-    log_denom_em,
-    num_clusters,
-    tid,
     count_masked_trees,
 ):
-    proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-    epoch_index_in_tree = epoch_index_all[tid]
+    log_num_em_j_i = 0
     for i in range(len(proportion_of_coalescing_in_tree)):
-        for j in range(num_clusters):
-            log_num_em_j_i = np.log(
-                np.sum(
-                    gamma_arr[j, :, epoch_index_in_tree[i]]
-                    * proportion_of_coalescing_in_tree[i]
-                ),
-            )
-            log_num_em[j, count_masked_trees] += log_num_em_j_i
-    max_epoch_index = int(
-        np.minimum(epoch_index_in_tree[i] + 1, len(epoch_intervals_pow) - 1)
-    )
-    for j in range(num_clusters):
-        log_denom_em[j, count_masked_trees] = -np.sum(
-            gamma_arr[j, :, 0:max_epoch_index]
-            * denom[:, 0:max_epoch_index, count_masked_trees]
-        )  ## summing only till the maximum epoch in that tree
+        log_num_em_j_i += np.log(
+            sum(
+                gamma_arr[:, epoch_index_in_tree[i]]
+                * proportion_of_coalescing_in_tree[i]
+            ),
+        )
+
+    log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, count_masked_trees]))
+    return log_num_em_j_i, log_denom_em_j
 
 
 def main(args, plot=False, gamma_arr=None):
@@ -843,8 +829,10 @@ def main(args, plot=False, gamma_arr=None):
     log_likelihood_arr = []
     start_time_em = time.time()
     print("Starting the EM..")
+
     for epoch in range(100):  ## max-iters = 40
         ## M-step
+        start_m_time = time.time()
         gamma_arr = np.zeros(
             (len(own_membership), len(membership), len(epoch_intervals) - 1),
             dtype="float64",
@@ -885,12 +873,12 @@ def main(args, plot=False, gamma_arr=None):
             print(gamma_arr)
             print("Iter" + str(epoch))
             print(tau)
-
+        # print("m-step: " + str(time.time() - start_m_time))
         ## E-step
+        start_e_time = time.time()
         own_membership_update = np.ones(
             (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
         )
-
         log_num_em = np.zeros(
             (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
         )
@@ -898,26 +886,20 @@ def main(args, plot=False, gamma_arr=None):
             (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
         )
         count_masked_trees = 0
+
         for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
-            for i in range(len(proportion_of_coalescing_in_tree)):
-                for j in range(len(own_membership)):
-                    log_num_em_j_i = np.log(
-                        np.sum(
-                            gamma_arr[j, :, epoch_index_in_tree[i]]
-                            * proportion_of_coalescing_in_tree[i]
-                        ),
-                    )
-                    log_num_em[j, count_masked_trees] += log_num_em_j_i
-            max_epoch_index = int(
-                np.minimum(epoch_index_in_tree[i] + 1, len(epoch_intervals_pow) - 1)
-            )
             for j in range(len(own_membership)):
-                log_denom_em[j, count_masked_trees] = -np.sum(
-                    gamma_arr[j, :, 0:max_epoch_index]
-                    * denom[:, 0:max_epoch_index, count_masked_trees]
-                )  ## summing only till the maximum epoch in that tree
+                log_num_em_j, log_denom_em_j = update_membership(
+                    proportion_of_coalescing_in_tree,
+                    epoch_index_in_tree,
+                    denom,
+                    gamma_arr[j],
+                    count_masked_trees,
+                )
+                log_num_em[j, count_masked_trees] = log_num_em_j
+                log_denom_em[j, count_masked_trees] = log_denom_em_j
             count_masked_trees += 1
         own_membership_update = np.exp(
             log_num_em
@@ -940,6 +922,7 @@ def main(args, plot=False, gamma_arr=None):
         membership_thresh = make_one_hot(
             np.argmax(own_membership, axis=0), len(own_membership)
         )
+        # print("e-step: " + str(time.time() - start_e_time))
         ## Evaluate accuracy
         acc_arr = np.zeros(
             (len(own_membership), len(ground_truth_membership[:, mask_dodgy]))
