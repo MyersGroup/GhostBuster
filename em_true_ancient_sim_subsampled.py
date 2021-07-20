@@ -579,7 +579,7 @@ def update_membership(
     epoch_index_in_tree,
     denom,
     gamma_arr,
-    count_masked_trees,
+    tid,
 ):
     log_num_em_j_i = 0
     for i in range(len(proportion_of_coalescing_in_tree)):
@@ -590,7 +590,7 @@ def update_membership(
             ),
         )
 
-    log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, count_masked_trees]))
+    log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
     return log_num_em_j_i, log_denom_em_j
 
 
@@ -830,7 +830,7 @@ def main(args, plot=False, gamma_arr=None):
     start_time_em = time.time()
     print("Starting the EM..")
 
-    for epoch in range(100):  ## max-iters = 40
+    for epoch in range(10):  ## max-iters = 40
         ## M-step
         start_m_time = time.time()
         gamma_arr = np.zeros(
@@ -873,8 +873,9 @@ def main(args, plot=False, gamma_arr=None):
             print(gamma_arr)
             print("Iter" + str(epoch))
             print(tau)
-        # print("m-step: " + str(time.time() - start_m_time))
+        print("m-step: " + str(time.time() - start_m_time))
         ## E-step
+
         start_e_time = time.time()
         own_membership_update = np.ones(
             (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
@@ -896,7 +897,7 @@ def main(args, plot=False, gamma_arr=None):
                     epoch_index_in_tree,
                     denom,
                     gamma_arr[j],
-                    count_masked_trees,
+                    tid,
                 )
                 log_num_em[j, count_masked_trees] = log_num_em_j
                 log_denom_em[j, count_masked_trees] = log_denom_em_j
@@ -922,7 +923,7 @@ def main(args, plot=False, gamma_arr=None):
         membership_thresh = make_one_hot(
             np.argmax(own_membership, axis=0), len(own_membership)
         )
-        # print("e-step: " + str(time.time() - start_e_time))
+        print("e-step: " + str(time.time() - start_e_time))
         ## Evaluate accuracy
         acc_arr = np.zeros(
             (len(own_membership), len(ground_truth_membership[:, mask_dodgy]))
@@ -1094,6 +1095,9 @@ def main(args, plot=False, gamma_arr=None):
             axis=1,
         ).T
     )
+
+    ## In-case of highly uncertain trees, only depend on the prior
+    own_membership_update = np.nan_to_num(own_membership_update, nan=1)
 
     for j in range(len(own_membership)):
         own_membership_update[j] *= tau[j]
