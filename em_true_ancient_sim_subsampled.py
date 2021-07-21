@@ -262,19 +262,25 @@ def make_ground_truth(
     return ground_truth_membership_one_hot
 
 
-def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
+def fixed_parameters(
+    ts_list, poplabels, unique_groups, num_trees, window_size, target_seq_
+):
     eps = 1e-20
     num_samples = len(list(ts_list[0].first().samples()))
     coal_count = np.zeros(
-        (len(membership), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
+        (len(unique_groups), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
     )
     opportunity = np.zeros(
-        (len(membership), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
+        (len(unique_groups), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
     )
     proportion_of_coalescing_all = []
     coalescene_times_all = []
     epoch_index_all = []
     count_mut_trees = -1
+    group_id = {}
+    for u in range(len(unique_groups)):
+        group_id[unique_groups[u]] = u
+
     for ts in ts_list:
         tree = ts.first()
         prev_interval = tree.interval[0]
@@ -308,11 +314,11 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
                 coal_events_matrix[:, 3].argsort()
             ]  ## sorting based on coalescene times
             lineage_content = np.zeros(
-                (2 * num_samples - 1, len(membership)), dtype="float64"
+                (2 * num_samples - 1, len(unique_groups)), dtype="float64"
             )
             target_seq = target_seq_
-            for m in membership:
-                lineage_content[m[0] : m[1], m[2]] = 1
+            for m in range(len(poplabels)):
+                lineage_content[2 * m : 2 * m + 2, group_id[poplabels.GROUP.loc[m]]] = 1
             lineage_content[
                 target_seq
             ] = 0  ## setting lineage content of target sequence = 0
@@ -401,41 +407,18 @@ def fixed_parameters(ts_list, membership, num_trees, window_size, target_seq_):
 
     ## correcting opportunity for ancestral samples
     for epoch in range(len(epoch_intervals_pow) - 1):
-        for m in range(len(membership)):
-            if membership[m][3] >= epoch_intervals_pow[epoch + 1]:
-                opportunity[m, epoch, :] -= (membership[m][1] - membership[m][0]) * (
+        for m in range(len(poplabels)):
+            if poplabels.SAMPLING_TIME.loc[m] >= epoch_intervals_pow[epoch + 1]:
+                opportunity[group_id[poplabels.GROUP.loc[m]], epoch, :] -= (
                     epoch_intervals_pow[epoch + 1] - epoch_intervals_pow[epoch]
                 )
             elif (
-                membership[m][3] > epoch_intervals_pow[epoch]
-                and membership[m][3] < epoch_intervals_pow[epoch + 1]
+                poplabels.SAMPLING_TIME.loc[m] > epoch_intervals_pow[epoch]
+                and poplabels.SAMPLING_TIME.loc[m] < epoch_intervals_pow[epoch + 1]
             ):
-                opportunity[m, epoch, :] -= (membership[m][1] - membership[m][0]) * (
-                    membership[m][3] - epoch_intervals_pow[epoch]
+                opportunity[group_id[poplabels.GROUP.loc[m]], epoch, :] -= (
+                    poplabels.SAMPLING_TIME.loc[m] - epoch_intervals_pow[epoch]
                 )
-
-    ## sanity check
-    count_mut_trees = 0
-    for ts in ts_list:
-        tree = ts.first()
-        for tid in range(ts.num_trees):
-            if tree.interval[1] < prev_interval + window_size:
-                tree.next()
-            total_branch_length = sum(tree.branch_length(u) for u in tree.nodes())
-            tmrca = tree.time(tree.root)
-            # assert (
-            #    np.abs(
-            #        np.sum(opportunity[:, :, count_mut_trees])
-            #        - total_branch_length
-            #        + tmrca
-            #    )
-            #    < 1e-9
-            # )
-            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            # for i in proportion_of_coalescing_in_tree:
-            #    assert np.sum(i) == 1.0
-            count_mut_trees += 1
-            tree.next()
 
     return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
 
@@ -570,16 +553,13 @@ def mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, masking_thres
     return mask
 
 
-def write_coal(gamma_arr, filename, is_relate):
+def write_coal(gamma_arr, filename, labs, is_relate):
 
     if is_relate:
         filename = "RelateTrees_" + filename
     else:
         filename = "TrueTrees_" + filename
 
-    # labs = ['Mbuti', 'LBK', 'Sardinian', 'Loschbour', 'MA1', 'Han', 'UstIshim', 'Neanderthal']
-    # labs = ['Mbuti', 'Sardinian', 'Han']
-    labs = ["Han", "Neanderthal"]
     f = open(filename, "w")
     f.write(" ".join(labs) + "\n")
     for val in epoch_intervals_pow:
@@ -632,29 +612,30 @@ def main(args, plot=False, gamma_arr=None):
         raise ValueError(
             "How can you initialize your local ancestry in real-world data ?"
         )
-
     start_time = time.time()
     num_clusters = args.num_clusters
-    membership = []
-    with open(path + "/assignment.txt", "r") as fp:
-        line = fp.readline().split()
-        line = fp.readline().split()
-        group = 0
-        start = 2
-        current_group = line[2]
-        for i in range(2, len(line)):
-            if line[i] != current_group:
-                membership.append((start - 2, i - 2, group, 0))
-                group += 1
-                current_group = line[i]
-                start = i
-    membership.append(
-        (start - 2, len(line) - 2, group, 0)
-    )  ## this is hard-coding the sampling_time = 0 :(
-    print(
-        "The membership configuration is (startpos, endpos, groupid, sampling_time) : "
-        + str(membership)
-    )
+    # membership = []
+    # with open(path + "/assignment.txt", "r") as fp:
+    #     line = fp.readline().split()
+    #     line = fp.readline().split()
+    #     group = 0
+    #     start = 2
+    #     current_group = line[2]
+    #     for i in range(2, len(line)):
+    #         if line[i] != current_group:
+    #             membership.append((start - 2, i - 2, group, 0))
+    #             group += 1
+    #             current_group = line[i]
+    #             start = i
+    # membership.append(
+    #     (start - 2, len(line) - 2, group, 0)
+    # )  ## this is hard-coding the sampling_time = 0 :(
+    # print(
+    #     "The membership configuration is (startpos, endpos, groupid, sampling_time) : "
+    #     + str(membership)
+    # )
+    poplabels = pd.read_csv(path + "poplabels.txt", sep=" ")
+    unique_groups = np.unique(poplabels.GROUP)
 
     ts_list = []
     chrs = list(map(int, args.chrs.split(",")))
@@ -695,6 +676,10 @@ def main(args, plot=False, gamma_arr=None):
                 path + args.trees + "_chr" + str(chr) + ".trees"
             )  ## true trees
         ts_list.append(ts)
+    if len(poplabels) != ts_list[0].num_samples / 2:  ## only valid for diploid
+        raise ValueError(
+            "Number of samples in trees doesnt match number of samples in poplabels.txt"
+        )
 
     filename = ".treepos"
     if args.relate_trees:
@@ -801,7 +786,12 @@ def main(args, plot=False, gamma_arr=None):
                 proportion_of_coalescing_all,
                 epoch_index_all,
             ) = fixed_parameters(
-                ts_list, membership, num_trees, args.window_size, args.sample_id
+                ts_list,
+                poplabels,
+                unique_groups,
+                num_trees,
+                args.window_size,
+                args.sample_id,
             )
             f_pkl = open(fixed_params_file_name, "wb")
             pickle.dump(
@@ -827,7 +817,12 @@ def main(args, plot=False, gamma_arr=None):
             chrs=chrs,
         )
         num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(
-            ts_list, membership, num_trees, args.window_size, args.sample_id
+            ts_list,
+            poplabels,
+            unique_groups,
+            num_trees,
+            args.window_size,
+            args.sample_id,
         )
 
     if args.init_at_truth:
@@ -850,7 +845,7 @@ def main(args, plot=False, gamma_arr=None):
             ## M-step
             start_m_time = time.time()
             gamma_arr = np.zeros(
-                (len(own_membership), len(membership), len(epoch_intervals) - 1),
+                (len(own_membership), len(unique_groups), len(epoch_intervals) - 1),
                 dtype="float64",
             )
             for j in range(len(own_membership)):
@@ -860,7 +855,7 @@ def main(args, plot=False, gamma_arr=None):
                         None,
                         proportion_of_coalescing_all,
                         epoch_index_all,
-                        len(membership),
+                        len(unique_groups),
                         masked_trees_index,
                     )
                 else:
@@ -869,10 +864,10 @@ def main(args, plot=False, gamma_arr=None):
                         prev_gamma[j],
                         proportion_of_coalescing_all,
                         epoch_index_all,
-                        len(membership),
+                        len(unique_groups),
                         masked_trees_index,
                     )
-                for i in range(len(membership)):
+                for i in range(len(unique_groups)):
                     d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
                     gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
@@ -971,7 +966,7 @@ def main(args, plot=False, gamma_arr=None):
             ## Tree stats
             if args.verbose and args.relate_trees:
                 proportion_of_coalescing_top2 = np.zeros(
-                    (num_trees, 2, len(membership))
+                    (num_trees, 2, len(unique_groups))
                 )
                 for tid in range(num_trees):
                     proportion_of_coalescing_top2[
@@ -1046,6 +1041,7 @@ def main(args, plot=False, gamma_arr=None):
                 write_coal(
                     gamma_arr,
                     "stdpopsim_" + str(args.sample_id) + "_iter" + str(epoch) + ".coal",
+                    unique_groups,
                     args.relate_trees,
                 )
                 with open(
@@ -1091,7 +1087,10 @@ def main(args, plot=False, gamma_arr=None):
 
         ## gamma plots
         write_coal(
-            gamma_arr, "stdpopsim_" + str(args.sample_id) + ".coal", args.relate_trees
+            gamma_arr,
+            "stdpopsim_" + str(args.sample_id) + ".coal",
+            unique_groups,
+            args.relate_trees,
         )
 
         if args.mode == "sim":
