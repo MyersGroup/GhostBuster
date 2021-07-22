@@ -1155,6 +1155,13 @@ def main(args, plot=False, gamma_arr=None):
         for j in range(len(own_membership)):
             own_membership_update[j] *= tau[j]
 
+        log_likelihood = np.sum(
+            np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
+            + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
+        )
+
+        print("Test log-likelihood: " + str(log_likelihood))
+
         own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
         filename = (
