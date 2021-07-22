@@ -148,12 +148,35 @@ parser.add_argument(
     type=boolean,
     default=True,
 )
+parser.add_argument(
+    "-start_time",
+    "--start_time",
+    help="Starting time for the population size plots, measured in log-scale",
+    type=float,
+    default=4,
+)
+parser.add_argument(
+    "-end_time",
+    "--end_time",
+    help="Ending time for the population size plots, measured in log-scale",
+    type=float,
+    default=7,
+)
+parser.add_argument(
+    "-ignore_first_epoch",
+    "--ignore_first_epoch",
+    help="Ignore first epoch while calculating the local ancestry in the EM",
+    type=boolean,
+    default=False,
+)
 args = parser.parse_args()
 
 
 epoch_intervals = np.array(
     [-np.inf]
-    + np.linspace(4 - math.log(28, 10), 7 - math.log(28, 10), 9).tolist()
+    + np.linspace(
+        args.start_time - math.log(28, 10), args.end_time - math.log(28, 10), 9
+    ).tolist()
     + [np.inf],
     dtype="float64",
 )
@@ -581,17 +604,24 @@ def update_membership(
     denom,
     gamma_arr,
     tid,
+    ignore_first_epoch=False,
 ):
     log_num_em_j_i = 0
     for i in range(len(proportion_of_coalescing_in_tree)):
-        log_num_em_j_i += np.log(
-            sum(
-                gamma_arr[:, epoch_index_in_tree[i]]
-                * proportion_of_coalescing_in_tree[i]
-            ),
-        )
+        if (
+            ignore_first_epoch and epoch_index_in_tree[i] >= 1
+        ) or not ignore_first_epoch:
+            log_num_em_j_i += np.log(
+                sum(
+                    gamma_arr[:, epoch_index_in_tree[i]]
+                    * proportion_of_coalescing_in_tree[i]
+                ),
+            )
 
-    log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
+    if not ignore_first_epoch:
+        log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
+    else:
+        log_denom_em_j = -sum(sum(gamma_arr[:, 1:] * denom[:, 1:, tid]))
     return log_num_em_j_i, log_denom_em_j
 
 
@@ -614,26 +644,6 @@ def main(args, plot=False, gamma_arr=None):
         )
     start_time = time.time()
     num_clusters = args.num_clusters
-    # membership = []
-    # with open(path + "/assignment.txt", "r") as fp:
-    #     line = fp.readline().split()
-    #     line = fp.readline().split()
-    #     group = 0
-    #     start = 2
-    #     current_group = line[2]
-    #     for i in range(2, len(line)):
-    #         if line[i] != current_group:
-    #             membership.append((start - 2, i - 2, group, 0))
-    #             group += 1
-    #             current_group = line[i]
-    #             start = i
-    # membership.append(
-    #     (start - 2, len(line) - 2, group, 0)
-    # )  ## this is hard-coding the sampling_time = 0 :(
-    # print(
-    #     "The membership configuration is (startpos, endpos, groupid, sampling_time) : "
-    #     + str(membership)
-    # )
     poplabels = pd.read_csv(path + "poplabels.txt", sep=" ")
     unique_groups = np.unique(poplabels.GROUP)
 
@@ -910,6 +920,7 @@ def main(args, plot=False, gamma_arr=None):
                         denom,
                         gamma_arr[j],
                         tid,
+                        args.ignore_first_epoch,
                     )
                     log_num_em[j, count_masked_trees] = log_num_em_j
                     log_denom_em[j, count_masked_trees] = log_denom_em_j
@@ -1116,23 +1127,18 @@ def main(args, plot=False, gamma_arr=None):
         for tid in range(num_trees):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
-            for i in range(len(proportion_of_coalescing_in_tree)):
-                for j in range(len(own_membership)):
-                    log_num_em_j_i = np.log(
-                        np.sum(
-                            gamma_arr[j, :, epoch_index_in_tree[i]]
-                            * proportion_of_coalescing_in_tree[i]
-                        ),
-                    )
-                    log_num_em[j, tid] += log_num_em_j_i
-            max_epoch_index = int(
-                np.minimum(epoch_index_in_tree[i] + 1, len(epoch_intervals_pow) - 1)
-            )
             for j in range(len(own_membership)):
-                log_denom_em[j, tid] = -np.sum(
-                    gamma_arr[j, :, 0:max_epoch_index]
-                    * denom[:, 0:max_epoch_index, tid]
-                )  ## summing only till the maximum epoch in that tree
+                log_num_em_j, log_denom_em_j = update_membership(
+                    proportion_of_coalescing_in_tree,
+                    epoch_index_in_tree,
+                    denom,
+                    gamma_arr[j],
+                    tid,
+                    args.ignore_first_epoch,
+                )
+                log_num_em[j, tid] = log_num_em_j
+                log_denom_em[j, tid] = log_denom_em_j
+
         own_membership_update = np.exp(
             log_num_em
             + log_denom_em
