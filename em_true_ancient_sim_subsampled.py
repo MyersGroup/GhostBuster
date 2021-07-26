@@ -169,6 +169,13 @@ parser.add_argument(
     type=boolean,
     default=False,
 )
+parser.add_argument(
+    "-ignore_last_epoch",
+    "--ignore_last_epoch",
+    help="Ignore last epoch while calculating the local ancestry in the EM",
+    type=boolean,
+    default=True,
+)
 args = parser.parse_args()
 
 
@@ -604,13 +611,30 @@ def update_membership(
     denom,
     gamma_arr,
     tid,
-    ignore_first_epoch=False,
+    ignore_first_epoch,
+    ignore_last_epoch,
 ):
     log_num_em_j_i = 0
     for i in range(len(proportion_of_coalescing_in_tree)):
         if (
-            ignore_first_epoch and epoch_index_in_tree[i] >= 1
-        ) or not ignore_first_epoch:
+            (
+                ignore_first_epoch
+                and not ignore_last_epoch
+                and epoch_index_in_tree[i] >= 1
+            )
+            or (
+                ignore_last_epoch
+                and not ignore_first_epoch
+                and epoch_index_in_tree[i] < len(epoch_intervals) - 2
+            )
+            or (
+                ignore_first_epoch
+                and ignore_last_epoch
+                and epoch_index_in_tree[i] >= 1
+                and epoch_index_in_tree[i] < len(epoch_intervals) - 2
+            )
+            or (not ignore_first_epoch and not ignore_last_epoch)
+        ):
             log_num_em_j_i += np.log(
                 sum(
                     gamma_arr[:, epoch_index_in_tree[i]]
@@ -618,10 +642,14 @@ def update_membership(
                 ),
             )
 
-    if not ignore_first_epoch:
-        log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
-    else:
+    if ignore_first_epoch and ignore_last_epoch:
+        log_denom_em_j = -sum(sum(gamma_arr[:, 1:-1] * denom[:, 1:-1, tid]))
+    elif ignore_first_epoch and not ignore_last_epoch:
         log_denom_em_j = -sum(sum(gamma_arr[:, 1:] * denom[:, 1:, tid]))
+    elif ignore_last_epoch and not ignore_first_epoch:
+        log_denom_em_j = -sum(sum(gamma_arr[:, :-1] * denom[:, :-1, tid]))
+    else:
+        log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
     return log_num_em_j_i, log_denom_em_j
 
 
@@ -835,6 +863,11 @@ def main(args, plot=False, gamma_arr=None):
             args.sample_id,
         )
 
+    if (denom < -1e-8).any():
+        raise ValueError(
+            "The opportunity has negative values, check the sampling times in poplabels.txt"
+        )
+
     if args.init_at_truth:
         own_membership = ground_truth_membership[:, mask_dodgy]
     else:
@@ -921,6 +954,7 @@ def main(args, plot=False, gamma_arr=None):
                         gamma_arr[j],
                         tid,
                         args.ignore_first_epoch,
+                        args.ignore_last_epoch,
                     )
                     log_num_em[j, count_masked_trees] = log_num_em_j
                     log_denom_em[j, count_masked_trees] = log_denom_em_j
