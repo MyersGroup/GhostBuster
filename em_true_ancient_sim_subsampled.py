@@ -208,9 +208,7 @@ def make_one_hot(X, max_X):
     return Y
 
 
-def make_ground_truth(
-    ts_list, num_trees, target_group, window_size, sample=None, chrs=None
-):
+def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
     ## Extracts the ground truth membership from the simulations
     start_time = time.time()
     print(num_trees)
@@ -798,26 +796,34 @@ def main(args, plot=False, gamma_arr=None):
 
         try:
             f_pkl = open(fixed_params_file_name, "rb")
-            (
-                num,
-                denom,
-                proportion_of_coalescing_all,
-                epoch_index_all,
-                ground_truth_membership,
-            ) = pickle.load(f_pkl)
+            if args.mode == "sim":
+                (
+                    num,
+                    denom,
+                    proportion_of_coalescing_all,
+                    epoch_index_all,
+                    ground_truth_membership,
+                ) = pickle.load(f_pkl)
+            else:
+                (
+                    num,
+                    denom,
+                    proportion_of_coalescing_all,
+                    epoch_index_all,
+                ) = pickle.load(f_pkl)
             f_pkl.close()
             print("Done loading fixed parameters from: " + str(fixed_params_file_name))
 
         except:
             print("Fixed parameters file not found, calculating fixed parameters..")
-            ground_truth_membership = make_ground_truth(
-                ts_list,
-                num_trees,
-                target_group=5,
-                window_size=args.window_size,
-                sample=args.sample_id,
-                chrs=chrs,
-            )
+            if args.mode == "sim":
+                ground_truth_membership = make_ground_truth(
+                    ts_list,
+                    num_trees,
+                    window_size=args.window_size,
+                    sample=args.sample_id,
+                    chrs=chrs,
+                )
             (
                 num,
                 denom,
@@ -832,16 +838,27 @@ def main(args, plot=False, gamma_arr=None):
                 args.sample_id,
             )
             f_pkl = open(fixed_params_file_name, "wb")
-            pickle.dump(
-                [
-                    num,
-                    denom,
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                    ground_truth_membership,
-                ],
-                f_pkl,
-            )
+            if args.mode == "sim":
+                pickle.dump(
+                    [
+                        num,
+                        denom,
+                        proportion_of_coalescing_all,
+                        epoch_index_all,
+                        ground_truth_membership,
+                    ],
+                    f_pkl,
+                )
+            else:
+                pickle.dump(
+                    [
+                        num,
+                        denom,
+                        proportion_of_coalescing_all,
+                        epoch_index_all,
+                    ],
+                    f_pkl,
+                )
             f_pkl.close()
             print("Fixed parameters stored in: " + str(fixed_params_file_name))
 
@@ -849,7 +866,6 @@ def main(args, plot=False, gamma_arr=None):
         ground_truth_membership = make_ground_truth(
             ts_list,
             num_trees,
-            target_group=5,
             window_size=args.window_size,
             sample=args.sample_id,
             chrs=chrs,
@@ -1169,6 +1185,7 @@ def main(args, plot=False, gamma_arr=None):
                     gamma_arr[j],
                     tid,
                     args.ignore_first_epoch,
+                    args.ignore_last_epoch,
                 )
                 log_num_em[j, tid] = log_num_em_j
                 log_denom_em[j, tid] = log_denom_em_j
