@@ -49,6 +49,12 @@ parser.add_argument(
     default=True,
 )
 parser.add_argument(
+    "-r",
+    "--rec",
+    help="Filename of rec maps.",
+    type=str
+)
+parser.add_argument(
     "-plot_int",
     "--plot_intermediate_gammas",
     help="Plotting gammas for each iteration",
@@ -113,14 +119,14 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-    "-num_iters",
+    "-i",
     "--num_iters",
     help="Number of iterations for EM",
     type=int,
     default=100,
 )
 parser.add_argument(
-    "-num_clusters",
+    "-k",
     "--num_clusters",
     help="Number of clusters to find using the EM",
     type=int,
@@ -131,7 +137,7 @@ parser.add_argument(
     "--mode",
     help="Which mode do you want to run in? Simulation or Real-world ?",
     type=str,
-    default="sim",
+    default="real",
     choices=("sim", "real"),
 )
 parser.add_argument(
@@ -511,7 +517,7 @@ def compute_tree_stats(ts_list, chrs, window_size):
             # "/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
             # "/camp/lab/skoglundp/working/leo/datasets/human_genome/recomb_maps/HapmapII/genetic_map_GRCh37_chr"
             # + "/recomb_maps/msprime_maps/genetic_map_GRCh37_chr"
-            args.path + "genetic_map_GRCh37_chr" + str(chr) + ".txt.gz",
+            args.rec + "_chr" + str(chr) + ".txt",
             sep="\t",
         )
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
@@ -936,6 +942,16 @@ def main(args, plot=False, gamma_arr=None):
                 print("Using initial gamma specified in file: " + str(args.load_gamma))
                 gamma_arr = np.load(args.load_gamma)
                 tau = args.load_props
+
+            #print(epoch)
+            print(gamma_arr)
+            print(gamma_arr.shape)
+ 
+            for i in range(gamma_arr.shape[0]):
+              for j in range(gamma_arr.shape[1]):
+                for k in range(gamma_arr.shape[2]):
+                  if gamma_arr[i,j,k] < 0:
+                    print(i,j,k,gamma_arr[i,j,k])
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
