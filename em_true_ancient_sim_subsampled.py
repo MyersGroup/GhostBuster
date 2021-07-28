@@ -178,6 +178,13 @@ parser.add_argument(
     type=boolean,
     default=True,
 )
+parser.add_argument(
+    "-props_per_chrs",
+    "--props_per_chrs",
+    help="Assume different proportions across chromosomes",
+    type=boolean,
+    default=False,
+)
 args = parser.parse_args()
 
 
@@ -674,6 +681,10 @@ def main(args, plot=False, gamma_arr=None):
         raise ValueError(
             "How can you initialize your local ancestry in real-world data ?"
         )
+    if args.props_per_chrs and args.load_props:
+        raise ValueError(
+            "Propotions per chromosomes not supported when you load proportions"
+        )
     start_time = time.time()
     num_clusters = args.num_clusters
     poplabels = pd.read_csv(path + "poplabels.txt", sep=" ")
@@ -735,17 +746,20 @@ def main(args, plot=False, gamma_arr=None):
     f = open(filename, "w")
 
     if args.trees != None:
+        trees_per_chr = []
         num_trees = 0
         for ts in ts_list:
             tree = ts.first()
             prev_interval = tree.interval[0]
             # prev_interval = 0
+            start_pos = copy.deepcopy(num_trees)
             for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
                 if tree.interval[1] >= prev_interval + args.window_size:
                     f.write(str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n")
                     prev_interval = prev_interval + args.window_size
                     num_trees += 1
                 tree.next()
+            trees_per_chr.append((start_pos, num_trees))
         f.close()
         print("Total number of trees = " + str(num_trees))
 
@@ -754,6 +768,7 @@ def main(args, plot=False, gamma_arr=None):
             f_pkl = open(tree_stats_file_name, "rb")
             (
                 num_trees,
+                trees_per_chr,
                 tree_size,
                 no_of_mutations,
                 tmrca,
@@ -784,6 +799,7 @@ def main(args, plot=False, gamma_arr=None):
             pickle.dump(
                 [
                     num_trees,
+                    trees_per_chr,
                     tree_size,
                     no_of_mutations,
                     tmrca,
@@ -803,6 +819,20 @@ def main(args, plot=False, gamma_arr=None):
 
     print("Trees with high certainty = " + str(np.sum(mask_dodgy)))
     masked_trees_index = np.arange(0, num_trees)[mask_dodgy]
+
+    if args.props_per_chrs:
+        trees_per_chr_masked = []
+        for (start, end) in trees_per_chr:
+            start_in_masked = len(masked_trees_index) - len(
+                masked_trees_index[masked_trees_index >= start]
+            )
+            end_in_masked = len(masked_trees_index) - len(
+                masked_trees_index[masked_trees_index >= end]
+            )
+            trees_per_chr_masked.append(
+                (start_in_masked, end_in_masked)
+            )  ## [start, end)
+
     if args.relate_trees:
 
         try:
@@ -945,11 +975,15 @@ def main(args, plot=False, gamma_arr=None):
                     gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
             tau = np.mean(own_membership, axis=1)
+            if args.props_per_chrs:
+                tau = np.zeros((len(trees_per_chr_masked), len(own_membership)))
+                for chr, (start, end) in enumerate(trees_per_chr_masked):
+                    tau[chr] = np.mean(own_membership[:, start:end], axis=1)
 
             if epoch == 0 and args.load_gamma != None and args.load_props != None:
                 print("Using initial gamma specified in file: " + str(args.load_gamma))
                 gamma_arr = np.load(args.load_gamma)
-                tau = args.load_props
+                tau = args.load_props  ### load taus only works for not(props_per_chrs)
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
@@ -999,8 +1033,14 @@ def main(args, plot=False, gamma_arr=None):
                 ).T
             )
 
-            for j in range(len(own_membership)):
-                own_membership_update[j] *= tau[j]
+            if not args.props_per_chrs:
+                for j in range(len(own_membership)):
+                    own_membership_update[j] *= tau[j]
+            else:
+                for chr, (start, end) in enumerate(trees_per_chr_masked):
+                    for j in range(len(own_membership)):
+                        own_membership_update[j, start:end] *= tau[chr, j]
+
             log_likelihood = np.sum(
                 np.log(np.sum(own_membership_update, axis=0))
                 + np.max(log_num_em + log_denom_em, axis=0)
@@ -1217,8 +1257,13 @@ def main(args, plot=False, gamma_arr=None):
         # In-case of highly uncertain trees, only depend on the prior
         own_membership_update = np.nan_to_num(own_membership_update, nan=1)
 
-        for j in range(len(own_membership)):
-            own_membership_update[j] *= tau[j]
+        if not args.props_per_chrs:
+            for j in range(len(own_membership)):
+                own_membership_update[j] *= tau[j]
+        else:
+            for chr, (start, end) in enumerate(trees_per_chr):
+                for j in range(len(own_membership)):
+                    own_membership_update[j, start:end] *= tau[chr, j]
 
         log_likelihood = np.sum(
             np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
