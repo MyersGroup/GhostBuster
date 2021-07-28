@@ -13,6 +13,7 @@ import argparse
 import pickle
 import copy
 import warnings
+import os
 
 
 def boolean(v):
@@ -48,12 +49,7 @@ parser.add_argument(
     type=boolean,
     default=True,
 )
-parser.add_argument(
-    "-r",
-    "--rec",
-    help="Filename of rec maps.",
-    type=str
-)
+parser.add_argument("-r", "--rec", help="Filename of rec maps.", type=str)
 parser.add_argument(
     "-plot_int",
     "--plot_intermediate_gammas",
@@ -87,7 +83,7 @@ parser.add_argument(
     "--init_at_truth",
     help="Do you wish to initialize at ground-truth",
     type=boolean,
-    default=True,
+    default=False,
 )
 parser.add_argument(
     "-load_gamma",
@@ -487,7 +483,11 @@ def compute_gamma_num(
                 epoch = epoch_index_in_tree[i]
                 prev_gamma_e = prev_gamma[:, epoch]
                 num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
-                num = num / sum(num)
+                sum_of_num = sum(num)
+                if (
+                    sum_of_num != 0
+                ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
+                    num = num / sum_of_num
                 num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
             count_masked_trees += 1
     return num_full_tree
@@ -708,20 +708,24 @@ def main(args, plot=False, gamma_arr=None):
         + str(args.masking_threshold)
         + ".pkl"
     )
-    for chr in chrs:
-        if args.relate_trees:
+    if args.trees == None and (
+        not os.path.isfile(tree_stats_file_name)
+        or not os.path.isfile(fixed_params_file_name)
+    ):
+        raise ValueError(
+            "Specify the location to the trees under the args.trees argument"
+        )
+
+    if args.trees != None:
+        for chr in chrs:
             ts = tskit.load(
                 path + args.trees + "_chr" + str(chr) + ".trees"
             )  ## relate trees
-        else:
-            ts = tskit.load(
-                path + args.trees + "_chr" + str(chr) + ".trees"
-            )  ## true trees
-        ts_list.append(ts)
-    if len(poplabels) != ts_list[0].num_samples / 2:  ## only valid for diploid
-        raise ValueError(
-            "Number of samples in trees doesnt match number of samples in poplabels.txt"
-        )
+            ts_list.append(ts)
+        if len(poplabels) != ts_list[0].num_samples / 2:  ## only valid for diploid
+            raise ValueError(
+                "Number of samples in trees doesnt match number of samples in poplabels.txt"
+            )
 
     filename = ".treepos"
     if args.relate_trees:
@@ -730,23 +734,26 @@ def main(args, plot=False, gamma_arr=None):
         filename = "True" + filename
     f = open(filename, "w")
 
-    num_trees = 0
-    for ts in ts_list:
-        tree = ts.first()
-        prev_interval = tree.interval[0]
-        # prev_interval = 0
-        for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
-            if tree.interval[1] >= prev_interval + args.window_size:
-                f.write(str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n")
-                prev_interval = prev_interval + args.window_size
-                num_trees += 1
-            tree.next()
-    f.close()
-    print("Total number of trees = " + str(num_trees))
+    if args.trees != None:
+        num_trees = 0
+        for ts in ts_list:
+            tree = ts.first()
+            prev_interval = tree.interval[0]
+            # prev_interval = 0
+            for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+                if tree.interval[1] >= prev_interval + args.window_size:
+                    f.write(str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n")
+                    prev_interval = prev_interval + args.window_size
+                    num_trees += 1
+                tree.next()
+        f.close()
+        print("Total number of trees = " + str(num_trees))
+
     if args.relate_trees:
         try:
             f_pkl = open(tree_stats_file_name, "rb")
             (
+                num_trees,
                 tree_size,
                 no_of_mutations,
                 tmrca,
@@ -756,9 +763,6 @@ def main(args, plot=False, gamma_arr=None):
                 fraction_snps_not_mapping,
                 mask_dodgy,
             ) = pickle.load(f_pkl)
-            mask_dodgy = mask_for_dodgy_trees(
-                frac_branches_with_snp, num_snps_on_tree, args.masking_threshold
-            )
             f_pkl.close()
             print("Done loading tree statistics from: " + str(tree_stats_file_name))
         except:
@@ -779,6 +783,7 @@ def main(args, plot=False, gamma_arr=None):
             f_pkl = open(tree_stats_file_name, "wb")
             pickle.dump(
                 [
+                    num_trees,
                     tree_size,
                     no_of_mutations,
                     tmrca,
@@ -890,6 +895,9 @@ def main(args, plot=False, gamma_arr=None):
             "The opportunity has negative values, check the sampling times in poplabels.txt"
         )
 
+    ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
+    denom = copy.deepcopy(np.maximum(denom, 0))
+
     if args.init_at_truth:
         own_membership = ground_truth_membership[:, mask_dodgy]
     else:
@@ -942,16 +950,6 @@ def main(args, plot=False, gamma_arr=None):
                 print("Using initial gamma specified in file: " + str(args.load_gamma))
                 gamma_arr = np.load(args.load_gamma)
                 tau = args.load_props
-
-            #print(epoch)
-            print(gamma_arr)
-            print(gamma_arr.shape)
- 
-            for i in range(gamma_arr.shape[0]):
-              for j in range(gamma_arr.shape[1]):
-                for k in range(gamma_arr.shape[2]):
-                  if gamma_arr[i,j,k] < 0:
-                    print(i,j,k,gamma_arr[i,j,k])
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
