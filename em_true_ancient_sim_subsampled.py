@@ -333,6 +333,7 @@ def fixed_parameters(
             tree = ts.first()
             prev_interval = tree.interval[0]
             for tid in tqdm(range(len(list(ts.trees())))):  # len(list(ts.trees()))
+                sample_list_tree = copy.deepcopy(sample_list)
                 if tree.interval[1] < prev_interval + window_size:
                     tree.next()
                     continue
@@ -369,9 +370,10 @@ def fixed_parameters(
                     lineage_content[
                         2 * m : 2 * m + 2, group_id[poplabels.GROUP.loc[m]]
                     ] = 1
-                lineage_content[
-                    target_seq
-                ] = 0  ## setting lineage content of target sequence = 0
+                for t in sample_list_tree:
+                    lineage_content[
+                        t
+                    ] = 0  ## setting lineage content of target sequences = 0
                 prev_branch_length = np.sum(
                     lineage_content, axis=0
                 )  # np.sum(lineage_content[:,1])
@@ -393,7 +395,18 @@ def fixed_parameters(
                         opportunity[:, epoch, count_mut_trees] += (t - tprev) * (
                             prev_branch_length
                         )
-                        if a == target_seq:
+                        if (
+                            a in sample_list_tree and b in sample_list_tree
+                        ):  ## sometimes the target sequences coalesces with each other, in that case we append the coalesced node to the sample's list for that tree
+                            sample_list_tree.append(c)
+
+                        if (a == target_seq and b in sample_list_tree) or (
+                            b == target_seq and a in sample_list_tree
+                        ):  ## in case the target sequences coalesces with other target sequence, we don't count that coalescene count and opportunity
+                            target_seq = c
+                            lineage_content[c] = 0
+
+                        elif a == target_seq:
                             proportion_of_coalescing = copy.deepcopy(
                                 lineage_content[b]
                             ) / (sum(lineage_content[b]))
@@ -427,23 +440,30 @@ def fixed_parameters(
                             prev_branch_length = prev_branch_length - lineage_content[
                                 a
                             ] / (sum(lineage_content[a]))
-                        else:
-                            lineage_content[c] = lineage_content[a] + lineage_content[b]
 
-                            if (
-                                sum(lineage_content[a]) == 0
-                                or sum(lineage_content[b]) == 0
+                        else:  ## we don't count the branch lengths for the samples in sample_list_tree because they are the target sequences
+                            lineage_content[c] = lineage_content[a] + lineage_content[b]
+                            if a in sample_list_tree and b not in sample_list_tree:
+                                prev_branch_length = (
+                                    prev_branch_length
+                                    - lineage_content[b] / (sum(lineage_content[b]))
+                                    + lineage_content[c] / (sum(lineage_content[c]))
+                                )
+                            elif b in sample_list_tree and a not in sample_list_tree:
+                                prev_branch_length = (
+                                    prev_branch_length
+                                    - lineage_content[a] / (sum(lineage_content[a]))
+                                    + lineage_content[c] / (sum(lineage_content[c]))
+                                )
+                            elif (
+                                a not in sample_list_tree and b not in sample_list_tree
                             ):
-                                print(tree.interval)
-                                print(a, b)
-                                print(lineage_content[a])
-                                print(lineage_content[b])
-                            prev_branch_length = (
-                                prev_branch_length
-                                - lineage_content[a] / (sum(lineage_content[a]))
-                                - lineage_content[b] / (sum(lineage_content[b]))
-                                + lineage_content[c] / (sum(lineage_content[c]))
-                            )
+                                prev_branch_length = (
+                                    prev_branch_length
+                                    - lineage_content[a] / (sum(lineage_content[a]))
+                                    - lineage_content[b] / (sum(lineage_content[b]))
+                                    + lineage_content[c] / (sum(lineage_content[c]))
+                                )
                         lineage_content[a] = 0
                         lineage_content[b] = 0
                         tprev = t
@@ -458,6 +478,7 @@ def fixed_parameters(
                         break
                 proportion_of_coalescing_all.append(proportion_of_coalescing_in_tree)
                 epoch_index_all.append(epoch_index_in_tree)
+                sample_list_tree = copy.deepcopy(sample_list)
                 tree.next()
 
     ## correcting opportunity for ancestral samples
