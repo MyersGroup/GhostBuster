@@ -31,9 +31,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "-sample_id",
     "--sample_id",
-    help="The index of the haplotype you wish local ancestry for",
+    help="Enter space seperated list of the indices of haplotype you wish local ancestry for",
+    nargs="+",
     type=int,
-    default=106,  ## 106 is for the first Han
+    default=None,
 )
 parser.add_argument(
     "-window_size",
@@ -220,227 +221,244 @@ def make_one_hot(X, max_X):
 def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
     ## Extracts the ground truth membership from the simulations
     start_time = time.time()
-    print(num_trees)
     print("Calculating the ground truth local ancestry..")
 
     true_assignment_chr = []
     true_assignment_bp = []
     true_assignment_group = []
 
-    ind = sample
-    with open(path + "/assignment.txt", "r") as fp:
+    for sample_no, ind in enumerate(sample):
+        with open(path + "/assignment.txt", "r") as fp:
 
-        line = fp.readline().split()
-        line = fp.readline().split()
-        while line:
-            true_assignment_chr.append(str(line[0]))
-            true_assignment_bp.append(int(line[1]))
-            true_assignment_group.append(line[ind + 2])
             line = fp.readline().split()
+            line = fp.readline().split()
+            while line:
+                true_assignment_chr.append(str(line[0]))
+                true_assignment_bp.append(int(line[1]))
+                true_assignment_group.append(line[ind + 2])
+                line = fp.readline().split()
 
-    true_assignment_group = pd.Series(true_assignment_group).astype("category")
-    true_assignment_group = true_assignment_group.cat.codes
+        true_assignment_group = pd.Series(true_assignment_group).astype("category")
+        true_assignment_group = true_assignment_group.cat.codes
 
-    ground_truth_membership_one_hot = np.zeros(
-        (max(true_assignment_group) + 1, num_trees)
-    )
-    count = 0
-    num_tree = 0
-    for chr in chrs:
-        ts = ts_list[count]
-        count += 1
-        tree = ts.first()
-        prev_interval = tree.interval[0]
-        for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
-            if tree.interval[1] >= prev_interval + window_size:
-                prev_interval = prev_interval + window_size
+        ground_truth_membership_one_hot = np.zeros(
+            (max(true_assignment_group) + 1, len(sample) * num_trees)
+        )
+        count = 0
+        num_tree = 0
+        for chr in chrs:
+            ts = ts_list[count]
+            count += 1
+            tree = ts.first()
+            prev_interval = tree.interval[0]
+            for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+                if tree.interval[1] >= prev_interval + window_size:
+                    prev_interval = prev_interval + window_size
 
-                assigned = False
-                for j in range(0, len(true_assignment_bp)):
-                    # print([tree.interval, true_assignment_bp[j], true_assignment_bp[j+1], true_assignment_chr[j+1] == str(chr), chr])
-                    if true_assignment_chr[j] != str(chr):
-                        continue
-                    if true_assignment_chr[j] == str(chr) and j + 1 == len(
-                        true_assignment_bp
-                    ):
-                        ground_truth_membership_one_hot[
-                            true_assignment_group[j], num_tree
-                        ] = 1
-                        assigned = True
-                        break
-                    if true_assignment_chr[j] == str(chr) and true_assignment_chr[
-                        j + 1
-                    ] != str(chr):
-                        ground_truth_membership_one_hot[
-                            true_assignment_group[j], num_tree
-                        ] = 1
-                        assigned = True
-                        break
-                    if (
-                        true_assignment_chr[j] == str(chr)
-                        and tree.interval[0] < true_assignment_bp[j + 1]
-                        and tree.interval[1] >= true_assignment_bp[j]
-                    ):
-                        # print(true_assignment_group[j])
-                        ground_truth_membership_one_hot[
-                            true_assignment_group[j], num_tree
-                        ] = 1
-                        assigned = True
-                        break
-                if assigned == False:
-                    print(chr, tree.interval)
+                    assigned = False
+                    for j in range(0, len(true_assignment_bp)):
+                        # print([tree.interval, true_assignment_bp[j], true_assignment_bp[j+1], true_assignment_chr[j+1] == str(chr), chr])
+                        if true_assignment_chr[j] != str(chr):
+                            continue
+                        if true_assignment_chr[j] == str(chr) and j + 1 == len(
+                            true_assignment_bp
+                        ):
+                            ground_truth_membership_one_hot[
+                                true_assignment_group[j],
+                                sample_no * num_trees + num_tree,
+                            ] = 1
+                            assigned = True
+                            break
+                        if true_assignment_chr[j] == str(chr) and true_assignment_chr[
+                            j + 1
+                        ] != str(chr):
+                            ground_truth_membership_one_hot[
+                                true_assignment_group[j],
+                                sample_no * num_trees + num_tree,
+                            ] = 1
+                            assigned = True
+                            break
+                        if (
+                            true_assignment_chr[j] == str(chr)
+                            and tree.interval[0] < true_assignment_bp[j + 1]
+                            and tree.interval[1] >= true_assignment_bp[j]
+                        ):
+                            # print(true_assignment_group[j])
+                            ground_truth_membership_one_hot[
+                                true_assignment_group[j],
+                                sample_no * num_trees + num_tree,
+                            ] = 1
+                            assigned = True
+                            break
+                    if assigned == False:
+                        print(chr, tree.interval)
 
-                num_tree += 1
-            tree.next()
+                    num_tree += 1
+                tree.next()
 
-    print(ground_truth_membership_one_hot.sum(axis=0))
-    print(all(ground_truth_membership_one_hot.sum(axis=0)))
     print("Done in " + str(time.time() - start_time))
     return ground_truth_membership_one_hot
 
 
 def fixed_parameters(
-    ts_list, poplabels, unique_groups, num_trees, window_size, target_seq_
+    ts_list, poplabels, unique_groups, num_trees, window_size, sample_list
 ):
     eps = 1e-20
     num_samples = len(list(ts_list[0].first().samples()))
     coal_count = np.zeros(
-        (len(unique_groups), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
+        (
+            len(unique_groups),
+            len(epoch_intervals_pow) - 1,
+            num_trees * len(sample_list),
+        ),
+        dtype="float64",
     )
     opportunity = np.zeros(
-        (len(unique_groups), len(epoch_intervals_pow) - 1, num_trees), dtype="float64"
+        (
+            len(unique_groups),
+            len(epoch_intervals_pow) - 1,
+            num_trees * len(sample_list),
+        ),
+        dtype="float64",
     )
     proportion_of_coalescing_all = []
-    coalescene_times_all = []
     epoch_index_all = []
     count_mut_trees = -1
     group_id = {}
     for u in range(len(unique_groups)):
         group_id[unique_groups[u]] = u
 
-    for ts in ts_list:
-        tree = ts.first()
-        prev_interval = tree.interval[0]
-        for tid in tqdm(range(len(list(ts.trees())))):  # len(list(ts.trees()))
-            if tree.interval[1] < prev_interval + window_size:
-                tree.next()
-                continue
-            prev_interval = prev_interval + window_size
-            count_mut_trees += 1
-            ## Make the coalescene table and sort it
-            coal_events_matrix = []
-            mapping = {}
-            count = num_samples
-            for s in tree.nodes():
-                if s < num_samples:
-                    mapping[s] = s
-                else:
-                    mapping[s] = count
-                    count += 1
-            for s in tree.nodes():
-                if tree.children(s) != ():
-                    a = tree.children(s)[0]
-                    b = tree.children(s)[1]
-                    c = s
-                    t = tree.time(c)
-                    coal_events_matrix.append(
-                        [int(mapping[a]), int(mapping[b]), int(mapping[c]), t]
-                    )
-            coal_events_matrix = np.array(coal_events_matrix, dtype="float64")
-            coal_events_matrix = coal_events_matrix[
-                coal_events_matrix[:, 3].argsort()
-            ]  ## sorting based on coalescene times
-            lineage_content = np.zeros(
-                (2 * num_samples - 1, len(unique_groups)), dtype="float64"
-            )
-            target_seq = target_seq_
-            for m in range(len(poplabels)):
-                lineage_content[2 * m : 2 * m + 2, group_id[poplabels.GROUP.loc[m]]] = 1
-            lineage_content[
-                target_seq
-            ] = 0  ## setting lineage content of target sequence = 0
-            prev_branch_length = np.sum(
-                lineage_content, axis=0
-            )  # np.sum(lineage_content[:,1])
-            proportion_of_coalescing_in_tree = []
-            coalescene_times_in_tree = []
-            epoch_index_in_tree = []
-            event_count = 0
-            for epoch in range(len(epoch_intervals_pow) - 1):
-                coal_events_submatrix = coal_events_matrix[
-                    (coal_events_matrix[:, 3] >= epoch_intervals_pow[epoch])
-                    & (coal_events_matrix[:, 3] < epoch_intervals_pow[epoch + 1])
-                ]
-                tprev = epoch_intervals_pow[epoch]
-                for (a, b, c, t) in coal_events_submatrix:
-                    event_count += 1
-                    a = int(a)
-                    b = int(b)
-                    c = int(c)
-                    opportunity[:, epoch, count_mut_trees] += (t - tprev) * (
-                        prev_branch_length
-                    )
-                    if a == target_seq:
-                        proportion_of_coalescing = copy.deepcopy(lineage_content[b]) / (
-                            sum(lineage_content[b])
-                        )
-                        coal_count[
-                            :, epoch, count_mut_trees
-                        ] += proportion_of_coalescing
-                        target_seq = c
-                        lineage_content[c] = 0
-                        proportion_of_coalescing_in_tree.append(
-                            proportion_of_coalescing
-                        )
-                        epoch_index_in_tree.append(epoch)
-                        prev_branch_length = prev_branch_length - lineage_content[b] / (
-                            sum(lineage_content[b])
-                        )
-                    elif b == target_seq:
-                        proportion_of_coalescing = copy.deepcopy(lineage_content[a]) / (
-                            sum(lineage_content[a])
-                        )  ## sum() faster than np.sum()
-                        coal_count[
-                            :, epoch, count_mut_trees
-                        ] += proportion_of_coalescing
-                        target_seq = c
-                        lineage_content[c] = 0
-                        proportion_of_coalescing_in_tree.append(
-                            proportion_of_coalescing
-                        )
-                        epoch_index_in_tree.append(epoch)
-                        prev_branch_length = prev_branch_length - lineage_content[a] / (
-                            sum(lineage_content[a])
-                        )
+    for sample_no, target_seq_ in enumerate(sample_list):
+        for ts in ts_list:
+            tree = ts.first()
+            prev_interval = tree.interval[0]
+            for tid in tqdm(range(len(list(ts.trees())))):  # len(list(ts.trees()))
+                if tree.interval[1] < prev_interval + window_size:
+                    tree.next()
+                    continue
+                prev_interval = prev_interval + window_size
+                count_mut_trees += 1
+                ## Make the coalescene table and sort it
+                coal_events_matrix = []
+                mapping = {}
+                count = num_samples
+                for s in tree.nodes():
+                    if s < num_samples:
+                        mapping[s] = s
                     else:
-                        lineage_content[c] = lineage_content[a] + lineage_content[b]
-
-                        if sum(lineage_content[a]) == 0 or sum(lineage_content[b]) == 0:
-                            print(tree.interval)
-                            print(a, b)
-                            print(lineage_content[a])
-                            print(lineage_content[b])
-                        prev_branch_length = (
-                            prev_branch_length
-                            - lineage_content[a] / (sum(lineage_content[a]))
-                            - lineage_content[b] / (sum(lineage_content[b]))
-                            + lineage_content[c] / (sum(lineage_content[c]))
+                        mapping[s] = count
+                        count += 1
+                for s in tree.nodes():
+                    if tree.children(s) != ():
+                        a = tree.children(s)[0]
+                        b = tree.children(s)[1]
+                        c = s
+                        t = tree.time(c)
+                        coal_events_matrix.append(
+                            [int(mapping[a]), int(mapping[b]), int(mapping[c]), t]
                         )
-                    lineage_content[a] = 0
-                    lineage_content[b] = 0
-                    tprev = t
-                if epoch < len(epoch_intervals_pow) - 2:
-                    opportunity[:, epoch, count_mut_trees] += (
-                        epoch_intervals_pow[epoch + 1] - tprev
-                    ) * (prev_branch_length)
-                if (event_count == num_samples - 1) and epoch <= len(
-                    epoch_intervals_pow
-                ) - 2:
-                    opportunity[:, epoch + 1 :, count_mut_trees] = 0.0
-                    break
-            proportion_of_coalescing_all.append(proportion_of_coalescing_in_tree)
-            epoch_index_all.append(epoch_index_in_tree)
-            tree.next()
+                coal_events_matrix = np.array(coal_events_matrix, dtype="float64")
+                coal_events_matrix = coal_events_matrix[
+                    coal_events_matrix[:, 3].argsort()
+                ]  ## sorting based on coalescene times
+                lineage_content = np.zeros(
+                    (2 * num_samples - 1, len(unique_groups)), dtype="float64"
+                )
+                target_seq = target_seq_
+                for m in range(len(poplabels)):
+                    lineage_content[
+                        2 * m : 2 * m + 2, group_id[poplabels.GROUP.loc[m]]
+                    ] = 1
+                lineage_content[
+                    target_seq
+                ] = 0  ## setting lineage content of target sequence = 0
+                prev_branch_length = np.sum(
+                    lineage_content, axis=0
+                )  # np.sum(lineage_content[:,1])
+                proportion_of_coalescing_in_tree = []
+                coalescene_times_in_tree = []
+                epoch_index_in_tree = []
+                event_count = 0
+                for epoch in range(len(epoch_intervals_pow) - 1):
+                    coal_events_submatrix = coal_events_matrix[
+                        (coal_events_matrix[:, 3] >= epoch_intervals_pow[epoch])
+                        & (coal_events_matrix[:, 3] < epoch_intervals_pow[epoch + 1])
+                    ]
+                    tprev = epoch_intervals_pow[epoch]
+                    for (a, b, c, t) in coal_events_submatrix:
+                        event_count += 1
+                        a = int(a)
+                        b = int(b)
+                        c = int(c)
+                        opportunity[:, epoch, count_mut_trees] += (t - tprev) * (
+                            prev_branch_length
+                        )
+                        if a == target_seq:
+                            proportion_of_coalescing = copy.deepcopy(
+                                lineage_content[b]
+                            ) / (sum(lineage_content[b]))
+                            coal_count[
+                                :, epoch, count_mut_trees
+                            ] += proportion_of_coalescing
+                            target_seq = c
+                            lineage_content[c] = 0
+                            proportion_of_coalescing_in_tree.append(
+                                proportion_of_coalescing
+                            )
+                            epoch_index_in_tree.append(epoch)
+                            prev_branch_length = prev_branch_length - lineage_content[
+                                b
+                            ] / (sum(lineage_content[b]))
+                        elif b == target_seq:
+                            proportion_of_coalescing = copy.deepcopy(
+                                lineage_content[a]
+                            ) / (
+                                sum(lineage_content[a])
+                            )  ## sum() faster than np.sum()
+                            coal_count[
+                                :, epoch, count_mut_trees
+                            ] += proportion_of_coalescing
+                            target_seq = c
+                            lineage_content[c] = 0
+                            proportion_of_coalescing_in_tree.append(
+                                proportion_of_coalescing
+                            )
+                            epoch_index_in_tree.append(epoch)
+                            prev_branch_length = prev_branch_length - lineage_content[
+                                a
+                            ] / (sum(lineage_content[a]))
+                        else:
+                            lineage_content[c] = lineage_content[a] + lineage_content[b]
+
+                            if (
+                                sum(lineage_content[a]) == 0
+                                or sum(lineage_content[b]) == 0
+                            ):
+                                print(tree.interval)
+                                print(a, b)
+                                print(lineage_content[a])
+                                print(lineage_content[b])
+                            prev_branch_length = (
+                                prev_branch_length
+                                - lineage_content[a] / (sum(lineage_content[a]))
+                                - lineage_content[b] / (sum(lineage_content[b]))
+                                + lineage_content[c] / (sum(lineage_content[c]))
+                            )
+                        lineage_content[a] = 0
+                        lineage_content[b] = 0
+                        tprev = t
+                    if epoch < len(epoch_intervals_pow) - 2:
+                        opportunity[:, epoch, count_mut_trees] += (
+                            epoch_intervals_pow[epoch + 1] - tprev
+                        ) * (prev_branch_length)
+                    if (event_count == num_samples - 1) and epoch <= len(
+                        epoch_intervals_pow
+                    ) - 2:
+                        opportunity[:, epoch + 1 :, count_mut_trees] = 0.0
+                        break
+                proportion_of_coalescing_all.append(proportion_of_coalescing_in_tree)
+                epoch_index_all.append(epoch_index_in_tree)
+                tree.next()
 
     ## correcting opportunity for ancestral samples
     for epoch in range(len(epoch_intervals_pow) - 1):
@@ -665,6 +683,7 @@ def update_membership(
 
 
 def main(args, plot=False, gamma_arr=None):
+    print("Considering sample ids: " + str(args.sample_id))
 
     ### Add all input assertions here:
     if (args.load_gamma == None and args.load_props != None) or (
@@ -738,6 +757,11 @@ def main(args, plot=False, gamma_arr=None):
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
             )
 
+    num_samples = len(list(ts_list[0].first().samples()))
+    for sample in args.sample_id:
+        if sample >= num_samples or sample < 0:
+            raise ValueError("The sample ids are out of range")
+
     filename = ".treepos"
     if args.relate_trees:
         filename = "Relate" + filename
@@ -792,7 +816,9 @@ def main(args, plot=False, gamma_arr=None):
                 fraction_snps_not_mapping,
             ) = compute_tree_stats(ts_list, chrs=chrs, window_size=args.window_size)
             mask_dodgy = mask_for_dodgy_trees(
-                frac_branches_with_snp, num_snps_on_tree, args.masking_threshold
+                frac_branches_with_snp * len(args.sample_id),
+                num_snps_on_tree * len(args.sample_id),
+                args.masking_threshold,
             )
 
             f_pkl = open(tree_stats_file_name, "wb")
@@ -815,10 +841,12 @@ def main(args, plot=False, gamma_arr=None):
             print("Tree statistics stored in: " + str(tree_stats_file_name))
 
     else:
-        mask_dodgy = np.ones(num_trees, dtype=bool)  ## No masking needed for true trees
+        mask_dodgy = np.ones(
+            num_trees * len(args.sample_id), dtype=bool
+        )  ## No masking needed for true trees
 
     print("Trees with high certainty = " + str(np.sum(mask_dodgy)))
-    masked_trees_index = np.arange(0, num_trees)[mask_dodgy]
+    masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
 
     if args.props_per_chrs:
         trees_per_chr_masked = []
@@ -932,7 +960,10 @@ def main(args, plot=False, gamma_arr=None):
         own_membership = ground_truth_membership[:, mask_dodgy]
     else:
         own_membership = np.array(
-            np.random.dirichlet(np.ones(num_clusters), num_trees).T, dtype="float64"
+            np.random.dirichlet(
+                np.ones(num_clusters), len(args.sample_id) * num_trees
+            ).T,
+            dtype="float64",
         )[:, mask_dodgy]
 
     if args.load_gamma:
@@ -1081,9 +1112,9 @@ def main(args, plot=False, gamma_arr=None):
             ## Tree stats
             if args.verbose and args.relate_trees:
                 proportion_of_coalescing_top2 = np.zeros(
-                    (num_trees, 2, len(unique_groups))
+                    (len(args.sample_id) * num_trees, 2, len(unique_groups))
                 )
-                for tid in range(num_trees):
+                for tid in range(len(args.sample_id) * num_trees):
                     proportion_of_coalescing_top2[
                         tid, :, :
                     ] = proportion_of_coalescing_all[tid][0:2]
@@ -1097,25 +1128,25 @@ def main(args, plot=False, gamma_arr=None):
                 num_snps_x_all = []
                 frac_snps_x_all = []
                 for i in range(len(own_membership)):
-                    tree_size_i = np.array(tree_size)[mask_dodgy][
+                    tree_size_i = np.array(len(args.sample_id) * tree_size)[mask_dodgy][
                         np.argmax(own_membership, axis=0) == i
                     ]
-                    num_mutations_i = np.array(no_of_mutations)[mask_dodgy][
-                        np.argmax(own_membership, axis=0) == i
-                    ]
-                    recomb_rates_i = np.array(recomb_rates)[mask_dodgy][
-                        np.argmax(own_membership, axis=0) == i
-                    ]
+                    num_mutations_i = np.array(len(args.sample_id) * no_of_mutations)[
+                        mask_dodgy
+                    ][np.argmax(own_membership, axis=0) == i]
+                    recomb_rates_i = np.array(len(args.sample_id) * recomb_rates)[
+                        mask_dodgy
+                    ][np.argmax(own_membership, axis=0) == i]
                     recomb_rates_i = recomb_rates_i[~np.isnan(np.array(recomb_rates_i))]
-                    frac_branches_with_snp_i = np.array(frac_branches_with_snp)[
-                        mask_dodgy
-                    ][np.argmax(own_membership, axis=0) == i]
-                    num_snps_on_tree_i = np.array(num_snps_on_tree)[mask_dodgy][
-                        np.argmax(own_membership, axis=0) == i
-                    ]
-                    fraction_snps_not_mapping_i = np.array(fraction_snps_not_mapping)[
-                        mask_dodgy
-                    ][np.argmax(own_membership, axis=0) == i]
+                    frac_branches_with_snp_i = np.array(
+                        len(args.sample_id) * frac_branches_with_snp
+                    )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
+                    num_snps_on_tree_i = np.array(
+                        len(args.sample_id) * num_snps_on_tree
+                    )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
+                    fraction_snps_not_mapping_i = np.array(
+                        len(args.sample_id) * fraction_snps_not_mapping
+                    )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
                     frac_branch_x_all.extend(frac_branches_with_snp_i)
                     num_snps_x_all.extend(num_snps_on_tree_i)
                     frac_snps_x_all.extend(fraction_snps_not_mapping_i)
@@ -1223,12 +1254,16 @@ def main(args, plot=False, gamma_arr=None):
     if args.evaluate_local_ancestry:
         ## Final local ancestry inference on all trees
         own_membership_update = np.ones(
-            (len(own_membership), num_trees), dtype="float64"
+            (len(own_membership), len(args.sample_id) * num_trees), dtype="float64"
         )
 
-        log_num_em = np.zeros((len(own_membership), num_trees), dtype="float64")
-        log_denom_em = np.zeros((len(own_membership), num_trees), dtype="float64")
-        for tid in range(num_trees):
+        log_num_em = np.zeros(
+            (len(own_membership), len(args.sample_id) * num_trees), dtype="float64"
+        )
+        log_denom_em = np.zeros(
+            (len(own_membership), len(args.sample_id) * num_trees), dtype="float64"
+        )
+        for tid in range(len(args.sample_id) * num_trees):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
             for j in range(len(own_membership)):
