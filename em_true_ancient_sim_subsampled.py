@@ -41,7 +41,7 @@ parser.add_argument(
     "--window_size",
     help="Window size to subsample the trees",
     type=int,
-    default=50000,
+    default=0,
 )
 parser.add_argument(
     "-relate_trees",
@@ -57,6 +57,13 @@ parser.add_argument(
     help="Plotting gammas for each iteration",
     type=boolean,
     default=False,
+)
+parser.add_argument(
+    "-o",
+    "--output",
+    help="Output prefix",
+    type=str,
+    default="",
 )
 parser.add_argument(
     "-chrs",
@@ -166,6 +173,13 @@ parser.add_argument(
     default=7,
 )
 parser.add_argument(
+    "-num_epochs",
+    "--num_epochs",
+    help="Num epochs",
+    type=int,
+    default=10,
+)
+parser.add_argument(
     "-ignore_first_epoch",
     "--ignore_first_epoch",
     help="Ignore first epoch while calculating the local ancestry in the EM",
@@ -192,7 +206,7 @@ args = parser.parse_args()
 epoch_intervals = np.array(
     [-np.inf]
     + np.linspace(
-        args.start_time - math.log(28, 10), args.end_time - math.log(28, 10), 9
+        args.start_time - math.log(28, 10), args.end_time - math.log(28, 10), args.num_epochs-1
     ).tolist()
     + [np.inf],
     dtype="float64",
@@ -636,7 +650,7 @@ def mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, masking_thres
 def write_coal(gamma_arr, filename, labs, is_relate):
 
     if is_relate:
-        filename = "RelateTrees_" + filename
+        filename = args.output + "_" + filename
     else:
         filename = "TrueTrees_" + filename
 
@@ -704,6 +718,8 @@ def update_membership(
 
 
 def main(args, plot=False, gamma_arr=None):
+
+    sample_id_label = '_'.join([str(e) for e in args.sample_id])
     print("Considering sample ids: " + str(args.sample_id))
 
     ### Add all input assertions here:
@@ -734,8 +750,8 @@ def main(args, plot=False, gamma_arr=None):
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
     tree_stats_file_name = (
-        "tree_stats_"
-        + str(args.sample_id)
+        args.output + "_tree_stats_"
+        + sample_id_label
         + "_"
         + str(args.window_size)
         + "_"
@@ -747,8 +763,8 @@ def main(args, plot=False, gamma_arr=None):
         + ".pkl"
     )
     fixed_params_file_name = (
-        "fixed_params_"
-        + str(args.sample_id)
+        args.output + "_fixed_params_"
+        + sample_id_label
         + "_"
         + str(args.window_size)
         + "_"
@@ -773,7 +789,7 @@ def main(args, plot=False, gamma_arr=None):
                 path + args.trees + "_chr" + str(chr) + ".trees"
             )  ## relate trees
             ts_list.append(ts)
-        if len(poplabels) != ts_list[0].num_samples / 2:  ## only valid for diploid
+        if len(poplabels) != ts_list[0].num_samples:  ## only valid for diploid
             raise ValueError(
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
             )
@@ -1125,7 +1141,7 @@ def main(args, plot=False, gamma_arr=None):
                 )
                 print(
                     "Sample = "
-                    + str(args.sample_id)
+                    + sample_id_label
                     + " Accuracy = "
                     + str(overall_acc)
                 )
@@ -1207,18 +1223,18 @@ def main(args, plot=False, gamma_arr=None):
             if args.plot_intermediate_gammas:
                 write_coal(
                     gamma_arr,
-                    "stdpopsim_" + str(args.sample_id) + "_iter" + str(epoch) + ".coal",
+                    sample_id_label + "_iter" + str(epoch) + ".coal",
                     unique_groups,
                     args.relate_trees,
                 )
                 with open(
-                    "gamma_" + str(args.sample_id) + "_iter" + str(epoch) + ".npy", "wb"
+                    args.output + "_gamma_" + sample_id_label + "_iter" + str(epoch) + ".npy", "wb"
                 ) as f:
                     np.save(f, gamma_arr)
 
-                filename = "membership_" + str(args.sample_id) + ".npy"
+                filename = "membership_" + sample_id_label + ".npy"
                 if args.relate_trees:
-                    filename = "RelateTrees_" + filename
+                    filename = args.output +"_" + filename
                 else:
                     filename = "TrueTrees_" + filename
                 with open(filename, "wb") as f:
@@ -1230,20 +1246,20 @@ def main(args, plot=False, gamma_arr=None):
             #    if np.abs((log_likelihood_arr[-1] - log_likelihood_arr[-2])/log_likelihood_arr[-2]) < 0.00001:
             #        break ## stop if log-likelihood isn't changing much
 
-        if (
-            np.abs(
-                (log_likelihood_arr[-1] - log_likelihood_arr[-2])
-                / log_likelihood_arr[-2]
-            )
-            > 0.001
-        ):
-            warnings.warn(
-                "The log-likelihood is still increasing, you should consider running for longer"
-            )
+        #if (
+        #    np.abs(
+        #        (log_likelihood_arr[-1] - log_likelihood_arr[-2])
+        #        / log_likelihood_arr[-2]
+        #    )
+        #    > 0.001
+        #):
+        #    warnings.warn(
+        #        "The log-likelihood is still increasing, you should consider running for longer"
+        #    )
 
         print(
             "Sample = "
-            + str(args.sample_id)
+            + sample_id_label
             + " Epochs = "
             + str(epoch)
             + " Total time = "
@@ -1255,7 +1271,7 @@ def main(args, plot=False, gamma_arr=None):
         ## gamma plots
         write_coal(
             gamma_arr,
-            "stdpopsim_" + str(args.sample_id) + ".coal",
+            sample_id_label + ".coal",
             unique_groups,
             args.relate_trees,
         )
@@ -1263,14 +1279,21 @@ def main(args, plot=False, gamma_arr=None):
         if args.mode == "sim":
             ## Calculate the calibration on the rich-trees
             mapping = np.argmax(acc_arr, axis=1)
-            for i in range(len(own_membership)):
-                y, x = calibration_curve(
-                    ground_truth_membership[mapping[i], mask_dodgy],
-                    own_membership[i],
-                    n_bins=20,
-                )
-                print("Calibration x: " + str(x))
-                print("Calibration y: " + str(y))
+
+            filename = "calibration.txt"
+            if args.relate_trees:
+              filename = args.output + "_" + filename
+            else:
+              filename = "TrueTrees_" + filename
+            with open(filename, "w") as f:
+              for i in range(len(own_membership)):
+                  y, x = calibration_curve(
+                      ground_truth_membership[mapping[i], mask_dodgy],
+                      own_membership[i],
+                      n_bins=20,
+                  )
+                  for k in range(len(x)):
+                    f.write(str(i) + ' ' + str(x[k]) + ' ' + str(y[k]) + '\n')
 
     if args.evaluate_local_ancestry:
         ## Final local ancestry inference on all trees
@@ -1331,14 +1354,25 @@ def main(args, plot=False, gamma_arr=None):
         own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
         filename = (
-            "overall_membership_" + str(args.sample_id) + ".npy"
+            "overall_membership_" + sample_id_label + ".npy"
         )  ## this saves membership for all the trees (without the filtering)
         if args.relate_trees:
-            filename = "RelateTrees_" + filename
+            filename = args.output + "_" + filename
         else:
             filename = "TrueTrees_" + filename
         with open(filename, "wb") as f:
             np.save(f, own_membership)
+
+        if args.mode == "sim":
+          filename = (
+             "ground_truth_membership_" + sample_id_label + ".npy"
+             )  ## this saves membership for all the trees (without the filtering)
+          if args.relate_trees:
+            filename = args.output + "_" + filename
+          else:
+            filename = "TrueTrees_" + filename
+          with open(filename, "wb") as f:
+            np.save(f, ground_truth_membership)
 
     if args.mode == "sim":
         return overall_acc
