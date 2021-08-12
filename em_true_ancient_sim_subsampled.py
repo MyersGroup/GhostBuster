@@ -812,19 +812,23 @@ def main(args, plot=False, gamma_arr=None):
     if args.trees != None:
         trees_per_chr = []
         num_trees = 0
-        for ts in ts_list:
-            tree = ts.first()
-            prev_interval = tree.interval[0]
-            # prev_interval = 0
-            start_pos = copy.deepcopy(num_trees)
-            for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
-                if tree.interval[1] >= prev_interval + args.window_size:
-                    f.write(str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n")
-                    prev_interval = prev_interval + args.window_size
-                    num_trees += 1
-                tree.next()
-            trees_per_chr.append((start_pos, num_trees))
+        for sample_no in range(len(args.sample_id)):
+            for ts in ts_list:
+                tree = ts.first()
+                prev_interval = tree.interval[0]
+                # prev_interval = 0
+                start_pos = copy.deepcopy(num_trees)
+                for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+                    if tree.interval[1] >= prev_interval + args.window_size:
+                        f.write(
+                            str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n"
+                        )
+                        prev_interval = prev_interval + args.window_size
+                        num_trees += 1
+                    tree.next()
+                trees_per_chr.append((start_pos, num_trees))
         f.close()
+        num_trees = int(num_trees / len(args.sample_id))
         print("Total number of trees = " + str(num_trees))
 
     if args.relate_trees:
@@ -885,7 +889,9 @@ def main(args, plot=False, gamma_arr=None):
             num_trees * len(args.sample_id), dtype=bool
         )  ## No masking needed for true trees
 
-    print("Trees with high certainty = " + str(np.sum(mask_dodgy)))
+    print(
+        "Trees with high certainty = " + str(np.sum(mask_dodgy) / len(args.sample_id))
+    )
     masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
 
     if args.props_per_chrs:
@@ -988,7 +994,6 @@ def main(args, plot=False, gamma_arr=None):
             args.sample_id,
         )
 
-    print(np.min(denom))
     if (denom < -1e-8).any():
         raise ValueError(
             "The opportunity has negative values, check the sampling times in poplabels.txt"
