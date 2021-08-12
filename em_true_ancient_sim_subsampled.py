@@ -206,7 +206,9 @@ args = parser.parse_args()
 epoch_intervals = np.array(
     [-np.inf]
     + np.linspace(
-        args.start_time - math.log(28, 10), args.end_time - math.log(28, 10), args.num_epochs-1
+        args.start_time - math.log(28, 10),
+        args.end_time - math.log(28, 10),
+        args.num_epochs - 1,
     ).tolist()
     + [np.inf],
     dtype="float64",
@@ -381,9 +383,7 @@ def fixed_parameters(
                 )
                 target_seq = target_seq_
                 for m in range(len(poplabels)):
-                    lineage_content[
-                        2 * m : 2 * m + 2, group_id[poplabels.GROUP.loc[m]]
-                    ] = 1
+                    lineage_content[m : m + 1, group_id[poplabels.GROUP.loc[m]]] = 1
                 for t in sample_list_tree:
                     lineage_content[
                         t
@@ -719,7 +719,7 @@ def update_membership(
 
 def main(args, plot=False, gamma_arr=None):
 
-    sample_id_label = '_'.join([str(e) for e in args.sample_id])
+    sample_id_label = "_".join([str(e) for e in args.sample_id])
     print("Considering sample ids: " + str(args.sample_id))
 
     ### Add all input assertions here:
@@ -750,7 +750,8 @@ def main(args, plot=False, gamma_arr=None):
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
     tree_stats_file_name = (
-        args.output + "_tree_stats_"
+        args.output
+        + "_tree_stats_"
         + sample_id_label
         + "_"
         + str(args.window_size)
@@ -763,7 +764,8 @@ def main(args, plot=False, gamma_arr=None):
         + ".pkl"
     )
     fixed_params_file_name = (
-        args.output + "_fixed_params_"
+        args.output
+        + "_fixed_params_"
         + sample_id_label
         + "_"
         + str(args.window_size)
@@ -789,7 +791,8 @@ def main(args, plot=False, gamma_arr=None):
                 path + args.trees + "_chr" + str(chr) + ".trees"
             )  ## relate trees
             ts_list.append(ts)
-        if len(poplabels) != ts_list[0].num_samples:  ## only valid for diploid
+        if len(poplabels) != ts_list[0].num_samples:
+            ## num_samples is number of haplotypes
             raise ValueError(
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
             )
@@ -985,6 +988,7 @@ def main(args, plot=False, gamma_arr=None):
             args.sample_id,
         )
 
+    print(np.min(denom))
     if (denom < -1e-8).any():
         raise ValueError(
             "The opportunity has negative values, check the sampling times in poplabels.txt"
@@ -1139,12 +1143,7 @@ def main(args, plot=False, gamma_arr=None):
                     / len(membership_thresh)
                     / len(membership_thresh[0])
                 )
-                print(
-                    "Sample = "
-                    + sample_id_label
-                    + " Accuracy = "
-                    + str(overall_acc)
-                )
+                print("Sample = " + sample_id_label + " Accuracy = " + str(overall_acc))
 
             ## Tree stats
             if args.verbose and args.relate_trees:
@@ -1228,13 +1227,19 @@ def main(args, plot=False, gamma_arr=None):
                     args.relate_trees,
                 )
                 with open(
-                    args.output + "_gamma_" + sample_id_label + "_iter" + str(epoch) + ".npy", "wb"
+                    args.output
+                    + "_gamma_"
+                    + sample_id_label
+                    + "_iter"
+                    + str(epoch)
+                    + ".npy",
+                    "wb",
                 ) as f:
                     np.save(f, gamma_arr)
 
                 filename = "membership_" + sample_id_label + ".npy"
                 if args.relate_trees:
-                    filename = args.output +"_" + filename
+                    filename = args.output + "_" + filename
                 else:
                     filename = "TrueTrees_" + filename
                 with open(filename, "wb") as f:
@@ -1246,13 +1251,13 @@ def main(args, plot=False, gamma_arr=None):
             #    if np.abs((log_likelihood_arr[-1] - log_likelihood_arr[-2])/log_likelihood_arr[-2]) < 0.00001:
             #        break ## stop if log-likelihood isn't changing much
 
-        #if (
+        # if (
         #    np.abs(
         #        (log_likelihood_arr[-1] - log_likelihood_arr[-2])
         #        / log_likelihood_arr[-2]
         #    )
         #    > 0.001
-        #):
+        # ):
         #    warnings.warn(
         #        "The log-likelihood is still increasing, you should consider running for longer"
         #    )
@@ -1282,18 +1287,18 @@ def main(args, plot=False, gamma_arr=None):
 
             filename = "calibration.txt"
             if args.relate_trees:
-              filename = args.output + "_" + filename
+                filename = args.output + "_" + filename
             else:
-              filename = "TrueTrees_" + filename
+                filename = "TrueTrees_" + filename
             with open(filename, "w") as f:
-              for i in range(len(own_membership)):
-                  y, x = calibration_curve(
-                      ground_truth_membership[mapping[i], mask_dodgy],
-                      own_membership[i],
-                      n_bins=20,
-                  )
-                  for k in range(len(x)):
-                    f.write(str(i) + ' ' + str(x[k]) + ' ' + str(y[k]) + '\n')
+                for i in range(len(own_membership)):
+                    y, x = calibration_curve(
+                        ground_truth_membership[mapping[i], mask_dodgy],
+                        own_membership[i],
+                        n_bins=20,
+                    )
+                    for k in range(len(x)):
+                        f.write(str(i) + " " + str(x[k]) + " " + str(y[k]) + "\n")
 
     if args.evaluate_local_ancestry:
         ## Final local ancestry inference on all trees
@@ -1364,15 +1369,15 @@ def main(args, plot=False, gamma_arr=None):
             np.save(f, own_membership)
 
         if args.mode == "sim":
-          filename = (
-             "ground_truth_membership_" + sample_id_label + ".npy"
-             )  ## this saves membership for all the trees (without the filtering)
-          if args.relate_trees:
-            filename = args.output + "_" + filename
-          else:
-            filename = "TrueTrees_" + filename
-          with open(filename, "wb") as f:
-            np.save(f, ground_truth_membership)
+            filename = (
+                "ground_truth_membership_" + sample_id_label + ".npy"
+            )  ## this saves membership for all the trees (without the filtering)
+            if args.relate_trees:
+                filename = args.output + "_" + filename
+            else:
+                filename = "TrueTrees_" + filename
+            with open(filename, "wb") as f:
+                np.save(f, ground_truth_membership)
 
     if args.mode == "sim":
         return overall_acc
