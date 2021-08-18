@@ -14,6 +14,7 @@ import pickle
 import copy
 import warnings
 import os
+from pathlib import Path
 
 
 def boolean(v):
@@ -244,7 +245,7 @@ def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
     true_assignment_group = []
 
     for sample_no, ind in enumerate(sample):
-        with open(path + "/assignment.txt", "r") as fp:
+        with open(Path(path) / "assignment.txt") as fp:
 
             line = fp.readline().split()
             line = fp.readline().split()
@@ -585,7 +586,7 @@ def compute_tree_stats(ts_list, chrs, window_size):
             [0] + recomb_map_arr[:-1, 0].tolist()
         )
         relate_quality_output = pd.read_csv(
-            path + args.trees + "_chr" + str(chr) + ".qual",
+            Path(path) / str(args.trees + "_chr" + str(chr) + ".qual"),
             sep=" ",
         )
         ts = ts_list[count]
@@ -743,7 +744,7 @@ def main(args, plot=False, gamma_arr=None):
         )
     start_time = time.time()
     num_clusters = args.num_clusters
-    poplabels = pd.read_csv(path + "poplabels.txt", sep=" ")
+    poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep=" ")
     unique_groups = np.unique(poplabels.GROUP)
 
     ts_list = []
@@ -788,7 +789,7 @@ def main(args, plot=False, gamma_arr=None):
     if args.trees != None:
         for chr in chrs:
             ts = tskit.load(
-                path + args.trees + "_chr" + str(chr) + ".trees"
+                Path(path) / str(args.trees + "_chr" + str(chr) + ".trees")
             )  ## relate trees
             ts_list.append(ts)
         if len(poplabels) != ts_list[0].num_samples:
