@@ -346,6 +346,7 @@ def fixed_parameters(
         group_id[unique_groups[u]] = u
 
     for sample_no, target_seq_ in enumerate(sample_list):
+        count_mut_trees_prev = copy.deepcopy(count_mut_trees)
         for ts in ts_list:
             tree = ts.first()
             prev_interval = tree.interval[0]
@@ -401,15 +402,21 @@ def fixed_parameters(
                         (coal_events_matrix[:, 3] >= epoch_intervals_pow[epoch])
                         & (coal_events_matrix[:, 3] < epoch_intervals_pow[epoch + 1])
                     ]
-                    tprev = epoch_intervals_pow[epoch]
+                    tprev = max(
+                        epoch_intervals_pow[epoch],
+                        poplabels.SAMPLING_TIME.loc[target_seq_],
+                    )  ##only considering coalescene events after the sampling time of the target
+
                     for (a, b, c, t) in coal_events_submatrix:
                         event_count += 1
                         a = int(a)
                         b = int(b)
                         c = int(c)
-                        opportunity[:, epoch, count_mut_trees] += (t - tprev) * (
+                        opportunity[:, epoch, count_mut_trees] += (
+                            max(t, poplabels.SAMPLING_TIME.loc[target_seq_]) - tprev
+                        ) * (
                             prev_branch_length
-                        )
+                        )  ##only considering coalescene events after the sampling time of the target
                         if (
                             a in sample_list_tree and b in sample_list_tree
                         ):  ## sometimes the target sequences coalesces with each other, in that case we append the coalesced node to the sample's list for that tree
@@ -481,10 +488,14 @@ def fixed_parameters(
                                 )
                         lineage_content[a] = 0
                         lineage_content[b] = 0
-                        tprev = t
+                        tprev = max(t, poplabels.SAMPLING_TIME.loc[target_seq_])
                     if epoch < len(epoch_intervals_pow) - 2:
                         opportunity[:, epoch, count_mut_trees] += (
-                            epoch_intervals_pow[epoch + 1] - tprev
+                            max(
+                                epoch_intervals_pow[epoch + 1],
+                                poplabels.SAMPLING_TIME.loc[target_seq_],
+                            )
+                            - max(tprev, poplabels.SAMPLING_TIME.loc[target_seq_])
                         ) * (prev_branch_length)
                     if (event_count == num_samples - 1) and epoch <= len(
                         epoch_intervals_pow
@@ -496,20 +507,41 @@ def fixed_parameters(
                 sample_list_tree = copy.deepcopy(sample_list)
                 tree.next()
 
-    ## correcting opportunity for ancestral samples
-    for epoch in range(len(epoch_intervals_pow) - 1):
+        ## correcting opportunity for ancestral reference samples
         for m in range(len(poplabels)):
-            if poplabels.SAMPLING_TIME.loc[m] >= epoch_intervals_pow[epoch + 1]:
-                opportunity[group_id[poplabels.GROUP.loc[m]], epoch, :] -= (
-                    epoch_intervals_pow[epoch + 1] - epoch_intervals_pow[epoch]
-                )
-            elif (
-                poplabels.SAMPLING_TIME.loc[m] > epoch_intervals_pow[epoch]
-                and poplabels.SAMPLING_TIME.loc[m] < epoch_intervals_pow[epoch + 1]
-            ):
-                opportunity[group_id[poplabels.GROUP.loc[m]], epoch, :] -= (
-                    poplabels.SAMPLING_TIME.loc[m] - epoch_intervals_pow[epoch]
-                )
+            if not m in sample_list:
+                for epoch in range(len(epoch_intervals_pow) - 1):
+                    if (
+                        epoch_intervals_pow[epoch + 1]
+                        < poplabels.SAMPLING_TIME.loc[target_seq_]
+                    ):
+                        continue
+                    if poplabels.SAMPLING_TIME.loc[m] >= epoch_intervals_pow[epoch + 1]:
+                        opportunity[
+                            group_id[poplabels.GROUP.loc[m]],
+                            epoch,
+                            count_mut_trees_prev + 1 : count_mut_trees + 1,
+                        ] -= epoch_intervals_pow[epoch + 1] - max(
+                            epoch_intervals_pow[epoch],
+                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                        )
+                    elif (
+                        poplabels.SAMPLING_TIME.loc[m]
+                        > max(
+                            epoch_intervals_pow[epoch],
+                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                        )
+                        and poplabels.SAMPLING_TIME.loc[m]
+                        < epoch_intervals_pow[epoch + 1]
+                    ):
+                        opportunity[
+                            group_id[poplabels.GROUP.loc[m]],
+                            epoch,
+                            count_mut_trees_prev + 1 : count_mut_trees + 1,
+                        ] -= poplabels.SAMPLING_TIME.loc[m] - max(
+                            epoch_intervals_pow[epoch],
+                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                        )
 
     return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
 
