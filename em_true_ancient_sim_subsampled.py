@@ -9,6 +9,7 @@ import time
 from collections import Counter
 import tskit
 from sklearn.calibration import calibration_curve
+from sklearn.metrics import silhouette_score
 import argparse
 import pickle
 import copy
@@ -750,6 +751,17 @@ def update_membership(
     return log_num_em_j_i, log_denom_em_j
 
 
+def _silhouette_score(coal_top2, local_ancestry_assignments):
+    ## coal_top2 shape is num_of_treesx 2 x num_of_reference_groups
+    num_trees = coal_top2.shape[0]
+    coal_top2 = coal_top2.reshape(num_trees, -1)
+    assert len(coal_top2) == len(local_ancestry_assignments)
+    silhouette_scores = silhouette_score(
+        coal_top2, labels=local_ancestry_assignments, metric="euclidean", random_state=2
+    )
+    return silhouette_scores
+
+
 def main(args, plot=False, gamma_arr=None):
 
     sample_id_label = "_".join([str(e) for e in args.sample_id])
@@ -1392,9 +1404,23 @@ def main(args, plot=False, gamma_arr=None):
             + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
         )
 
-        print("Test log-likelihood: " + str(log_likelihood))
-
         own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
+
+        proportion_of_coalescing_top2 = np.zeros(
+            (len(args.sample_id) * num_trees, 2, len(unique_groups))
+        )
+        for tid in range(len(args.sample_id) * num_trees):
+            proportion_of_coalescing_top2[tid, :, :] = proportion_of_coalescing_all[
+                tid
+            ][0:2]
+            ## assuming each tree has atleast 2 coal events with the target
+
+        silhouette_scores = _silhouette_score(
+            proportion_of_coalescing_top2[mask_dodgy],
+            np.argmax(own_membership[:, mask_dodgy], axis=0),
+        )  ## calculating silhouette scores only on masked trees
+        print("Test log-likelihood: " + str(log_likelihood))
+        print("silhouette_scores: " + str(silhouette_scores))
 
         filename = (
             "overall_membership_" + sample_id_label + ".npy"
