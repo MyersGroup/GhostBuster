@@ -103,11 +103,11 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-"-load_membership",
-"--load_membership",
-help="Starting gamma values written in a file",
-type=str,
-default=None,
+    "-load_membership",
+    "--load_membership",
+    help="Starting gamma values written in a file",
+    type=str,
+    default=None,
 )
 parser.add_argument(
     "-load_props",
@@ -925,13 +925,10 @@ def main(args, plot=False, gamma_arr=None):
                 args.masking_threshold,
             )
             if args.load_mask:
-              mask_dodgy2 = np.load(args.load_mask)
-              print(np.mean(mask_dodgy))
-              mask_dodgy  = np.multiply(mask_dodgy, mask_dodgy2)
-              print(np.mean(mask_dodgy))
-
-
-
+                mask_dodgy2 = np.load(args.load_mask)
+                print(np.mean(mask_dodgy))
+                mask_dodgy = np.multiply(mask_dodgy, mask_dodgy2)
+                print(np.mean(mask_dodgy))
 
             f_pkl = open(tree_stats_file_name, "wb")
             pickle.dump(
@@ -946,142 +943,148 @@ def main(args, plot=False, gamma_arr=None):
                     num_snps_on_tree,
                     fraction_snps_not_mapping,
                     mask_dodgy,
-                    ],
+                ],
                 f_pkl,
-                )
+            )
             f_pkl.close()
             print("Tree statistics stored in: " + str(tree_stats_file_name))
 
     else:
-      mask_dodgy = np.ones(
-          num_trees * len(args.sample_id), dtype=bool
-          )  ## No masking needed for true trees
+        mask_dodgy = np.ones(
+            num_trees * len(args.sample_id), dtype=bool
+        )  ## No masking needed for true trees
 
-      print(
-          "Trees with high certainty = " + str(np.sum(mask_dodgy) / len(args.sample_id))
-          )
-      masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
+        print(
+            "Trees with high certainty = "
+            + str(np.sum(mask_dodgy) / len(args.sample_id))
+        )
+        masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
 
     if args.props_per_chrs:
-      trees_per_chr_masked = []
+        trees_per_chr_masked = []
         for (start, end) in trees_per_chr:
-          start_in_masked = len(masked_trees_index) - len(
-              masked_trees_index[masked_trees_index >= start]
-              )
-          end_in_masked = len(masked_trees_index) - len(
-              masked_trees_index[masked_trees_index >= end]
-              )
-          trees_per_chr_masked.append(
-              (start_in_masked, end_in_masked)
-              )  ## [start, end)
-          if args.relate_trees:
-            try:
-            f_pkl = open(fixed_params_file_name, "rb")
-            if args.mode == "sim":
-              (
-                  num,
-                  denom,
-                  proportion_of_coalescing_all,
-                  epoch_index_all,
-                  ground_truth_membership,
-                  ) = pickle.load(f_pkl)
-            else:
-              (
-                  num,
-                  denom,
-                  proportion_of_coalescing_all,
-                  epoch_index_all,
-                  ) = pickle.load(f_pkl)
-              f_pkl.close()
-            print("Done loading fixed parameters from: " + str(fixed_params_file_name))
+            start_in_masked = len(masked_trees_index) - len(
+                masked_trees_index[masked_trees_index >= start]
+            )
+            end_in_masked = len(masked_trees_index) - len(
+                masked_trees_index[masked_trees_index >= end]
+            )
+            trees_per_chr_masked.append(
+                (start_in_masked, end_in_masked)
+            )  ## [start, end)
+            if args.relate_trees:
+                try:
+                    f_pkl = open(fixed_params_file_name, "rb")
+                    if args.mode == "sim":
+                        (
+                            num,
+                            denom,
+                            proportion_of_coalescing_all,
+                            epoch_index_all,
+                            ground_truth_membership,
+                        ) = pickle.load(f_pkl)
+                    else:
+                        (
+                            num,
+                            denom,
+                            proportion_of_coalescing_all,
+                            epoch_index_all,
+                        ) = pickle.load(f_pkl)
+                        f_pkl.close()
+                    print(
+                        "Done loading fixed parameters from: "
+                        + str(fixed_params_file_name)
+                    )
 
-        except:
-          print("Fixed parameters file not found, calculating fixed parameters..")
-            if args.mode == "sim":
-              ground_truth_membership = make_ground_truth(
-                  ts_list,
-                  num_trees,
-                  window_size=args.window_size,
-                  sample=args.sample_id,
-                  chrs=chrs,
-                  )
-              (
-                  num,
-                  denom,
-                  proportion_of_coalescing_all,
-                  epoch_index_all,
-                  ) = fixed_parameters(
-                      ts_list,
-                      poplabels,
-                      unique_groups,
-                      num_trees,
-                      args.window_size,
-                      args.sample_id,
-                      )
-                  f_pkl = open(fixed_params_file_name, "wb")
-            if args.mode == "sim":
-              pickle.dump(
-                  [
-                    num,
-                    denom,
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                    ground_truth_membership,
-                    ],
-                  f_pkl,
-                  )
-            else:
-              pickle.dump(
-                  [
-                    num,
-                    denom,
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                    ],
-                  f_pkl,
-                  )
-              f_pkl.close()
-            print("Fixed parameters stored in: " + str(fixed_params_file_name))
+                except:
+                    print(
+                        "Fixed parameters file not found, calculating fixed parameters.."
+                    )
+                    if args.mode == "sim":
+                        ground_truth_membership = make_ground_truth(
+                            ts_list,
+                            num_trees,
+                            window_size=args.window_size,
+                            sample=args.sample_id,
+                            chrs=chrs,
+                        )
+                        (
+                            num,
+                            denom,
+                            proportion_of_coalescing_all,
+                            epoch_index_all,
+                        ) = fixed_parameters(
+                            ts_list,
+                            poplabels,
+                            unique_groups,
+                            num_trees,
+                            args.window_size,
+                            args.sample_id,
+                        )
+                        f_pkl = open(fixed_params_file_name, "wb")
+                    if args.mode == "sim":
+                        pickle.dump(
+                            [
+                                num,
+                                denom,
+                                proportion_of_coalescing_all,
+                                epoch_index_all,
+                                ground_truth_membership,
+                            ],
+                            f_pkl,
+                        )
+                    else:
+                        pickle.dump(
+                            [
+                                num,
+                                denom,
+                                proportion_of_coalescing_all,
+                                epoch_index_all,
+                            ],
+                            f_pkl,
+                        )
+                        f_pkl.close()
+                    print("Fixed parameters stored in: " + str(fixed_params_file_name))
 
     else:
-      ground_truth_membership = make_ground_truth(
-          ts_list,
-          num_trees,
-          window_size=args.window_size,
-          sample=args.sample_id,
-          chrs=chrs,
-          )
-      num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(
-          ts_list,
-          poplabels,
-          unique_groups,
-          num_trees,
-          args.window_size,
-          args.sample_id,
-          )
+        ground_truth_membership = make_ground_truth(
+            ts_list,
+            num_trees,
+            window_size=args.window_size,
+            sample=args.sample_id,
+            chrs=chrs,
+        )
+        num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(
+            ts_list,
+            poplabels,
+            unique_groups,
+            num_trees,
+            args.window_size,
+            args.sample_id,
+        )
 
-      if (denom < -1e-8).any():
-        raise ValueError(
-            "The opportunity has negative values, check the sampling times in poplabels.txt"
+        if (denom < -1e-8).any():
+            raise ValueError(
+                "The opportunity has negative values, check the sampling times in poplabels.txt"
             )
 
-        ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
+            ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
     denom = copy.deepcopy(np.maximum(denom, 0))
 
     if args.init_at_truth:
-      own_membership = ground_truth_membership[:, mask_dodgy]
+        own_membership = ground_truth_membership[:, mask_dodgy]
     elif args.load_membership:
-      own_membership = np.load(args.load_membership)[:, mask_dodgy] 
+        own_membership = np.load(args.load_membership)[:, mask_dodgy]
     else:
-      own_membership = np.array(
-          np.random.dirichlet(
-            np.ones(num_clusters), len(args.sample_id) * num_trees
+        own_membership = np.array(
+            np.random.dirichlet(
+                np.ones(num_clusters), len(args.sample_id) * num_trees
             ).T,
-          dtype="float64",
-          )[:, mask_dodgy]
+            dtype="float64",
+        )[:, mask_dodgy]
 
-      if args.load_gamma:
-        gamma_arr = np.load(args.load_gamma)
+        if args.load_gamma:
+            gamma_arr = np.load(args.load_gamma)
     if args.load_props:
         tau = args.load_props
 
@@ -1091,9 +1094,9 @@ def main(args, plot=False, gamma_arr=None):
         print("Starting the EM..")
 
         filename_logl = args.output + "_" + sample_id_label + ".logl"
-        filename_tau  = args.output + "_" + sample_id_label + ".tau"
+        filename_tau = args.output + "_" + sample_id_label + ".tau"
         f_logl = open(filename_logl, "w")
-        f_tau  = open(filename_tau, "w")
+        f_tau = open(filename_tau, "w")
 
         for epoch in range(args.num_iters):
             ## M-step
@@ -1101,38 +1104,38 @@ def main(args, plot=False, gamma_arr=None):
             gamma_arr = np.zeros(
                 (len(own_membership), len(unique_groups), len(epoch_intervals) - 1),
                 dtype="float64",
-                )
+            )
             for j in range(len(own_membership)):
-              if epoch == 0:
-                n = compute_gamma_num(
-                    own_membership[j],
-                    None,
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                    len(unique_groups),
-                    masked_trees_index,
+                if epoch == 0:
+                    n = compute_gamma_num(
+                        own_membership[j],
+                        None,
+                        proportion_of_coalescing_all,
+                        epoch_index_all,
+                        len(unique_groups),
+                        masked_trees_index,
                     )
-              else:
-                n = compute_gamma_num(
-                    own_membership[j],
-                    prev_gamma[j],
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                    len(unique_groups),
-                    masked_trees_index,
+                else:
+                    n = compute_gamma_num(
+                        own_membership[j],
+                        prev_gamma[j],
+                        proportion_of_coalescing_all,
+                        epoch_index_all,
+                        len(unique_groups),
+                        masked_trees_index,
                     )
-                for i in range(len(unique_groups)):
-                  d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
-                    gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
+                    for i in range(len(unique_groups)):
+                        d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
+                        gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
             tau = np.mean(own_membership, axis=1)
             if args.props_per_chrs:
-              tau = np.zeros((len(trees_per_chr_masked), len(own_membership)))
+                tau = np.zeros((len(trees_per_chr_masked), len(own_membership)))
                 for chr, (start, end) in enumerate(trees_per_chr_masked):
-                  tau[chr] = np.mean(own_membership[:, start:end], axis=1)
+                    tau[chr] = np.mean(own_membership[:, start:end], axis=1)
 
             if epoch == 0 and args.load_gamma != None and args.load_props != None:
-              print("Using initial gamma specified in file: " + str(args.load_gamma))
+                print("Using initial gamma specified in file: " + str(args.load_gamma))
                 gamma_arr = np.load(args.load_gamma)
                 tau = args.load_props  ### load taus only works for not(props_per_chrs)
 
@@ -1140,20 +1143,20 @@ def main(args, plot=False, gamma_arr=None):
             prev_gamma = copy.deepcopy(gamma_arr)
 
             if args.verbose:
-              print(gamma_arr)
+                print(gamma_arr)
                 print("Iter" + str(epoch))
                 print(tau)
                 print(len(np.shape(tau)))
                 if len(np.shape(tau)) == 1:
-                  for i in range(np.shape(tau)[0]):
-                    f_tau.write( str(tau[i]) + ' ')
-                  f_tau.write('\n')
+                    for i in range(np.shape(tau)[0]):
+                        f_tau.write(str(tau[i]) + " ")
+                    f_tau.write("\n")
                 else:
-                  for i in range(np.shape(tau)[0]):
-                    for j in range(np.shape(tau)[1]):
-                      f_tau.write( str(tau[i,j]) + ' ')
-                    f_tau.write('\n')
-                  f_tau.write('\n')
+                    for i in range(np.shape(tau)[0]):
+                        for j in range(np.shape(tau)[1]):
+                            f_tau.write(str(tau[i, j]) + " ")
+                        f_tau.write("\n")
+                    f_tau.write("\n")
 
             # print("m-step: " + str(time.time() - start_m_time))
             ## E-step
@@ -1161,153 +1164,155 @@ def main(args, plot=False, gamma_arr=None):
             start_e_time = time.time()
             own_membership_update = np.ones(
                 (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
-                )
+            )
             log_num_em = np.zeros(
                 (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
-                )
+            )
             log_denom_em = np.zeros(
                 (len(own_membership), int(np.sum(mask_dodgy))), dtype="float64"
-                )
+            )
             count_masked_trees = 0
 
             for tid in masked_trees_index:
-              proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
+                proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
                 epoch_index_in_tree = epoch_index_all[tid]
                 for j in range(len(own_membership)):
-                  log_num_em_j, log_denom_em_j = update_membership(
-                      proportion_of_coalescing_in_tree,
-                      epoch_index_in_tree,
-                      denom,
-                      gamma_arr[j],
-                      tid,
-                      args.ignore_first_epoch,
-                      args.ignore_last_epoch,
-                      )
-                  log_num_em[j, count_masked_trees] = log_num_em_j
+                    log_num_em_j, log_denom_em_j = update_membership(
+                        proportion_of_coalescing_in_tree,
+                        epoch_index_in_tree,
+                        denom,
+                        gamma_arr[j],
+                        tid,
+                        args.ignore_first_epoch,
+                        args.ignore_last_epoch,
+                    )
+                    log_num_em[j, count_masked_trees] = log_num_em_j
                     log_denom_em[j, count_masked_trees] = log_denom_em_j
                 count_masked_trees += 1
             own_membership_update = np.exp(
                 log_num_em
                 + log_denom_em
                 - np.repeat(
-                  np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-                  len(own_membership),
-                  axis=1,
-                  ).T
-                )
+                    np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
+                    len(own_membership),
+                    axis=1,
+                ).T
+            )
 
             if not args.props_per_chrs:
-              for j in range(len(own_membership)):
-                own_membership_update[j] *= tau[j]
-            else:
-              for chr, (start, end) in enumerate(trees_per_chr_masked):
                 for j in range(len(own_membership)):
-                  own_membership_update[j, start:end] *= tau[chr, j]
+                    own_membership_update[j] *= tau[j]
+            else:
+                for chr, (start, end) in enumerate(trees_per_chr_masked):
+                    for j in range(len(own_membership)):
+                        own_membership_update[j, start:end] *= tau[chr, j]
 
             log_likelihood = np.sum(
                 np.log(np.sum(own_membership_update, axis=0))
                 + np.max(log_num_em + log_denom_em, axis=0)
-                )
+            )
             log_likelihood_arr.append(log_likelihood)
             own_membership = own_membership_update / (
                 np.sum(own_membership_update, axis=0)
-                )
+            )
             membership_thresh = make_one_hot(
                 np.argmax(own_membership, axis=0), len(own_membership)
-                )
+            )
             # print("e-step: " + str(time.time() - start_e_time))
 
             if args.mode == "sim":
-              ## Evaluate accuracy
+                ## Evaluate accuracy
                 acc_arr = np.zeros(
                     (len(own_membership), len(ground_truth_membership[:, mask_dodgy]))
-                    )
+                )
                 for i in range(len(own_membership)):
-                  for j in range(0, len(ground_truth_membership[:, mask_dodgy])):
-                    acc = np.sum(
-                        membership_thresh[i]
-                        == ground_truth_membership[j, mask_dodgy]
+                    for j in range(0, len(ground_truth_membership[:, mask_dodgy])):
+                        acc = np.sum(
+                            membership_thresh[i]
+                            == ground_truth_membership[j, mask_dodgy]
                         )
-                    acc_arr[i][j] = acc
+                        acc_arr[i][j] = acc
                 overall_acc = (
                     np.sum(np.max(acc_arr, axis=1))
                     / len(membership_thresh)
                     / len(membership_thresh[0])
-                    )
+                )
                 print("Sample = " + sample_id_label + " Accuracy = " + str(overall_acc))
 
             ## Tree stats
             if args.verbose and args.relate_trees:
-              proportion_of_coalescing_top2 = np.zeros(
-                  (len(args.sample_id) * num_trees, 2, len(unique_groups))
-                  )
-              for tid in range(len(args.sample_id) * num_trees):
-                proportion_of_coalescing_top2[
-                    tid, :, :
+                proportion_of_coalescing_top2 = np.zeros(
+                    (len(args.sample_id) * num_trees, 2, len(unique_groups))
+                )
+                for tid in range(len(args.sample_id) * num_trees):
+                    proportion_of_coalescing_top2[
+                        tid, :, :
                     ] = proportion_of_coalescing_all[tid][0:2]
-                recomb_x_all = []
-                recomb_y_all = []
-                size_x_all = []
-                size_y_all = []
-                muts_x_all = []
-                muts_y_all = []
-                frac_branch_x_all = []
-                num_snps_x_all = []
-                frac_snps_x_all = []
-                for i in range(len(own_membership)):
-                  tree_size_i = np.array(len(args.sample_id) * tree_size)[mask_dodgy][
-                      np.argmax(own_membership, axis=0) == i
-                      ]
-                  num_mutations_i = np.array(len(args.sample_id) * no_of_mutations)[
-                      mask_dodgy
-                      ][np.argmax(own_membership, axis=0) == i]
-                  recomb_rates_i = np.array(len(args.sample_id) * recomb_rates)[
-                      mask_dodgy
-                      ][np.argmax(own_membership, axis=0) == i]
-                  recomb_rates_i = recomb_rates_i[~np.isnan(np.array(recomb_rates_i))]
-                    frac_branches_with_snp_i = np.array(
-                        len(args.sample_id) * frac_branches_with_snp
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                    num_snps_on_tree_i = np.array(
-                        len(args.sample_id) * num_snps_on_tree
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                    fraction_snps_not_mapping_i = np.array(
-                        len(args.sample_id) * fraction_snps_not_mapping
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                    frac_branch_x_all.extend(frac_branches_with_snp_i)
-                    num_snps_x_all.extend(num_snps_on_tree_i)
-                    frac_snps_x_all.extend(fraction_snps_not_mapping_i)
-                    recomb_x_all.extend(recomb_rates_i)
-                    size_x_all.extend(tree_size_i)
-                    muts_x_all.extend(num_mutations_i)
-                    recomb_y_all.extend(np.repeat(i, len(recomb_rates_i)))
-                    size_y_all.extend(np.repeat(i, len(tree_size_i)))
-                    muts_y_all.extend(np.repeat(i, len(num_mutations_i)))
-                    proportion_of_coalescing_i = proportion_of_coalescing_top2[
-                        mask_dodgy
+                    recomb_x_all = []
+                    recomb_y_all = []
+                    size_x_all = []
+                    size_y_all = []
+                    muts_x_all = []
+                    muts_y_all = []
+                    frac_branch_x_all = []
+                    num_snps_x_all = []
+                    frac_snps_x_all = []
+                    for i in range(len(own_membership)):
+                        tree_size_i = np.array(len(args.sample_id) * tree_size)[
+                            mask_dodgy
                         ][np.argmax(own_membership, axis=0) == i]
-                    print(
-                        "Cluster: "
-                        + str(i)
-                        + " Median tree size: "
-                        + str(np.median(tree_size_i))
-                        + " Median num of muts: "
-                        + str(np.median(num_mutations_i))
-                        + " Median recomb rate: "
-                        + str(np.median(recomb_rates_i))
-                        + " Median frac_branches_with_snp: "
-                        + str(np.median(frac_branches_with_snp_i))
-                        + " Median num_snps_on_tree: "
-                        + str(np.median(num_snps_on_tree_i))
-                        + " Median fraction_snps_not_mapping: "
-                        + str(np.median(fraction_snps_not_mapping_i))
+                        num_mutations_i = np.array(
+                            len(args.sample_id) * no_of_mutations
+                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
+                        recomb_rates_i = np.array(len(args.sample_id) * recomb_rates)[
+                            mask_dodgy
+                        ][np.argmax(own_membership, axis=0) == i]
+                        recomb_rates_i = recomb_rates_i[
+                            ~np.isnan(np.array(recomb_rates_i))
+                        ]
+                        frac_branches_with_snp_i = np.array(
+                            len(args.sample_id) * frac_branches_with_snp
+                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
+                        num_snps_on_tree_i = np.array(
+                            len(args.sample_id) * num_snps_on_tree
+                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
+                        fraction_snps_not_mapping_i = np.array(
+                            len(args.sample_id) * fraction_snps_not_mapping
+                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
+                        frac_branch_x_all.extend(frac_branches_with_snp_i)
+                        num_snps_x_all.extend(num_snps_on_tree_i)
+                        frac_snps_x_all.extend(fraction_snps_not_mapping_i)
+                        recomb_x_all.extend(recomb_rates_i)
+                        size_x_all.extend(tree_size_i)
+                        muts_x_all.extend(num_mutations_i)
+                        recomb_y_all.extend(np.repeat(i, len(recomb_rates_i)))
+                        size_y_all.extend(np.repeat(i, len(tree_size_i)))
+                        muts_y_all.extend(np.repeat(i, len(num_mutations_i)))
+                        proportion_of_coalescing_i = proportion_of_coalescing_top2[
+                            mask_dodgy
+                        ][np.argmax(own_membership, axis=0) == i]
+                        print(
+                            "Cluster: "
+                            + str(i)
+                            + " Median tree size: "
+                            + str(np.median(tree_size_i))
+                            + " Median num of muts: "
+                            + str(np.median(num_mutations_i))
+                            + " Median recomb rate: "
+                            + str(np.median(recomb_rates_i))
+                            + " Median frac_branches_with_snp: "
+                            + str(np.median(frac_branches_with_snp_i))
+                            + " Median num_snps_on_tree: "
+                            + str(np.median(num_snps_on_tree_i))
+                            + " Median fraction_snps_not_mapping: "
+                            + str(np.median(fraction_snps_not_mapping_i))
                         )
-                    print(
-                        " Mean 1st coal. proportion: "
-                        + str(np.mean(proportion_of_coalescing_i[:, 0, :], axis=0))
-                        + " Mean 2nd coal. proportion: "
-                        + str(np.mean(proportion_of_coalescing_i[:, 1, :], axis=0))
-                    )
+                        print(
+                            " Mean 1st coal. proportion: "
+                            + str(np.mean(proportion_of_coalescing_i[:, 0, :], axis=0))
+                            + " Mean 2nd coal. proportion: "
+                            + str(np.mean(proportion_of_coalescing_i[:, 1, :], axis=0))
+                        )
 
             ## Gamma plots
             if args.plot_intermediate_gammas:
@@ -1338,7 +1343,7 @@ def main(args, plot=False, gamma_arr=None):
 
             ## Early-stopping
             print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
-            f_logl.write( str(log_likelihood_arr[-1]) + '\n' )
+            f_logl.write(str(log_likelihood_arr[-1]) + "\n")
             # if epoch > 100: ##min-iters = 100
             #    if np.abs((log_likelihood_arr[-1] - log_likelihood_arr[-2])/log_likelihood_arr[-2]) < 0.00001:
             #        break ## stop if log-likelihood isn't changing much
@@ -1374,13 +1379,10 @@ def main(args, plot=False, gamma_arr=None):
         )
 
         with open(
-            args.output
-            + "_gamma_"
-            + sample_id_label
-            + ".npy",
+            args.output + "_gamma_" + sample_id_label + ".npy",
             "wb",
-            ) as f:
-          np.save(f, gamma_arr)
+        ) as f:
+            np.save(f, gamma_arr)
 
         if args.mode == "sim":
             ## Calculate the calibration on the rich-trees
@@ -1392,15 +1394,24 @@ def main(args, plot=False, gamma_arr=None):
             else:
                 filename = "TrueTrees_" + filename
             with open(filename, "w") as f:
-              for i in range(len(own_membership)):
-                for j in range(num_rows):
-                  y, x = calibration_curve(
-                      ground_truth_membership[j, mask_dodgy],
-                      own_membership[i],
-                      n_bins=20,
-                      )
-                  for k in range(len(x)):
-                    f.write(str(i) + " " + str(j) + " " + str(x[k]) + " " + str(y[k]) + "\n")
+                for i in range(len(own_membership)):
+                    for j in range(num_rows):
+                        y, x = calibration_curve(
+                            ground_truth_membership[j, mask_dodgy],
+                            own_membership[i],
+                            n_bins=20,
+                        )
+                        for k in range(len(x)):
+                            f.write(
+                                str(i)
+                                + " "
+                                + str(j)
+                                + " "
+                                + str(x[k])
+                                + " "
+                                + str(y[k])
+                                + "\n"
+                            )
 
     if args.evaluate_local_ancestry:
         ## Final local ancestry inference on all trees
