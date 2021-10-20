@@ -953,18 +953,10 @@ def main(args, plot=False, gamma_arr=None):
             num_trees * len(args.sample_id), dtype=bool
         )  ## No masking needed for true trees
 
-<<<<<<< HEAD
     print(
         "Trees with high certainty = " + str(np.sum(mask_dodgy) / len(args.sample_id))
     )
     masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
-=======
-        print(
-            "Trees with high certainty = "
-            + str(np.sum(mask_dodgy) / len(args.sample_id))
-        )
-        masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
->>>>>>> bfd1f3d79e2a619cbda33c6a8326628abe8277b2
 
     if args.props_per_chrs:
         trees_per_chr_masked = []
@@ -978,7 +970,6 @@ def main(args, plot=False, gamma_arr=None):
             trees_per_chr_masked.append(
                 (start_in_masked, end_in_masked)
             )  ## [start, end)
-<<<<<<< HEAD
     if args.relate_trees:
         try:
             f_pkl = open(fixed_params_file_name, "rb")
@@ -1047,81 +1038,6 @@ def main(args, plot=False, gamma_arr=None):
                 )
                 f_pkl.close()
             print("Fixed parameters stored in: " + str(fixed_params_file_name))
-=======
-            if args.relate_trees:
-                try:
-                    f_pkl = open(fixed_params_file_name, "rb")
-                    if args.mode == "sim":
-                        (
-                            num,
-                            denom,
-                            proportion_of_coalescing_all,
-                            epoch_index_all,
-                            ground_truth_membership,
-                        ) = pickle.load(f_pkl)
-                    else:
-                        (
-                            num,
-                            denom,
-                            proportion_of_coalescing_all,
-                            epoch_index_all,
-                        ) = pickle.load(f_pkl)
-                        f_pkl.close()
-                    print(
-                        "Done loading fixed parameters from: "
-                        + str(fixed_params_file_name)
-                    )
-
-                except:
-                    print(
-                        "Fixed parameters file not found, calculating fixed parameters.."
-                    )
-                    if args.mode == "sim":
-                        ground_truth_membership = make_ground_truth(
-                            ts_list,
-                            num_trees,
-                            window_size=args.window_size,
-                            sample=args.sample_id,
-                            chrs=chrs,
-                        )
-                        (
-                            num,
-                            denom,
-                            proportion_of_coalescing_all,
-                            epoch_index_all,
-                        ) = fixed_parameters(
-                            ts_list,
-                            poplabels,
-                            unique_groups,
-                            num_trees,
-                            args.window_size,
-                            args.sample_id,
-                        )
-                        f_pkl = open(fixed_params_file_name, "wb")
-                    if args.mode == "sim":
-                        pickle.dump(
-                            [
-                                num,
-                                denom,
-                                proportion_of_coalescing_all,
-                                epoch_index_all,
-                                ground_truth_membership,
-                            ],
-                            f_pkl,
-                        )
-                    else:
-                        pickle.dump(
-                            [
-                                num,
-                                denom,
-                                proportion_of_coalescing_all,
-                                epoch_index_all,
-                            ],
-                            f_pkl,
-                        )
-                        f_pkl.close()
-                    print("Fixed parameters stored in: " + str(fixed_params_file_name))
->>>>>>> bfd1f3d79e2a619cbda33c6a8326628abe8277b2
 
     else:
         ground_truth_membership = make_ground_truth(
@@ -1160,13 +1076,8 @@ def main(args, plot=False, gamma_arr=None):
             dtype="float64",
         )[:, mask_dodgy]
 
-<<<<<<< HEAD
     if args.load_gamma:
         gamma_arr = np.load(args.load_gamma)
-=======
-        if args.load_gamma:
-            gamma_arr = np.load(args.load_gamma)
->>>>>>> bfd1f3d79e2a619cbda33c6a8326628abe8277b2
     if args.load_props:
         tau = np.load(args.load_props)
 
@@ -1206,15 +1117,9 @@ def main(args, plot=False, gamma_arr=None):
                         len(unique_groups),
                         masked_trees_index,
                     )
-<<<<<<< HEAD
                 for i in range(len(unique_groups)):
                     d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
                     gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
-=======
-                    for i in range(len(unique_groups)):
-                        d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
-                        gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
->>>>>>> bfd1f3d79e2a619cbda33c6a8326628abe8277b2
 
             tau = np.mean(own_membership, axis=1)
             if args.props_per_chrs:
@@ -1338,7 +1243,6 @@ def main(args, plot=False, gamma_arr=None):
                     proportion_of_coalescing_top2[
                         tid, :, :
                     ] = proportion_of_coalescing_all[tid][0:2]
-<<<<<<< HEAD
                 recomb_x_all = []
                 recomb_y_all = []
                 size_x_all = []
@@ -1402,73 +1306,6 @@ def main(args, plot=False, gamma_arr=None):
                         + " Mean 2nd coal. proportion: "
                         + str(np.mean(proportion_of_coalescing_i[:, 1, :], axis=0))
                     )
-=======
-                    recomb_x_all = []
-                    recomb_y_all = []
-                    size_x_all = []
-                    size_y_all = []
-                    muts_x_all = []
-                    muts_y_all = []
-                    frac_branch_x_all = []
-                    num_snps_x_all = []
-                    frac_snps_x_all = []
-                    for i in range(len(own_membership)):
-                        tree_size_i = np.array(len(args.sample_id) * tree_size)[
-                            mask_dodgy
-                        ][np.argmax(own_membership, axis=0) == i]
-                        num_mutations_i = np.array(
-                            len(args.sample_id) * no_of_mutations
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                        recomb_rates_i = np.array(len(args.sample_id) * recomb_rates)[
-                            mask_dodgy
-                        ][np.argmax(own_membership, axis=0) == i]
-                        recomb_rates_i = recomb_rates_i[
-                            ~np.isnan(np.array(recomb_rates_i))
-                        ]
-                        frac_branches_with_snp_i = np.array(
-                            len(args.sample_id) * frac_branches_with_snp
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                        num_snps_on_tree_i = np.array(
-                            len(args.sample_id) * num_snps_on_tree
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                        fraction_snps_not_mapping_i = np.array(
-                            len(args.sample_id) * fraction_snps_not_mapping
-                        )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                        frac_branch_x_all.extend(frac_branches_with_snp_i)
-                        num_snps_x_all.extend(num_snps_on_tree_i)
-                        frac_snps_x_all.extend(fraction_snps_not_mapping_i)
-                        recomb_x_all.extend(recomb_rates_i)
-                        size_x_all.extend(tree_size_i)
-                        muts_x_all.extend(num_mutations_i)
-                        recomb_y_all.extend(np.repeat(i, len(recomb_rates_i)))
-                        size_y_all.extend(np.repeat(i, len(tree_size_i)))
-                        muts_y_all.extend(np.repeat(i, len(num_mutations_i)))
-                        proportion_of_coalescing_i = proportion_of_coalescing_top2[
-                            mask_dodgy
-                        ][np.argmax(own_membership, axis=0) == i]
-                        print(
-                            "Cluster: "
-                            + str(i)
-                            + " Median tree size: "
-                            + str(np.median(tree_size_i))
-                            + " Median num of muts: "
-                            + str(np.median(num_mutations_i))
-                            + " Median recomb rate: "
-                            + str(np.median(recomb_rates_i))
-                            + " Median frac_branches_with_snp: "
-                            + str(np.median(frac_branches_with_snp_i))
-                            + " Median num_snps_on_tree: "
-                            + str(np.median(num_snps_on_tree_i))
-                            + " Median fraction_snps_not_mapping: "
-                            + str(np.median(fraction_snps_not_mapping_i))
-                        )
-                        print(
-                            " Mean 1st coal. proportion: "
-                            + str(np.mean(proportion_of_coalescing_i[:, 0, :], axis=0))
-                            + " Mean 2nd coal. proportion: "
-                            + str(np.mean(proportion_of_coalescing_i[:, 1, :], axis=0))
-                        )
->>>>>>> bfd1f3d79e2a619cbda33c6a8326628abe8277b2
 
             ## Gamma plots
             if args.plot_intermediate_gammas:
