@@ -1142,16 +1142,16 @@ def main(args, plot=False, gamma_arr=None):
                 print("Iter" + str(epoch))
                 print(tau)
                 print(len(np.shape(tau)))
-                if len(np.shape(tau)) == 1:
-                    for i in range(np.shape(tau)[0]):
-                        f_tau.write(str(tau[i]) + " ")
+            if len(np.shape(tau)) == 1:
+                for i in range(np.shape(tau)[0]):
+                    f_tau.write(str(tau[i]) + " ")
+                f_tau.write("\n")
+            else:
+                for i in range(np.shape(tau)[0]):
+                    for j in range(np.shape(tau)[1]):
+                        f_tau.write(str(tau[i, j]) + " ")
                     f_tau.write("\n")
-                else:
-                    for i in range(np.shape(tau)[0]):
-                        for j in range(np.shape(tau)[1]):
-                            f_tau.write(str(tau[i, j]) + " ")
-                        f_tau.write("\n")
-                    f_tau.write("\n")
+                f_tau.write("\n")
 
             # print("m-step: " + str(time.time() - start_m_time))
             ## E-step
