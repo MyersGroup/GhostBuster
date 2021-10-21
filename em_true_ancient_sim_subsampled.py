@@ -663,7 +663,7 @@ def compute_tree_stats(ts_list, chrs, window_size):
                 relate_quality = relate_quality_output[
                     (relate_quality_output.pos < tree.interval[1])
                     & (relate_quality_output.pos >= tree.interval[0])
-                ].iloc[0]
+                ].mean()
                 frac_branches_with_snp.append(relate_quality["frac_branches_with_snp"])
                 num_snps_on_tree.append(relate_quality["num_snps_on_tree"])
                 fraction_snps_not_mapping.append(
@@ -686,8 +686,8 @@ def compute_tree_stats(ts_list, chrs, window_size):
 
 
 def mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, masking_thresh):
-    # print(np.percentile(frac_branches_with_snp, masking_thresh * 100))
-    # print(np.percentile(num_snps_on_tree, masking_thresh * 100))
+    print(np.percentile(frac_branches_with_snp, masking_thresh * 100))
+    print(np.percentile(num_snps_on_tree, masking_thresh * 100))
     mask = (
         frac_branches_with_snp
         > np.percentile(frac_branches_with_snp, masking_thresh * 100)
