@@ -679,9 +679,9 @@ def compute_tree_stats(ts_list, chrs, window_size):
         no_of_mutations,
         tmrca,
         recomb_rates,
-        frac_branches_with_snp,
-        num_snps_on_tree,
-        fraction_snps_not_mapping,
+        np.nan_to_num(frac_branches_with_snp, 0),
+        np.nan_to_num(num_snps_on_tree, 0),
+        np.nan_to_num(fraction_snps_not_mapping, 1),
     )
 
 
