@@ -781,8 +781,9 @@ def compute_tree_stats(
 
 
 def mask_for_dodgy_trees(recomb_rates, masking_thresh):
-    print(np.percentile(recomb_rates, masking_thresh * 100))
-    mask = recomb_rates < np.percentile(recomb_rates, masking_thresh * 100)
+    print(np.percentile(recomb_rates, (1 - masking_thresh) * 100))
+    mask = recomb_rates < np.percentile(recomb_rates, (1 - masking_thresh) * 100)
+    print(np.sum(mask) / len(mask))
     return mask
 
 
@@ -928,6 +929,9 @@ def main(args, plot=False, gamma_arr=None):
         + ".pkl"
     )
     if args.check_muts_target is True:
+        print(
+            "Note: Filtering based on mutations on target lineage.. ancestry proportion estimates might be biased"
+        )
         check_muts_target_name = []
         for chr in chrs:
             check_muts_target_name.append(
