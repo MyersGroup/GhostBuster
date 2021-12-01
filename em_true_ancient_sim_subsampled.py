@@ -679,6 +679,7 @@ def compute_tree_stats(
     num_snps_on_tree = []
     fraction_snps_not_mapping = []
     count = 0
+    recomb_window_size = 10000  ## window size for measure recombination rates
     num_nodes = len(list(ts_list[0].first().nodes()))
     for chr_no, chr in enumerate(chrs):
         if check_muts_target_name is not None:
@@ -722,8 +723,14 @@ def compute_tree_stats(
                         continue
                 recomb_events = recomb_map[
                     ~(
-                        (recomb_map["Start Position(bp)"] > tree.interval[1])
-                        | (recomb_map["Position(bp)"] < tree.interval[0])
+                        (
+                            recomb_map["Start Position(bp)"]
+                            > tree.interval[1] + recomb_window_size
+                        )
+                        | (
+                            recomb_map["Position(bp)"]
+                            < tree.interval[0] - recomb_window_size
+                        )
                     )
                 ]
                 recomb_rates.append(np.mean(recomb_events["Rate(cM/Mb)"]))
