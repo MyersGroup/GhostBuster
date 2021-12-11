@@ -16,6 +16,7 @@ import copy
 import warnings
 import os
 from pathlib import Path
+import scipy.stats as stats
 
 
 def boolean(v):
@@ -271,14 +272,65 @@ def lineage_nodes(tree, sample_ids):
     return out
 
 
-def check_tree_lineage_has_muts(mut_t, nodes):
+def count_num_muts(mut_t, nodes):
+    mut_t_b = mut_t.branchID
+    focal_mutations = np.isin(mut_t_b, np.fromiter(nodes, mut_t_b.dtype))
+    return np.sum(mut_t.num_muts[focal_mutations])
+
+
+def count_lineage_branch_has_muts(mut_t, nodes):
     mut_t = mut_t[mut_t.num_muts > 0].branchID
     focal_mutations = np.isin(mut_t, np.fromiter(nodes, mut_t.dtype))
-    return np.sum(focal_mutations) >= len(nodes) - 1
+    return np.sum(focal_mutations) / (len(nodes) - 1)
+
+
+def get_multinomial_frac_branches(mut_t, nodes, mut_rate=1e-6, num_samples=10000):
+    mut_t_b = mut_t.branchID
+    focal_mutations = np.isin(mut_t_b, np.fromiter(nodes, mut_t_b.dtype))
+    opportunity = (
+        mut_rate * mut_t.dist[focal_mutations] * mut_t.branch_length[focal_mutations]
+    )
+    # return np.sum(opportunity)
+    opportunity /= np.sum(opportunity)
+    opportunity = np.maximum(opportunity, 1e-8)
+    opportunity /= np.sum(opportunity)
+    num_muts = np.sum(mut_t.num_muts[focal_mutations])
+    assert opportunity.ndim == 1
+    assert np.abs(opportunity.sum() - 1) < 1e-6
+    rv = stats.multinomial(num_muts, opportunity.tolist())
+    num_zero_branches = np.sum(rv.rvs(size=num_samples) == 0, axis=1)  # num_samples x 1
+    rank = np.sum(num_zero_branches < np.sum(mut_t.num_muts[focal_mutations] == 0))
+    return rank
+
+
+def samples_below(tree, node):
+    out = []
+    if node in list(tree.samples()):
+        out.append(node)
+    else:
+        out.extend(samples_below(tree, tree.children(node)[0]))
+        out.extend(samples_below(tree, tree.children(node)[1]))
+    return out
+
+
+def nodes_to_keep(tree, sample_ids):
+    ## returns list of nodes which are to appear in ts.simplify(sample_ids)
+    out = sample_ids
+    num_samples = len(set(tree.samples()))
+    for node in tree.nodes():
+        if tree.children(node) != ():
+            left_samples_below = samples_below(tree, tree.children(node)[0])
+            right_samples_below = samples_below(tree, tree.children(node)[1])
+            if (
+                np.isin(left_samples_below, sample_ids).any()
+                and np.isin(right_samples_below, sample_ids).any()
+            ):
+                out.append(node)
+                # out.append(num_samples + (node - num_samples) % (num_samples - 1))
+    return out
 
 
 def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
-    ## TODO: check_muts_target isn't adapted for this function yet
     ## Extracts the ground truth membership from the simulations
     start_time = time.time()
     print("Calculating the ground truth local ancestry..")
@@ -367,7 +419,6 @@ def fixed_parameters(
     num_trees,
     window_size,
     sample_list,
-    check_muts_target_name=None,
 ):
     eps = 1e-20
     num_samples = len(list(ts_list[0].first().samples()))
@@ -398,25 +449,12 @@ def fixed_parameters(
     for sample_no, target_seq_ in enumerate(sample_list):
         count_mut_trees_prev = copy.deepcopy(count_mut_trees)
         for chr_no, ts in enumerate(ts_list):
-            if check_muts_target_name is not None:
-                mut_t = pd.read_csv(
-                    check_muts_target_name[chr_no],
-                    sep=" ",
-                    engine="c",
-                )
             tree = ts.first()
             prev_interval = tree.interval[0]
             for tid in tqdm(range(len(list(ts.trees())))):  # len(list(ts.trees()))
                 sample_list_tree = copy.deepcopy(sample_list)
                 if tree.interval[1] >= prev_interval + window_size:
                     prev_interval = prev_interval + window_size
-                    if check_muts_target_name is not None:
-                        if not check_tree_lineage_has_muts(
-                            mut_t.iloc[tid * num_nodes : (tid + 1) * num_nodes],
-                            lineage_nodes(tree, sample_list),
-                        ):
-                            tree.next()
-                            continue
                     count_mut_trees += 1
                     ## Make the coalescene table and sort it
                     coal_events_matrix = []
@@ -668,26 +706,22 @@ def compute_gamma_denom(own_membership, denom, mask_dodgy):
 
 
 def compute_tree_stats(
-    ts_list, chrs, window_size, check_muts_target_name=None, sample_list=None
+    ts_list, chrs, window_size, check_muts_target_name, sample_list=None
 ):
     num_trees = 0
     tree_size = []
     no_of_mutations = []
     tmrca = []
     recomb_rates = []
+    rank_zero_snp_branches_target = []
+    frac_branches_with_snp_target = []
     frac_branches_with_snp = []
     num_snps_on_tree = []
-    fraction_snps_not_mapping = []
     count = 0
     recomb_window_size = 10000  ## window size for measure recombination rates
     num_nodes = len(list(ts_list[0].first().nodes()))
+    first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
     for chr_no, chr in enumerate(chrs):
-        if check_muts_target_name is not None:
-            mut_t = pd.read_csv(
-                check_muts_target_name[chr_no],
-                sep=" ",
-                engine="c",
-            )
         print(chr)
         recomb_map = pd.read_csv(
             # "/well/myers/speidel/SharedWithHrushi/stdpopsim_Han"
@@ -704,6 +738,12 @@ def compute_tree_stats(
         #     Path(path) / str(args.trees + "_chr" + str(chr) + ".qual"),
         #     sep=" ",
         # )
+        if check_muts_target_name is not None:
+            relate_allmuts_file = pd.read_csv(
+                check_muts_target_name[chr_no],
+                sep=" ",
+                engine="c",
+            )
         ts = ts_list[count]
         count += 1
         tree = ts.first()
@@ -714,13 +754,6 @@ def compute_tree_stats(
         for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
             if tree.interval[1] >= prev_interval + window_size:
                 prev_interval = prev_interval + window_size
-                if check_muts_target_name is not None:
-                    if not check_tree_lineage_has_muts(
-                        mut_t.iloc[tid * num_nodes : (tid + 1) * num_nodes],
-                        lineage_nodes(tree, sample_list),
-                    ):
-                        tree.next()
-                        continue
                 recomb_events = recomb_map[
                     ~(
                         (
@@ -734,20 +767,42 @@ def compute_tree_stats(
                     )
                 ]
                 recomb_rates.append(np.mean(recomb_events["Rate(cM/Mb)"]))
-
                 num_trees += 1
                 i += 1
                 tree_size.append(tree.interval[1] - tree.interval[0])
-                no_of_mutations.append(
-                    tree.num_mutations
-                )  ###changed to mutations from sites
+                no_of_mutations.append(tree.num_mutations)
                 tmrca.append(tree.time(tree.root))
-                # relate_quality_output_subset = relate_quality_output.iloc[
-                #     start_idx : start_idx + 1000000
-                # ]
-                # relate_quality = relate_quality_output_subset[
-                #     (relate_quality_output_subset.pos < tree.interval[1])
-                #     & (relate_quality_output_subset.pos >= tree.interval[0])
+                if check_muts_target_name is not None:
+                    relate_allmuts_tree = relate_allmuts_file.iloc[
+                        tid * num_nodes : (tid + 1) * num_nodes
+                    ]
+                    rank_zero_snp_branches_target.append(
+                        get_multinomial_frac_branches(
+                            relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                        )
+                    )
+                    frac_branches_with_snp_target.append(
+                        count_lineage_branch_has_muts(
+                            relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                        )
+                    )
+                    frac_branches_with_snp.append(
+                        count_lineage_branch_has_muts(
+                            relate_allmuts_tree, first_tree_nodes
+                        )
+                    )
+                    num_snps_on_tree.append(
+                        count_num_muts(relate_allmuts_tree, first_tree_nodes)
+                    )
+                else:
+                    rank_zero_snp_branches_target.append(0)
+                    frac_branches_with_snp_target.append(0)
+                    frac_branches_with_snp.append(0)
+                    num_snps_on_tree.append(0)
+
+                # relate_quality = relate_quality_output[
+                #     (relate_quality_output.pos < tree.interval[1])
+                #     & (relate_quality_output.pos >= tree.interval[0])
                 # ]
                 # start_index = relate_quality.index[-1]
                 # relate_quality_mean = relate_quality.mean()
@@ -768,12 +823,10 @@ def compute_tree_stats(
         no_of_mutations,
         tmrca,
         recomb_rates,
-        # np.nan_to_num(frac_branches_with_snp, 0),
-        # np.nan_to_num(num_snps_on_tree, 0),
-        # np.nan_to_num(fraction_snps_not_mapping, 1),
-        np.zeros(num_trees),
-        np.zeros(num_trees),
-        np.zeros(num_trees),
+        rank_zero_snp_branches_target,
+        frac_branches_with_snp_target,
+        frac_branches_with_snp,
+        num_snps_on_tree,
     )
 
 
@@ -788,8 +841,9 @@ def compute_tree_stats(
 
 
 def mask_for_dodgy_trees(recomb_rates, masking_thresh):
-    print(np.percentile(recomb_rates, (1 - masking_thresh) * 100))
-    mask = recomb_rates < np.percentile(recomb_rates, (1 - masking_thresh) * 100)
+    recomb_rates = np.array(recomb_rates)
+    print(np.percentile(recomb_rates, (masking_thresh) * 100))
+    mask = recomb_rates < np.percentile(recomb_rates, (masking_thresh) * 100)
     print(np.sum(mask) / len(mask))
     return mask
 
@@ -968,10 +1022,11 @@ def main(args, plot=False, gamma_arr=None):
             )
 
     num_samples = len(list(ts_list[0].first().samples()))
-    num_nodes = len(list(ts_list[0].first().nodes()))
     for sample in args.sample_id:
         if sample >= num_samples or sample < 0:
             raise ValueError("The sample ids are out of range")
+        else:
+            print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
 
     filename = ".treepos"
     if args.relate_trees:
@@ -985,12 +1040,6 @@ def main(args, plot=False, gamma_arr=None):
         num_trees = 0
         for sample_no in range(len(args.sample_id)):
             for chr_no, ts in enumerate(ts_list):
-                if check_muts_target_name is not None:
-                    mut_t = pd.read_csv(
-                        check_muts_target_name[chr_no],
-                        sep=" ",
-                        engine="c",
-                    )
                 tree = ts.first()
                 prev_interval = tree.interval[0]
                 # prev_interval = 0
@@ -998,13 +1047,6 @@ def main(args, plot=False, gamma_arr=None):
                 for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
                     if tree.interval[1] >= prev_interval + args.window_size:
                         prev_interval = prev_interval + args.window_size
-                        if check_muts_target_name is not None:
-                            if not check_tree_lineage_has_muts(
-                                mut_t.iloc[tid * num_nodes : (tid + 1) * num_nodes],
-                                lineage_nodes(tree, args.sample_id),
-                            ):
-                                tree.next()
-                                continue
                         f.write(
                             str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n"
                         )
@@ -1039,18 +1081,25 @@ def main(args, plot=False, gamma_arr=None):
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
+                rank_zero_snp_branches_target,
+                frac_branches_with_snp_target,
                 frac_branches_with_snp,
                 num_snps_on_tree,
-                fraction_snps_not_mapping,
             ) = compute_tree_stats(
                 ts_list, chrs, args.window_size, check_muts_target_name, args.sample_id
             )
             mask_dodgy = mask_for_dodgy_trees(
-                recomb_rates,
+                recomb_rates * len(args.sample_id),
                 # frac_branches_with_snp * len(args.sample_id),
                 # num_snps_on_tree * len(args.sample_id),
-                args.masking_threshold,
+                1 - args.masking_threshold,
             )
+            if check_muts_target_name is not None:
+                mask_dodgy *= mask_for_dodgy_trees(
+                    rank_zero_snp_branches_target * len(args.sample_id),
+                    1 - args.masking_threshold,
+                )
+
             if args.load_mask:
                 mask_dodgy2 = np.load(args.load_mask)
                 print(np.mean(mask_dodgy))
@@ -1066,9 +1115,10 @@ def main(args, plot=False, gamma_arr=None):
                     no_of_mutations,
                     tmrca,
                     recomb_rates,
+                    rank_zero_snp_branches_target,
+                    frac_branches_with_snp_target,
                     frac_branches_with_snp,
                     num_snps_on_tree,
-                    fraction_snps_not_mapping,
                     mask_dodgy,
                 ],
                 f_pkl,
@@ -1141,7 +1191,6 @@ def main(args, plot=False, gamma_arr=None):
                 num_trees,
                 args.window_size,
                 args.sample_id,
-                check_muts_target_name,
             )
             f_pkl = open(fixed_params_file_name, "wb")
             if args.mode == "sim":
@@ -1183,7 +1232,6 @@ def main(args, plot=False, gamma_arr=None):
             num_trees,
             args.window_size,
             args.sample_id,
-            check_muts_target_name,
         )
 
         if (denom < -1e-8).any():
@@ -1381,7 +1429,6 @@ def main(args, plot=False, gamma_arr=None):
                 muts_y_all = []
                 frac_branch_x_all = []
                 num_snps_x_all = []
-                frac_snps_x_all = []
                 for i in range(len(own_membership)):
                     tree_size_i = np.array(len(args.sample_id) * tree_size)[mask_dodgy][
                         np.argmax(own_membership, axis=0) == i
@@ -1399,12 +1446,8 @@ def main(args, plot=False, gamma_arr=None):
                     num_snps_on_tree_i = np.array(
                         len(args.sample_id) * num_snps_on_tree
                     )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
-                    fraction_snps_not_mapping_i = np.array(
-                        len(args.sample_id) * fraction_snps_not_mapping
-                    )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
                     frac_branch_x_all.extend(frac_branches_with_snp_i)
                     num_snps_x_all.extend(num_snps_on_tree_i)
-                    frac_snps_x_all.extend(fraction_snps_not_mapping_i)
                     recomb_x_all.extend(recomb_rates_i)
                     size_x_all.extend(tree_size_i)
                     muts_x_all.extend(num_mutations_i)
@@ -1427,8 +1470,6 @@ def main(args, plot=False, gamma_arr=None):
                         + str(np.median(frac_branches_with_snp_i))
                         + " Median num_snps_on_tree: "
                         + str(np.median(num_snps_on_tree_i))
-                        + " Median fraction_snps_not_mapping: "
-                        + str(np.median(fraction_snps_not_mapping_i))
                     )
                     print(
                         " Mean 1st coal. proportion: "
