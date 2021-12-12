@@ -19,7 +19,9 @@ colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
 palette  <- c("#f2cc8f", "#e07a5f", "#3d405b", "#81b29a")
 
 
-poplabs <- sort(unique(read.table("../../sims/stdpopsim_ancient_small/relate_trees/poplabels.txt", header = T)[,2]))
+poplabs <- read.table("../../sims/stdpopsim_ancient_small/relate_trees_force/poplabels.txt", header = T)
+poplabs <- sort(unique(subset(poplabs, INCLUDE == 1)[,2]))
+
 
 #poplabels <- read.table("../result/cond_coal_rates_new_group/SGDP_group.poplabels", header = T)[,2]
 #assignments <- unique(poplabels)
@@ -103,7 +105,7 @@ p1 <- as.ggplot(g)
 
 ########### Likeilhood
 
-foo <- as.matrix(read.table(paste0(filename, "_0.logl")))
+foo <- as.matrix(read.table(paste0(filename, "_10.logl")))
 logl <- data.frame(iters = 1:length(foo), logl = as.numeric(as.matrix(foo)))
 
 print(head(logl))
@@ -114,7 +116,7 @@ p2 <- ggplot(logl) + geom_point(aes(x = iters, y = logl)) + geom_line(aes(x = it
 
 prop <- data.frame()
 
-foo <- read.table(paste0(filename,"_0.tau"))
+foo <- read.table(paste0(filename,"_10.tau"))
 colnames(foo) <- paste0("comp", 1:ncol(foo))
 prop <- rbind(prop, cbind(iters = 1:nrow(foo), foo))
 print(head(prop))
