@@ -225,6 +225,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+np.random.seed(2)  ## fix the random seed
 
 epoch_intervals = np.array(
     [-np.inf]
@@ -484,7 +485,9 @@ def fixed_parameters(
                     )
                     target_seq = target_seq_
                     for m in range(len(poplabels)):
-                        lineage_content[m : m + 1, group_id[poplabels.GROUP.loc[m]]] = 1
+                        lineage_content[
+                            m : m + 1, group_id[poplabels.GROUP.iloc[m]]
+                        ] = 1
                     for t in sample_list_tree:
                         lineage_content[
                             t
@@ -506,7 +509,7 @@ def fixed_parameters(
                         ]
                         tprev = max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )  ##only considering coalescene events after the sampling time of the target
 
                         for (a, b, c, t) in coal_events_submatrix:
@@ -515,7 +518,8 @@ def fixed_parameters(
                             b = int(b)
                             c = int(c)
                             opportunity[:, epoch, count_mut_trees] += (
-                                max(t, poplabels.SAMPLING_TIME.loc[target_seq_]) - tprev
+                                max(t, poplabels.SAMPLING_TIME.iloc[target_seq_])
+                                - tprev
                             ) * (
                                 prev_branch_length
                             )  ##only considering coalescene events after the sampling time of the target
@@ -597,14 +601,14 @@ def fixed_parameters(
                                     )
                             lineage_content[a] = 0
                             lineage_content[b] = 0
-                            tprev = max(t, poplabels.SAMPLING_TIME.loc[target_seq_])
+                            tprev = max(t, poplabels.SAMPLING_TIME.iloc[target_seq_])
                         if epoch < len(epoch_intervals_pow) - 2:
                             opportunity[:, epoch, count_mut_trees] += (
                                 max(
                                     epoch_intervals_pow[epoch + 1],
-                                    poplabels.SAMPLING_TIME.loc[target_seq_],
+                                    poplabels.SAMPLING_TIME.iloc[target_seq_],
                                 )
-                                - max(tprev, poplabels.SAMPLING_TIME.loc[target_seq_])
+                                - max(tprev, poplabels.SAMPLING_TIME.iloc[target_seq_])
                             ) * (prev_branch_length)
                         if (event_count == num_samples - 1) and epoch <= len(
                             epoch_intervals_pow
@@ -624,34 +628,37 @@ def fixed_parameters(
                 for epoch in range(len(epoch_intervals_pow) - 1):
                     if (
                         epoch_intervals_pow[epoch + 1]
-                        < poplabels.SAMPLING_TIME.loc[target_seq_]
+                        < poplabels.SAMPLING_TIME.iloc[target_seq_]
                     ):
                         continue
-                    if poplabels.SAMPLING_TIME.loc[m] >= epoch_intervals_pow[epoch + 1]:
+                    if (
+                        poplabels.SAMPLING_TIME.iloc[m]
+                        >= epoch_intervals_pow[epoch + 1]
+                    ):
                         opportunity[
-                            group_id[poplabels.GROUP.loc[m]],
+                            group_id[poplabels.GROUP.iloc[m]],
                             epoch,
                             count_mut_trees_prev + 1 : count_mut_trees + 1,
                         ] -= epoch_intervals_pow[epoch + 1] - max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )
                     elif (
-                        poplabels.SAMPLING_TIME.loc[m]
+                        poplabels.SAMPLING_TIME.iloc[m]
                         > max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )
-                        and poplabels.SAMPLING_TIME.loc[m]
+                        and poplabels.SAMPLING_TIME.iloc[m]
                         < epoch_intervals_pow[epoch + 1]
                     ):
                         opportunity[
-                            group_id[poplabels.GROUP.loc[m]],
+                            group_id[poplabels.GROUP.iloc[m]],
                             epoch,
                             count_mut_trees_prev + 1 : count_mut_trees + 1,
-                        ] -= poplabels.SAMPLING_TIME.loc[m] - max(
+                        ] -= poplabels.SAMPLING_TIME.iloc[m] - max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )
 
     return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
@@ -956,9 +963,10 @@ def main(args, plot=False, gamma_arr=None):
     start_time = time.time()
     num_clusters = args.num_clusters
     poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep=" ")
-    unique_groups = np.unique(poplabels.GROUP)
+    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
+    ts_list_subsampled = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
     tree_stats_file_name = (
@@ -1015,18 +1023,28 @@ def main(args, plot=False, gamma_arr=None):
                 Path(path) / str(args.trees + "_chr" + str(chr) + ".trees")
             )  ## relate trees
             ts_list.append(ts)
+            if len(poplabels[poplabels.INCLUDE == 1]) != len(poplabels):
+                ts_list_subsampled.append(
+                    ts.simplify(poplabels[poplabels.INCLUDE == 1].index.tolist())
+                )
+            else:
+                ts_list_subsampled.append(ts)
         if len(poplabels) != ts_list[0].num_samples:
             ## num_samples is number of haplotypes
             raise ValueError(
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
             )
 
-    num_samples = len(list(ts_list[0].first().samples()))
+    num_samples = len(poplabels[poplabels.INCLUDE == 1])
     for sample in args.sample_id:
         if sample >= num_samples or sample < 0:
             raise ValueError("The sample ids are out of range")
         else:
-            print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
+            print(
+                str(sample)
+                + " is: "
+                + str(poplabels[poplabels.INCLUDE == 1].GROUP.iloc[sample])
+            )
 
     filename = ".treepos"
     if args.relate_trees:
@@ -1067,15 +1085,18 @@ def main(args, plot=False, gamma_arr=None):
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
+                rank_zero_snp_branches_target,
+                frac_branches_with_snp_target,
                 frac_branches_with_snp,
                 num_snps_on_tree,
-                fraction_snps_not_mapping,
                 mask_dodgy,
             ) = pickle.load(f_pkl)
             f_pkl.close()
             print("Done loading tree statistics from: " + str(tree_stats_file_name))
         except:
             print("Tree statistics file not found, calculating tree statistics..")
+            ## mapping samples back to their original names
+            print(poplabels[poplabels.INCLUDE == 1].index.values[args.sample_id])
             (
                 tree_size,
                 no_of_mutations,
@@ -1086,7 +1107,11 @@ def main(args, plot=False, gamma_arr=None):
                 frac_branches_with_snp,
                 num_snps_on_tree,
             ) = compute_tree_stats(
-                ts_list, chrs, args.window_size, check_muts_target_name, args.sample_id
+                ts_list,
+                chrs,
+                args.window_size,
+                check_muts_target_name,
+                poplabels[poplabels.INCLUDE == 1].index.values[args.sample_id],
             )
             mask_dodgy = mask_for_dodgy_trees(
                 recomb_rates * len(args.sample_id),
@@ -1173,7 +1198,7 @@ def main(args, plot=False, gamma_arr=None):
             print("Fixed parameters file not found, calculating fixed parameters..")
             if args.mode == "sim":
                 ground_truth_membership = make_ground_truth(
-                    ts_list,
+                    ts_list_subsampled,
                     num_trees,
                     window_size=args.window_size,
                     sample=args.sample_id,
@@ -1185,8 +1210,8 @@ def main(args, plot=False, gamma_arr=None):
                 proportion_of_coalescing_all,
                 epoch_index_all,
             ) = fixed_parameters(
-                ts_list,
-                poplabels,
+                ts_list_subsampled,
+                poplabels[poplabels.INCLUDE == 1],
                 unique_groups,
                 num_trees,
                 args.window_size,
@@ -1219,15 +1244,15 @@ def main(args, plot=False, gamma_arr=None):
 
     else:
         ground_truth_membership = make_ground_truth(
-            ts_list,
+            ts_list_subsampled,
             num_trees,
             window_size=args.window_size,
             sample=args.sample_id,
             chrs=chrs,
         )
         num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(
-            ts_list,
-            poplabels,
+            ts_list_subsampled,
+            poplabels[poplabels.INCLUDE == 1],
             unique_groups,
             num_trees,
             args.window_size,
