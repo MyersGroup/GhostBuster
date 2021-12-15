@@ -8,8 +8,8 @@ library(grid)
 library(ggplotify)
 library(nls2)
 library(ggthemes)
-library(reticulate)
-np <- import("numpy")
+#library(reticulate)
+#np <- import("numpy")
 
 palette <- c("#E69F00", "#000000", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 colours <- c("#ff99c8", "#fcf6bd", "#d0f4de", "#a9def9")
@@ -19,7 +19,9 @@ colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
 palette  <- c("#f2cc8f", "#e07a5f", "#3d405b", "#81b29a")
 
 
-poplabs <- sort(unique(read.table("./data/poplabels.txt", header = T)[,2]))
+poplabs <- read.table("../../sims/stdpopsim_ancient_small/relate_trees_force/poplabels.txt", header = T)
+poplabs <- sort(unique(subset(poplabs, INCLUDE == 1)[,2]))
+
 
 #poplabels <- read.table("../result/cond_coal_rates_new_group/SGDP_group.poplabels", header = T)[,2]
 #assignments <- unique(poplabels)
@@ -70,9 +72,7 @@ p1 <- ggplot(coal) + geom_step(aes(x = 28*epoch.start, y = 0.5/mean, colour = gr
 				ggthemes::theme_few() +
 				scale_x_continuous(limit = c(5e3,1e6), trans = "log10") +
 				scale_y_continuous(trans = "log10") +
-				coord_cartesian(ylim = c(1e3,1e7)) +
-				scale_colour_manual(values = palette) +
-				scale_fill_manual(values = palette) + 
+				coord_cartesian(ylim = c(1e3,1e7)) + 
 				annotation_logticks(sides = "bl") +
 				facet_grid(iter~group1) +
 				theme(legend.position = "bottom", legend.title = element_blank()) +
@@ -105,7 +105,7 @@ p1 <- as.ggplot(g)
 
 ########### Likeilhood
 
-foo <- as.matrix(read.table(paste0(filename, "_0.logl")))
+foo <- as.matrix(read.table(paste0(filename, "_10.logl")))
 logl <- data.frame(iters = 1:length(foo), logl = as.numeric(as.matrix(foo)))
 
 print(head(logl))
@@ -116,64 +116,64 @@ p2 <- ggplot(logl) + geom_point(aes(x = iters, y = logl)) + geom_line(aes(x = it
 
 prop <- data.frame()
 
-foo <- read.table(paste0(filename,"_0.tau"))
+foo <- read.table(paste0(filename,"_10.tau"))
 colnames(foo) <- paste0("comp", 1:ncol(foo))
 prop <- rbind(prop, cbind(iters = 1:nrow(foo), foo))
 print(head(prop))
 prop %>% pivot_longer(cols = !iters, names_to = "Components", values_to = "Proportion") -> prop
 
-p3 <- ggplot(prop) + geom_point(aes(x = iters, y = Proportion, colour = Components)) + geom_line(aes(x = iters, y = Proportion, colour = Components)) + scale_colour_manual(values = colours, name = "") + xlab("iterations") + coord_cartesian(expand = F, xlim = c(0, max(prop$iters+1)), ylim = c(0,1.0)) + ggthemes::theme_few() 
+p3 <- ggplot(prop) + geom_point(aes(x = iters, y = Proportion, colour = Components)) + geom_line(aes(x = iters, y = Proportion, colour = Components)) + xlab("iterations") + coord_cartesian(expand = F, xlim = c(0, max(prop$iters+1)), ylim = c(0,1.0)) + ggthemes::theme_few() 
 
 
 ########### Calibration curves
 
-member <- np$load(paste0(filename,"_overall_membership_",sam,".npy"))
-member2 <- np$load(paste0(filename,"_ground_truth_membership_",sam,".npy"))
-member2 <- member2[-1,]
-member  <- as.data.frame(t(member))
-member2 <- as.data.frame(t(member2))
+#member <- np$load(paste0(filename,"_overall_membership_",sam,".npy"))
+#member2 <- np$load(paste0(filename,"_ground_truth_membership_",sam,".npy"))
+#member2 <- member2[-1,]
+#member  <- as.data.frame(t(member))
+#member2 <- as.data.frame(t(member2))
 
-colnames(member) <- 1:ncol(member)
-colnames(member2) <- 1:ncol(member2)
-member$ID <- 1:nrow(member)
-member2$ID <- 1:nrow(member2)
-member %>% pivot_longer(col = !ID, names_to = "comp", values_to = "posterior") -> member
-member2 %>% pivot_longer(col = !ID, names_to = "comp", values_to = "truth") -> member2
+#colnames(member) <- 1:ncol(member)
+#colnames(member2) <- 1:ncol(member2)
+#member$ID <- 1:nrow(member)
+#member2$ID <- 1:nrow(member2)
+#member %>% pivot_longer(col = !ID, names_to = "comp", values_to = "posterior") -> member
+#member2 %>% pivot_longer(col = !ID, names_to = "comp", values_to = "truth") -> member2
 
-match <- numeric(0)
-for(i in unique(member2$comp)){
-  k <- numeric(0)
-  c <- -1
-  for(j in unique(member$comp)){
-    if( cor( subset(member, comp == j)$posterior, subset(member2, comp == i)$truth ) > c ){
-      c <- cor( subset(member, comp == j)$posterior, subset(member2, comp == i)$truth )
-      k <- j
-    }
-  }
-  match <- append(match, k)
-}
-print(match)
-member2$comp <- as.numeric(as.matrix(member2$comp))
-member2$comp <- match[member2$comp]
-df <- merge(member, member2, by = c("comp","ID"))
-df$comp <- as.matrix(df$comp)
-df$comp <- paste0("comp",df$comp)
+#match <- numeric(0)
+#for(i in unique(member2$comp)){
+#  k <- numeric(0)
+#  c <- -1
+#  for(j in unique(member$comp)){
+#    if( cor( subset(member, comp == j)$posterior, subset(member2, comp == i)$truth ) > c ){
+#      c <- cor( subset(member, comp == j)$posterior, subset(member2, comp == i)$truth )
+#      k <- j
+#    }
+#  }
+#  match <- append(match, k)
+#}
+#print(match)
+#member2$comp <- as.numeric(as.matrix(member2$comp))
+#member2$comp <- match[member2$comp]
+#df <- merge(member, member2, by = c("comp","ID"))
+#df$comp <- as.matrix(df$comp)
+#df$comp <- paste0("comp",df$comp)
+#
+#df$post_bin <- as.numeric(as.matrix(cut(df$posterior, breaks = seq(0,1,0.05), labels = seq(0,0.95,0.05)+0.025)))
+#df %>% group_by(post_bin, comp) %>% summarize(truth = mean(truth)) -> df_calib 
+#p4 <- ggplot(df_calib) + geom_abline(slope = 1) + geom_point(aes(x = post_bin, y = truth, colour = comp), size = 2)  + geom_line(aes(x = post_bin, y = truth, colour = comp)) + ggthemes::theme_few() + coord_cartesian(xlim = c(0,1), ylim = c(0,1), expand = F) + xlab("Mean posterior probability") + ylab("Proportion in component") + scale_colour_manual(values = colours, name = "")
+#
+#if(0){
+#df_calib <- read.table(paste0(filename,"_calibration.txt"))
+#colnames(df_calib) <- c("component", "match", "x", "y")
+#df_calib$component <- paste0("comp", df_calib$component+1)
+#df_calib$component <- as.factor(df_calib$component)
+#df_calib %>% group_by(component) %>% filter( match == match[which.max(y)] ) -> df_calib
+#p4 <- ggplot(df_calib) + geom_abline(slope = 1) + geom_point(aes(x = x, y = y, colour = component), size = 2) + geom_line(aes(x = x, y = y, colour = component)) + ggthemes::theme_few() + coord_cartesian(xlim = c(0,1), ylim = c(0,1), expand = F) + xlab("Mean posterior probability") + ylab("Proportion in component") + scale_colour_manual(values = colours, name = "")
+#}
 
-df$post_bin <- as.numeric(as.matrix(cut(df$posterior, breaks = seq(0,1,0.05), labels = seq(0,0.95,0.05)+0.025)))
-df %>% group_by(post_bin, comp) %>% summarize(truth = mean(truth)) -> df_calib 
-p4 <- ggplot(df_calib) + geom_abline(slope = 1) + geom_point(aes(x = post_bin, y = truth, colour = comp), size = 2)  + geom_line(aes(x = post_bin, y = truth, colour = comp)) + ggthemes::theme_few() + coord_cartesian(xlim = c(0,1), ylim = c(0,1), expand = F) + xlab("Mean posterior probability") + ylab("Proportion in component") + scale_colour_manual(values = colours, name = "")
 
-if(0){
-df_calib <- read.table(paste0(filename,"_calibration.txt"))
-colnames(df_calib) <- c("component", "match", "x", "y")
-df_calib$component <- paste0("comp", df_calib$component+1)
-df_calib$component <- as.factor(df_calib$component)
-df_calib %>% group_by(component) %>% filter( match == match[which.max(y)] ) -> df_calib
-p4 <- ggplot(df_calib) + geom_abline(slope = 1) + geom_point(aes(x = x, y = y, colour = component), size = 2) + geom_line(aes(x = x, y = y, colour = component)) + ggthemes::theme_few() + coord_cartesian(xlim = c(0,1), ylim = c(0,1), expand = F) + xlab("Mean posterior probability") + ylab("Proportion in component") + scale_colour_manual(values = colours, name = "")
-}
-
-
-p <- plot_grid(p2,p3,p4,ncol = 1, align = "hv", axis = "lr", labels = c("b", "c", "d"), label_size = 17)
+p <- plot_grid(p2,p3,ncol = 1, align = "hv", axis = "lr", labels = c("b", "c"), label_size = 17)
 p <- plot_grid(p1,p, ncol = 2, rel_widths = c(1.3,1), labels = c("a", ""), label_size = 17)
 
 ggsave(p, file = paste0(filename, "_", sam,".pdf"), width = 11.5, height = 9.5)
