@@ -297,7 +297,9 @@ def get_multinomial_frac_branches(mut_t, nodes, mut_rate=1e-6, num_samples=10000
     opportunity /= np.sum(opportunity)
     num_muts = np.sum(mut_t.num_muts[focal_mutations])
     assert opportunity.ndim == 1
-    assert np.abs(opportunity.sum() - 1) < 1e-6
+    # assert np.abs(opportunity.sum() - 1) < 1e-6
+    if num_muts == 0:
+        return num_samples
     rv = stats.multinomial(num_muts, opportunity.tolist())
     num_zero_branches = np.sum(rv.rvs(size=num_samples) == 0, axis=1)  # num_samples x 1
     rank = np.sum(num_zero_branches < np.sum(mut_t.num_muts[focal_mutations] == 0))
@@ -421,6 +423,10 @@ def fixed_parameters(
     window_size,
     sample_list,
 ):
+    assert [
+        s in poplabels[poplabels.INCLUDE == 1].index.tolist() for s in sample_list
+    ] == [True] * len(sample_list)
+    ### You have removed target samples from the poplabels file
     eps = 1e-20
     num_samples = len(list(ts_list[0].first().samples()))
     num_nodes = len(list(ts_list[0].first().nodes()))
@@ -485,9 +491,10 @@ def fixed_parameters(
                     )
                     target_seq = target_seq_
                     for m in range(len(poplabels)):
-                        lineage_content[
-                            m : m + 1, group_id[poplabels.GROUP.iloc[m]]
-                        ] = 1
+                        ## Only count lineage content for included samples
+                        if poplabels.INCLUDE.iloc[m]:
+                            lineage_content[m, group_id[poplabels.GROUP.iloc[m]]] = 1
+
                     for t in sample_list_tree:
                         lineage_content[
                             t
@@ -534,6 +541,13 @@ def fixed_parameters(
                                 target_seq = c
                                 lineage_content[c] = 0
 
+                            elif (a == target_seq and sum(lineage_content[b]) == 0) or (
+                                b == target_seq and sum(lineage_content[a]) == 0
+                            ):
+                                ## This happens when target coalesces with a sample not included, in that case don't count that event
+                                target_seq = c
+                                lineage_content[c] = 0
+
                             elif a == target_seq:
                                 proportion_of_coalescing = copy.deepcopy(
                                     lineage_content[b]
@@ -575,7 +589,16 @@ def fixed_parameters(
                                 lineage_content[c] = (
                                     lineage_content[a] + lineage_content[b]
                                 )
-                                if a in sample_list_tree and b not in sample_list_tree:
+                                if (
+                                    sum(lineage_content[a]) == 0
+                                    or sum(lineage_content[b]) == 0
+                                ):
+                                    ### If a coalescene event involving atleast 1 non-included sequence, we ignore that event
+                                    pass
+
+                                elif (
+                                    a in sample_list_tree and b not in sample_list_tree
+                                ):
                                     prev_branch_length = (
                                         prev_branch_length
                                         - lineage_content[b] / (sum(lineage_content[b]))
@@ -624,7 +647,7 @@ def fixed_parameters(
 
         ## correcting opportunity for ancestral reference samples
         for m in range(len(poplabels)):
-            if not m in sample_list:
+            if (not m in sample_list) and (poplabels.INCLUDE.iloc[m]):
                 for epoch in range(len(epoch_intervals_pow) - 1):
                     if (
                         epoch_intervals_pow[epoch + 1]
@@ -966,7 +989,7 @@ def main(args, plot=False, gamma_arr=None):
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
-    ts_list_subsampled = []
+    # ts_list_subsampled = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
     tree_stats_file_name = (
@@ -1023,28 +1046,24 @@ def main(args, plot=False, gamma_arr=None):
                 Path(path) / str(args.trees + "_chr" + str(chr) + ".trees")
             )  ## relate trees
             ts_list.append(ts)
-            if len(poplabels[poplabels.INCLUDE == 1]) != len(poplabels):
-                ts_list_subsampled.append(
-                    ts.simplify(poplabels[poplabels.INCLUDE == 1].index.tolist())
-                )
-            else:
-                ts_list_subsampled.append(ts)
+            # if len(poplabels[poplabels.INCLUDE]) != len(poplabels):
+            #     ts_list_subsampled.append(
+            #         ts.simplify(poplabels[poplabels.INCLUDE].index.tolist())
+            #     )
+            # else:
+            #     ts_list_subsampled.append(ts)
         if len(poplabels) != ts_list[0].num_samples:
             ## num_samples is number of haplotypes
             raise ValueError(
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
             )
 
-    num_samples = len(poplabels[poplabels.INCLUDE == 1])
+    num_samples = len(poplabels)
     for sample in args.sample_id:
         if sample >= num_samples or sample < 0:
             raise ValueError("The sample ids are out of range")
         else:
-            print(
-                str(sample)
-                + " is: "
-                + str(poplabels[poplabels.INCLUDE == 1].GROUP.iloc[sample])
-            )
+            print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
 
     filename = ".treepos"
     if args.relate_trees:
@@ -1096,7 +1115,6 @@ def main(args, plot=False, gamma_arr=None):
         except:
             print("Tree statistics file not found, calculating tree statistics..")
             ## mapping samples back to their original names
-            print(poplabels[poplabels.INCLUDE == 1].index.values[args.sample_id])
             (
                 tree_size,
                 no_of_mutations,
@@ -1111,7 +1129,7 @@ def main(args, plot=False, gamma_arr=None):
                 chrs,
                 args.window_size,
                 check_muts_target_name,
-                poplabels[poplabels.INCLUDE == 1].index.values[args.sample_id],
+                poplabels.index.values[args.sample_id],
             )
             mask_dodgy = mask_for_dodgy_trees(
                 recomb_rates * len(args.sample_id),
@@ -1198,7 +1216,7 @@ def main(args, plot=False, gamma_arr=None):
             print("Fixed parameters file not found, calculating fixed parameters..")
             if args.mode == "sim":
                 ground_truth_membership = make_ground_truth(
-                    ts_list_subsampled,
+                    ts_list,
                     num_trees,
                     window_size=args.window_size,
                     sample=args.sample_id,
@@ -1210,8 +1228,8 @@ def main(args, plot=False, gamma_arr=None):
                 proportion_of_coalescing_all,
                 epoch_index_all,
             ) = fixed_parameters(
-                ts_list_subsampled,
-                poplabels[poplabels.INCLUDE == 1],
+                ts_list,
+                poplabels,
                 unique_groups,
                 num_trees,
                 args.window_size,
@@ -1244,15 +1262,15 @@ def main(args, plot=False, gamma_arr=None):
 
     else:
         ground_truth_membership = make_ground_truth(
-            ts_list_subsampled,
+            ts_list,
             num_trees,
             window_size=args.window_size,
             sample=args.sample_id,
             chrs=chrs,
         )
         num, denom, proportion_of_coalescing_all, epoch_index_all = fixed_parameters(
-            ts_list_subsampled,
-            poplabels[poplabels.INCLUDE == 1],
+            ts_list,
+            poplabels,
             unique_groups,
             num_trees,
             args.window_size,
@@ -1712,8 +1730,9 @@ def main(args, plot=False, gamma_arr=None):
         return 0
 
 
-acc = main(args, plot=False, gamma_arr=None)  ##Han(106), Sardinian(52)
-if args.mode == "sim":
-    print("Average accuracy = " + str(acc))
+if __name__ == "__main__":
+    acc = main(args, plot=False, gamma_arr=None)  ##Han(106), Sardinian(52)
+    if args.mode == "sim":
+        print("Average accuracy = " + str(acc))
 
 # python ../RelateLocalAncestry/em_true_ancient_sim_subsampled.py --chr 1,2 --relate_trees True --masking_thresh 0.8 --plot_intermediate_gammas True --window_size 0 --sample_id 0
