@@ -986,6 +986,9 @@ def main(args, plot=False, gamma_arr=None):
     start_time = time.time()
     num_clusters = args.num_clusters
     poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep=" ")
+    if poplabels.shape[1] != 4:
+        poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep="\t")
+    assert poplabels.shape[1] == 4
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
