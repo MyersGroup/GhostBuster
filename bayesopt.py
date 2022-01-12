@@ -9,6 +9,7 @@ from pathlib import Path
 import tskit
 import pickle
 import copy
+import os
 
 
 def boolean(v):
@@ -123,6 +124,9 @@ def load_data(args):
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     print("Considering sample ids: " + str(args.sample_id))
     poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep=" ")
+    if poplabels.shape[1] != 4:
+        poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep="\t")
+    assert poplabels.shape[1] == 4
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
@@ -238,6 +242,7 @@ def e_step(
 
 
 def m_step(
+    args,
     masked_trees_index,
     own_membership,
     proportion_of_coalescing_all,
@@ -246,7 +251,7 @@ def m_step(
     mask_dodgy,
 ):
     gamma_arr = np.zeros(
-        (len(own_membership), num_reference_groups, num_epochs),
+        (len(own_membership), args.num_reference_groups, args.num_epochs),
         dtype="float64",
     )
     for j in range(len(own_membership)):
@@ -255,10 +260,10 @@ def m_step(
             None,
             proportion_of_coalescing_all,
             epoch_index_all,
-            num_reference_groups,
+            args.num_reference_groups,
             masked_trees_index,
         )
-        for i in range(num_reference_groups):
+        for i in range(args.num_reference_groups):
             d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
             gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
@@ -267,13 +272,13 @@ def m_step(
 
 
 def get_log_likelihood(
+    args,
     masked_trees_index,
     gamma_arr,
     tau,
     proportion_of_coalescing_all,
     epoch_index_all,
     denom,
-    num_clusters,
     num_trees,
     mask_dodgy,
 ):
@@ -285,10 +290,11 @@ def get_log_likelihood(
         proportion_of_coalescing_all,
         epoch_index_all,
         denom,
-        num_clusters,
+        args.num_clusters,
         len(masked_trees_index),
     )
     gamma_arr, tau = m_step(
+        args,
         masked_trees_index,
         own_membership,
         proportion_of_coalescing_all,
@@ -303,7 +309,7 @@ def get_log_likelihood(
         proportion_of_coalescing_all,
         epoch_index_all,
         denom,
-        num_clusters,
+        args.num_clusters,
         num_trees,
         mask_dodgy,
     )
@@ -315,16 +321,16 @@ def main(config=None):
         args = wandb.config
 
         gamma_arr = np.zeros(
-            (num_clusters, num_reference_groups, num_epochs),
+            (args.num_clusters, args.num_reference_groups, args.num_epochs),
             dtype="float64",
         )
-        tau = np.zeros(num_clusters, dtype="float64")
-        for k in range(num_clusters):
-            for j in range(num_reference_groups):
-                for e in range(num_epochs):
+        tau = np.zeros(args.num_clusters, dtype="float64")
+        for k in range(args.num_clusters):
+            for j in range(args.num_reference_groups):
+                for e in range(args.num_epochs):
                     gamma_arr[k, j, e] = args["gamma" + str(k) + str(j) + str(e)]
 
-        for k in range(num_clusters):
+        for k in range(args.num_clusters):
             tau[k] = args["tau" + str(k)]
             assert tau[k] > 0
         tau = tau / np.sum(tau)
@@ -332,28 +338,25 @@ def main(config=None):
         ## calculate log-likelihood
 
         log_likelihood, own_membership = get_log_likelihood(
+            args,
             masked_trees_index,
             gamma_arr,
             tau,
             proportion_of_coalescing_all,
             epoch_index_all,
             denom,
-            num_clusters,
             num_trees,
             mask_dodgy,
         )
-
-        ## log the log-likelihood & local ancestry
-        np.save("bayesopt/membership.npy", own_membership)
         wandb.log({"log_likelihood": log_likelihood})
+        global best_log_likelihood
+        if log_likelihood > best_log_likelihood:
+            print("Updating the local ancestry..")
+            np.save(args.output, own_membership)
+            best_log_likelihood = copy.deepcopy(log_likelihood)
 
 
 if __name__ == "__main__":
-    ## constants
-    num_clusters = 2
-    num_reference_groups = 2
-    num_epochs = 4
-
     ## wandb arguments
     parser = argparse.ArgumentParser()
     wandb_group = parser.add_argument_group("WandB")
@@ -365,31 +368,12 @@ if __name__ == "__main__":
         action="store_const",
         const="offline",
     )
-    wandb_mode.add_argument(
-        "--wandb_disabled",
-        dest="wandb_mode",
-        default=None,
-        action="store_const",
-        const="disabled",
-    )
-
     wandb_group.add_argument(
         "--wandb_project_name",
         help="wandb project name",
         default="ghost_buster",
     )
 
-    wandb_group.add_argument(
-        "--wandb_run_path",
-        help="The wandb run_path to load the checkpoint from, e.g., nfrc/cavia-debug-2/1i1an80e",
-        default=None,
-    )
-
-    wandb_group.add_argument(
-        "--wandb_job_type",
-        help="Wandb job type. This is useful for grouping runs together.",
-        default=None,
-    )
     parser.add_argument(
         "-start_time",
         "--start_time",
@@ -459,68 +443,101 @@ if __name__ == "__main__":
         type=boolean,
         default=True,
     )
-
-    for k in range(num_clusters):
-        for j in range(num_reference_groups):
-            for e in range(num_epochs):
-                parser.add_argument(
-                    "--gamma" + str(k) + str(j) + str(e), type=float, default=None
-                )
-
-    for j in range(num_clusters):
-        parser.add_argument("--tau" + str(j), type=float)
+    parser.add_argument(
+        "-k",
+        "--num_clusters",
+        help="Number of clusters to find using the EM",
+        type=int,
+        default=2,
+    )
+    parser.add_argument(
+        "-num_epochs",
+        "--num_epochs",
+        help="Num epochs",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Output filename",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--bayes_steps",
+        help="Number of Bayesian optimization points",
+        type=int,
+        default=100,
+    )
 
     args = parser.parse_args()
-    if args.gamma000 is None:
-        sweep_config = {
-            "method": "bayes",
-            "metric": {"name": "log_likelihood", "goal": "maximize"},
-            "parameters": {
-                "gamma000": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma001": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma002": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma003": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma010": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma011": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma012": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma013": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma100": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma101": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma102": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma103": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma110": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma111": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma112": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "gamma113": {"distribution": "log_uniform", "min": -16.11, "max": -4.6},
-                "tau0": {"distribution": "uniform", "min": 0, "max": 1},
-                "tau1": {"distribution": "uniform", "min": 0, "max": 1},
-                "path": {"value": args.path},
-                "trees": {"value": args.trees},
-                "chrs": {"value": args.chrs},
-                "tree_stats_file_name": {"value": args.tree_stats_file_name},
-                "fixed_params_file_name": {"value": args.fixed_params_file_name},
-                "sample_id": {"value": args.sample_id},
-                "ignore_first_epoch": {"value": args.ignore_first_epoch},
-                "ignore_last_epoch": {"value": args.ignore_last_epoch},
-            },
-        }
-        sweep_id = wandb.sweep(
-            sweep_config,
-            project=args.wandb_project_name,
-            entity="hrushikeshloya",
+    if args.wandb_mode == "offline":
+        os.system("wandb offline")
+
+    poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep=" ")
+    if poplabels.shape[1] != 4:
+        poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep="\t")
+    assert poplabels.shape[1] == 4
+    num_reference_groups = len(np.unique(poplabels[poplabels.INCLUDE == 1].GROUP))
+
+    sweep_config = {
+        "method": "bayes",
+        "metric": {"name": "log_likelihood", "goal": "maximize"},
+        "parameters": {
+            "tau0": {"distribution": "uniform", "min": 0.01, "max": 0.99},
+            "tau1": {"distribution": "uniform", "min": 0.01, "max": 0.99},
+            "path": {"value": args.path},
+            "trees": {"value": args.trees},
+            "chrs": {"value": args.chrs},
+            "tree_stats_file_name": {"value": args.tree_stats_file_name},
+            "fixed_params_file_name": {"value": args.fixed_params_file_name},
+            "sample_id": {"value": args.sample_id},
+            "ignore_first_epoch": {"value": args.ignore_first_epoch},
+            "ignore_last_epoch": {"value": args.ignore_last_epoch},
+            "num_epochs": {"value": args.num_epochs},
+            "num_clusters": {"value": args.num_clusters},
+            "num_reference_groups": {"value": num_reference_groups},
+            "output": {"value": args.output},
+        },
+    }
+
+    for k in range(args.num_clusters):
+        for j in range(num_reference_groups):
+            for e in range(args.num_epochs):
+                sweep_config["parameters"].update(
+                    {
+                        "gamma"
+                        + str(k)
+                        + str(j)
+                        + str(e): {
+                            "distribution": "log_uniform",
+                            "min": -16.11,
+                            "max": -4.6,
+                        }
+                    }
+                )
+        sweep_config["parameters"].update(
+            {"tau" + str(k): {"distribution": "uniform", "min": 0.01, "max": 0.99}}
         )
+
+    sweep_id = wandb.sweep(
+        sweep_config,
+        project=args.wandb_project_name,
+    )
 
     epoch_intervals = np.array(
         [-np.inf]
         + np.linspace(
             args.start_time - math.log(28, 10),
             args.end_time - math.log(28, 10),
-            num_epochs - 1,
+            args.num_epochs - 1,
         ).tolist()
         + [np.inf],
         dtype="float64",
     )
     epoch_intervals_pow = np.power(10, epoch_intervals)
+    best_log_likelihood = -np.inf
 
     ## Load the data
     (
@@ -532,9 +549,12 @@ if __name__ == "__main__":
         mask_dodgy,
     ) = load_data(args)
 
-    if args.gamma000 is None:
-        wandb.agent(sweep_id, main, count=100)
-    else:
-        main(args)
+    wandb.agent(sweep_id, main, count=args.bayes_steps)
 # python em_true_ancient_sim_subsampled.py --start_time 5 --end_time 7 --num_epochs 4 -k 2 --path ../sims/stdpopsim_ancient_small/relate_trees_force_100/ --trees stdpopsim_homsap_conv --chrs 1,2,3,4,5 --sample_id 206 --ignore_first_epoch True --mode real --relate_trees True --masking_thresh 0.5 --window_size 10000 --output bayesopt/stdpopsim_homsap -i 1 --rec ../msprime_maps/genetic_map_GRCh37
 # python bayesopt.py --start_time 5 --end_time 7 --path ../sims/stdpopsim_ancient_small/relate_trees_force_100/ --trees stdpopsim_homsap_conv --chrs 1,2,3,4,5 --tree_stats_file_name bayesopt/stdpopsim_homsap_tree_stats_206_10000_True_1,2,3,4,5_0.5.pkl  --fixed_params_file_name bayesopt/stdpopsim_homsap_fixed_params_206_10000_True_1,2,3,4,5_0.5.pkl  --sample_id 206 --ignore_first_epoch True --gamma000 1e-4 --gamma001 1e-4 --gamma002 1e-4 --gamma003 1e-4 --gamma010 1e-4 --gamma011 1e-4 --gamma012 1e-4 --gamma013 1e-4 --gamma100 1e-4 --gamma101 1e-4 --gamma102 1e-4 --gamma103 1e-4 --gamma110 1e-4 --gamma111 1e-4 --gamma112 1e-4 --gamma113 1e-4 --tau0 0.5 --tau1 0.5
+
+## TODO:
+## Save best local ancestry automatical 🔥
+## Compute tree stats and fixed params if not already there
+## variable number of groups and epochs 🔥
+## add output directory
