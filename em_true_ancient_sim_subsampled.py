@@ -197,6 +197,13 @@ parser.add_argument(
     default=10,
 )
 parser.add_argument(
+    "-ypg",
+    "--ypg",
+    help="Years per generation",
+    type=int,
+    default=28,
+)
+parser.add_argument(
     "-ignore_first_epoch",
     "--ignore_first_epoch",
     help="Ignore first epoch while calculating the local ancestry in the EM",
@@ -230,8 +237,8 @@ np.random.seed(2)  ## fix the random seed
 epoch_intervals = np.array(
     [-np.inf]
     + np.linspace(
-        args.start_time - math.log(28, 10),
-        args.end_time - math.log(28, 10),
+        args.start_time - math.log(args.ypg, 10),
+        args.end_time - math.log(args.ypg, 10),
         args.num_epochs - 1,
     ).tolist()
     + [np.inf],
