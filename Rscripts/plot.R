@@ -19,7 +19,7 @@ colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
 palette  <- c("#f2cc8f", "#e07a5f", "#3d405b", "#81b29a")
 
 
-poplabs <- read.table("../../sims/stdpopsim_ancient_small/relate_trees_force/poplabels.txt", header = T)
+poplabs <- read.table("../../sims/stdpopsim_ancient_small/relate_trees_force_50/poplabels.txt", header = T)
 poplabs <- sort(unique(subset(poplabs, INCLUDE == 1)[,2]))
 
 
@@ -61,7 +61,7 @@ coal <- rbind(coal, cbind(read.coal(paste0(filename,"_",sam,".coal")), iter = pa
 
 coal$group1 <- as.numeric(as.factor(coal$group1))
 
-coal$haploid.coalescence.rate[which(coal$haploid.coalescence.rate == 0 & coal$epoch.start > 1e6/28)] <- coal$haploid.coalescence.rate[which(coal$haploid.coalescence.rate == 0 & coal$epoch.start > 1e6/28)-1]
+coal$haploid.coalescence.rate[which(coal$haploid.coalescence.rate == 0 & coal$epoch.start > 1e7/28)] <- coal$haploid.coalescence.rate[which(coal$haploid.coalescence.rate == 0 & coal$epoch.start > 1e6/28)-1]
 coal$epoch.start[is.infinite(coal$epoch.start)] <- 1e8
 coal %>% filter(!is.na(haploid.coalescence.rate)) %>% group_by(epoch.start, group1, group2, iter) %>% summarize(mean = mean(haploid.coalescence.rate), lower = quantile(haploid.coalescence.rate, p = 0.025), upper = quantile(haploid.coalescence.rate, p = 0.975)) %>% filter(mean > 0, !is.na(mean)) %>% droplevels() -> coal
 
@@ -70,7 +70,7 @@ coal$group1 <- paste0("comp", coal$group1)
 p1 <- ggplot(coal) + geom_step(aes(x = 28*epoch.start, y = 0.5/mean, colour = group2), lwd = 1.1) +
 				#geom_stepribbon(aes(x = 28*epoch.start, ymin = 0.5/upper, ymax = 0.5/lower, fill = group2), alpha = 0.5) +
 				ggthemes::theme_few() +
-				scale_x_continuous(limit = c(5e3,1e6), trans = "log10") +
+				scale_x_continuous(limit = c(1e4,1e7), trans = "log10") +
 				scale_y_continuous(trans = "log10") +
 				coord_cartesian(ylim = c(1e3,1e7)) + 
 				annotation_logticks(sides = "bl") +
@@ -105,7 +105,7 @@ p1 <- as.ggplot(g)
 
 ########### Likeilhood
 
-foo <- as.matrix(read.table(paste0(filename, "_10.logl")))
+foo <- as.matrix(read.table(paste0(filename, "_51.logl")))
 logl <- data.frame(iters = 1:length(foo), logl = as.numeric(as.matrix(foo)))
 
 print(head(logl))
@@ -116,7 +116,7 @@ p2 <- ggplot(logl) + geom_point(aes(x = iters, y = logl)) + geom_line(aes(x = it
 
 prop <- data.frame()
 
-foo <- read.table(paste0(filename,"_10.tau"))
+foo <- read.table(paste0(filename,"_51.tau"))
 colnames(foo) <- paste0("comp", 1:ncol(foo))
 prop <- rbind(prop, cbind(iters = 1:nrow(foo), foo))
 print(head(prop))
