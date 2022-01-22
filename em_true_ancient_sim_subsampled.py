@@ -197,13 +197,6 @@ parser.add_argument(
     default=10,
 )
 parser.add_argument(
-    "-ypg",
-    "--ypg",
-    help="Years per generation",
-    type=int,
-    default=28,
-)
-parser.add_argument(
     "-ignore_first_epoch",
     "--ignore_first_epoch",
     help="Ignore first epoch while calculating the local ancestry in the EM",
@@ -237,8 +230,8 @@ np.random.seed(2)  ## fix the random seed
 epoch_intervals = np.array(
     [-np.inf]
     + np.linspace(
-        args.start_time - math.log(args.ypg, 10),
-        args.end_time - math.log(args.ypg, 10),
+        args.start_time - math.log(28, 10),
+        args.end_time - math.log(28, 10),
         args.num_epochs - 1,
     ).tolist()
     + [np.inf],
@@ -340,86 +333,136 @@ def nodes_to_keep(tree, sample_ids):
     return out
 
 
+# def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
+#     ## Extracts the ground truth membership from the simulations
+#     start_time = time.time()
+#     print("Calculating the ground truth local ancestry..")
+
+#     true_assignment_chr = []
+#     true_assignment_bp = []
+#     true_assignment_group = []
+
+#     for sample_no, ind in enumerate(sample):
+#         with open(Path(path) / "assignment.txt") as fp:
+
+#             line = fp.readline().split()
+#             line = fp.readline().split()
+#             while line:
+#                 true_assignment_chr.append(str(line[0]))
+#                 true_assignment_bp.append(int(line[1]))
+#                 true_assignment_group.append(line[ind + 2])
+#                 line = fp.readline().split()
+
+#         true_assignment_group = pd.Series(true_assignment_group).astype("category")
+#         true_assignment_group = true_assignment_group.cat.codes
+
+#         ground_truth_membership_one_hot = np.zeros(
+#             (max(true_assignment_group) + 1, len(sample) * num_trees)
+#         )
+#         count = 0
+#         num_tree = 0
+#         for chr in chrs:
+#             ts = ts_list[count]
+#             count += 1
+#             tree = ts.first()
+#             prev_interval = tree.interval[0]
+#             for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+#                 if tree.interval[1] >= prev_interval + window_size:
+#                     prev_interval = prev_interval + window_size
+
+#                     assigned = False
+#                     for j in range(0, len(true_assignment_bp)):
+#                         # print([tree.interval, true_assignment_bp[j], true_assignment_bp[j+1], true_assignment_chr[j+1] == str(chr), chr])
+#                         if true_assignment_chr[j] != str(chr):
+#                             continue
+#                         if true_assignment_chr[j] == str(chr) and j + 1 == len(
+#                             true_assignment_bp
+#                         ):
+#                             ground_truth_membership_one_hot[
+#                                 true_assignment_group[j],
+#                                 sample_no * num_trees + num_tree,
+#                             ] = 1
+#                             assigned = True
+#                             break
+#                         if true_assignment_chr[j] == str(chr) and true_assignment_chr[
+#                             j + 1
+#                         ] != str(chr):
+#                             ground_truth_membership_one_hot[
+#                                 true_assignment_group[j],
+#                                 sample_no * num_trees + num_tree,
+#                             ] = 1
+#                             assigned = True
+#                             break
+#                         if (
+#                             true_assignment_chr[j] == str(chr)
+#                             and tree.interval[0] < true_assignment_bp[j + 1]
+#                             and tree.interval[1] >= true_assignment_bp[j]
+#                         ):
+#                             # print(true_assignment_group[j])
+#                             ground_truth_membership_one_hot[
+#                                 true_assignment_group[j],
+#                                 sample_no * num_trees + num_tree,
+#                             ] = 1
+#                             assigned = True
+#                             break
+#                     if assigned == False:
+#                         print(chr, tree.interval)
+
+#                     num_tree += 1
+#                 tree.next()
+
+#     print("Done in " + str(time.time() - start_time))
+#     return ground_truth_membership_one_hot
+
+
 def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
     ## Extracts the ground truth membership from the simulations
     start_time = time.time()
     print("Calculating the ground truth local ancestry..")
+    ground_truth_membership_one_hot = None
 
-    true_assignment_chr = []
-    true_assignment_bp = []
-    true_assignment_group = []
-
+    num_tree = 0
     for sample_no, ind in enumerate(sample):
-        with open(Path(path) / "assignment.txt") as fp:
-
-            line = fp.readline().split()
-            line = fp.readline().split()
-            while line:
-                true_assignment_chr.append(str(line[0]))
-                true_assignment_bp.append(int(line[1]))
-                true_assignment_group.append(line[ind + 2])
-                line = fp.readline().split()
-
-        true_assignment_group = pd.Series(true_assignment_group).astype("category")
-        true_assignment_group = true_assignment_group.cat.codes
-
-        ground_truth_membership_one_hot = np.zeros(
-            (max(true_assignment_group) + 1, len(sample) * num_trees)
-        )
         count = 0
-        num_tree = 0
         for chr in chrs:
-            ts = ts_list[count]
-            count += 1
-            tree = ts.first()
+            ground_truth = pd.read_csv(
+                Path(path)
+                / str("local_ancestry_chr" + str(chr) + "_" + str(ind) + ".csv"),
+                names=["startpos", "endpos", "dest"],
+            )
+            if ground_truth_membership_one_hot is None:
+                num_ref_groups = int(np.max(ground_truth["dest"]))
+                ground_truth_membership_one_hot = np.zeros(
+                    (num_ref_groups, int(len(sample) * num_trees))
+                )
+            tree = ts_list[count].first()
             prev_interval = tree.interval[0]
-            for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+            for tid in range(len(list(ts_list[count].trees()))):
                 if tree.interval[1] >= prev_interval + window_size:
                     prev_interval = prev_interval + window_size
-
-                    assigned = False
-                    for j in range(0, len(true_assignment_bp)):
-                        # print([tree.interval, true_assignment_bp[j], true_assignment_bp[j+1], true_assignment_chr[j+1] == str(chr), chr])
-                        if true_assignment_chr[j] != str(chr):
-                            continue
-                        if true_assignment_chr[j] == str(chr) and j + 1 == len(
-                            true_assignment_bp
-                        ):
-                            ground_truth_membership_one_hot[
-                                true_assignment_group[j],
-                                sample_no * num_trees + num_tree,
-                            ] = 1
-                            assigned = True
-                            break
-                        if true_assignment_chr[j] == str(chr) and true_assignment_chr[
-                            j + 1
-                        ] != str(chr):
-                            ground_truth_membership_one_hot[
-                                true_assignment_group[j],
-                                sample_no * num_trees + num_tree,
-                            ] = 1
-                            assigned = True
-                            break
-                        if (
-                            true_assignment_chr[j] == str(chr)
-                            and tree.interval[0] < true_assignment_bp[j + 1]
-                            and tree.interval[1] >= true_assignment_bp[j]
-                        ):
-                            # print(true_assignment_group[j])
-                            ground_truth_membership_one_hot[
-                                true_assignment_group[j],
-                                sample_no * num_trees + num_tree,
-                            ] = 1
-                            assigned = True
-                            break
-                    if assigned == False:
-                        print(chr, tree.interval)
-
+                    if tree.num_sites > 0:
+                        for j in range(len(ground_truth)):
+                            if ~(
+                                (tree.interval[1] < ground_truth["startpos"].loc[j])
+                                | (tree.interval[0] > ground_truth["endpos"].loc[j])
+                            ):
+                                ground_truth_membership_one_hot[
+                                    int(ground_truth["dest"].loc[j]) - 1, num_tree
+                                ] = 1
                     num_tree += 1
                 tree.next()
-
+            count += 1
     print("Done in " + str(time.time() - start_time))
-    return ground_truth_membership_one_hot
+    ## only return ground truth of groups which actually contribute
+    print(np.sum(ground_truth_membership_one_hot, axis=1))
+    print(
+        ground_truth_membership_one_hot[
+            np.sum(ground_truth_membership_one_hot, axis=1) != 0
+        ].shape
+    )
+    return ground_truth_membership_one_hot[
+        np.sum(ground_truth_membership_one_hot, axis=1) != 0
+    ]
 
 
 def fixed_parameters(
@@ -784,7 +827,6 @@ def compute_tree_stats(
         ts = ts_list[count]
         count += 1
         tree = ts.first()
-        # prev_interval = 0
         prev_interval = tree.interval[0]
         i = 0
         start_idx = 0
@@ -882,6 +924,23 @@ def mask_for_dodgy_trees(recomb_rates, masking_thresh):
     print(np.percentile(recomb_rates, (masking_thresh) * 100))
     mask = recomb_rates < np.percentile(recomb_rates, (masking_thresh) * 100)
     print(np.sum(mask) / len(mask))
+    return mask
+
+
+def downsample_trees(ground_truth, pop_index, downsample_frac):
+    ## higher downsample_frac means less downsampling, range (0, 1)
+    mask = np.ones_like(ground_truth[0], dtype=bool)
+    downsample_mask = (
+        np.random.rand(np.sum(ground_truth[pop_index] == 1)) < downsample_frac
+    )
+    print(
+        "Downsampling population "
+        + str(pop_index)
+        + " to remove "
+        + str(np.sum(1 - downsample_mask))
+        + " trees"
+    )
+    mask[ground_truth[pop_index] == 1] = downsample_mask
     return mask
 
 
@@ -1184,23 +1243,6 @@ def main(args, plot=False, gamma_arr=None):
             num_trees * len(args.sample_id), dtype=bool
         )  ## No masking needed for true trees
 
-    print(
-        "Trees with high certainty = " + str(np.sum(mask_dodgy) / len(args.sample_id))
-    )
-    masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
-
-    if args.props_per_chrs:
-        trees_per_chr_masked = []
-        for (start, end) in trees_per_chr:
-            start_in_masked = len(masked_trees_index) - len(
-                masked_trees_index[masked_trees_index >= start]
-            )
-            end_in_masked = len(masked_trees_index) - len(
-                masked_trees_index[masked_trees_index >= end]
-            )
-            trees_per_chr_masked.append(
-                (start_in_masked, end_in_masked)
-            )  ## [start, end)
     if args.relate_trees:
         try:
             f_pkl = open(fixed_params_file_name, "rb")
@@ -1295,6 +1337,28 @@ def main(args, plot=False, gamma_arr=None):
             ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
     denom = copy.deepcopy(np.maximum(denom, 0))
 
+    ##### Caution: manually downsampling HAN !! 🌵
+    # print("Downsampling !! Caution !!")
+    # mask_dodgy *= downsample_trees(ground_truth_membership, 0, 0.25)
+
+    print(
+        "Trees with high certainty = " + str(np.sum(mask_dodgy) / len(args.sample_id))
+    )
+    masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
+
+    if args.props_per_chrs:
+        trees_per_chr_masked = []
+        for (start, end) in trees_per_chr:
+            start_in_masked = len(masked_trees_index) - len(
+                masked_trees_index[masked_trees_index >= start]
+            )
+            end_in_masked = len(masked_trees_index) - len(
+                masked_trees_index[masked_trees_index >= end]
+            )
+            trees_per_chr_masked.append(
+                (start_in_masked, end_in_masked)
+            )  ## [start, end)
+
     if args.init_at_truth:
         own_membership = ground_truth_membership[:, mask_dodgy]
     elif args.load_membership:
@@ -1353,6 +1417,7 @@ def main(args, plot=False, gamma_arr=None):
                     gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
             tau = np.mean(own_membership, axis=1)
+            print(tau)
             if args.props_per_chrs:
                 tau = np.zeros((len(trees_per_chr_masked), len(own_membership)))
                 for chr, (start, end) in enumerate(trees_per_chr_masked):
@@ -1364,6 +1429,12 @@ def main(args, plot=False, gamma_arr=None):
                 tau = np.load(
                     args.load_props
                 )  ### load taus only works for not(props_per_chrs)
+
+            # if tau[0] < tau[1]:
+            #     tau = [0.02, 0.98]  ## CAUTION: Fixing tau!!!
+            # else:
+            #     tau = [0.98, 0.02]
+            # tau = np.array(tau)
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
@@ -1451,19 +1522,28 @@ def main(args, plot=False, gamma_arr=None):
                 acc_arr = np.zeros(
                     (len(own_membership), len(ground_truth_membership[:, mask_dodgy]))
                 )
-                for i in range(len(own_membership)):
-                    for j in range(0, len(ground_truth_membership[:, mask_dodgy])):
+                ## Permute the ground truth and membership accordingly
+                ground_truth_membership = ground_truth_membership[
+                    np.array(
+                        np.argsort(np.sum(ground_truth_membership, axis=1)), dtype=int
+                    )
+                ]
+                membership_thresh = membership_thresh[
+                    np.array(np.argsort(np.sum(membership_thresh, axis=1)), dtype=int)
+                ]
+                for i in range(len(membership_thresh)):
+                    for j in range(len(ground_truth_membership[:, mask_dodgy])):
                         acc = np.sum(
-                            membership_thresh[i]
-                            == ground_truth_membership[j, mask_dodgy]
+                            (membership_thresh[i] == 1)
+                            & (ground_truth_membership[j, mask_dodgy] == 1)
                         )
                         acc_arr[i][j] = acc
-                overall_acc = (
-                    np.sum(np.max(acc_arr, axis=1))
-                    / len(membership_thresh)
-                    / len(membership_thresh[0])
+                print(
+                    "Sample = "
+                    + sample_id_label
+                    + " Confusion matrix = "
+                    + str(acc_arr)
                 )
-                print("Sample = " + sample_id_label + " Accuracy = " + str(overall_acc))
 
             ## Tree stats
             if args.verbose and args.relate_trees:
@@ -1734,9 +1814,6 @@ def main(args, plot=False, gamma_arr=None):
             with open(filename, "wb") as f:
                 np.save(f, ground_truth_membership)
 
-    if args.mode == "sim":
-        return overall_acc
-    else:
         return 0
 
 
