@@ -19,7 +19,7 @@ colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
 palette  <- c("#f2cc8f", "#e07a5f", "#3d405b", "#81b29a")
 
 
-poplabs <- read.table("../../sims/stdpopsim_ancient_small/relate_trees_force_50/poplabels.txt", header = T)
+poplabs <- read.table("../../sims/stdpopsim_ancient_small/devel_relate_trees_force_50/poplabels.txt", header = T, sep = '\t')
 poplabs <- sort(unique(subset(poplabs, INCLUDE == 1)[,2]))
 
 
@@ -66,7 +66,7 @@ coal$epoch.start[is.infinite(coal$epoch.start)] <- 1e8
 coal %>% filter(!is.na(haploid.coalescence.rate)) %>% group_by(epoch.start, group1, group2, iter) %>% summarize(mean = mean(haploid.coalescence.rate), lower = quantile(haploid.coalescence.rate, p = 0.025), upper = quantile(haploid.coalescence.rate, p = 0.975)) %>% filter(mean > 0, !is.na(mean)) %>% droplevels() -> coal
 
 coal$group1 <- paste0("comp", coal$group1)
-
+print(coal)
 p1 <- ggplot(coal) + geom_step(aes(x = 28*epoch.start, y = 0.5/mean, colour = group2), lwd = 1.1) +
 				#geom_stepribbon(aes(x = 28*epoch.start, ymin = 0.5/upper, ymax = 0.5/lower, fill = group2), alpha = 0.5) +
 				ggthemes::theme_few() +
