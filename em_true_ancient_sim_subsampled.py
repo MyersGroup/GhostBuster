@@ -455,14 +455,14 @@ def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
     print("Done in " + str(time.time() - start_time))
     ## only return ground truth of groups which actually contribute
     print(np.sum(ground_truth_membership_one_hot, axis=1))
-    print(
-        ground_truth_membership_one_hot[
-            np.sum(ground_truth_membership_one_hot, axis=1) != 0
-        ].shape
+    return np.vstack(
+        (
+            ground_truth_membership_one_hot[
+                np.sum(ground_truth_membership_one_hot, axis=1) != 0
+            ],
+            1 - np.sum(ground_truth_membership_one_hot, axis=0),
+        )
     )
-    return ground_truth_membership_one_hot[
-        np.sum(ground_truth_membership_one_hot, axis=1) != 0
-    ]
 
 
 def fixed_parameters(
