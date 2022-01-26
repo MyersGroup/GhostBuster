@@ -110,7 +110,7 @@ foo <- as.matrix(read.table(paste0(filename, "_51.logl")))
 logl <- data.frame(iters = 1:length(foo), logl = as.numeric(as.matrix(foo)))
 
 print(head(logl))
-p2 <- ggplot(logl) + geom_point(aes(x = iters, y = logl)) + geom_line(aes(x = iters, y = logl)) + ylab("log-likelihood") + xlab("iterations") + coord_cartesian(expand = F, xlim = c(0, max(logl$iters+1)), ylim = range(logl$logl) * c(1.01,0.99)) + ggthemes::theme_few() 
+p2 <- ggplot(logl) + geom_point(aes(x = iters, y = logl)) + geom_line(aes(x = iters, y = logl)) + ylab("log-likelihood") + xlab("iterations") + coord_cartesian(expand = F, xlim = c(0, max(logl$iters+1)), ylim = range(logl$logl) * c(1.00001,0.99999)) + ggthemes::theme_few() 
 
 ########### Proportions
 
@@ -127,8 +127,11 @@ p3 <- ggplot(prop) + geom_point(aes(x = iters, y = Proportion, colour = Componen
 
 
 ########## Histogram of posterior at start and end
-member3 <- np$load(paste0(filename,"_overall_membership_",sam,".npy"))
+member3 <- np$load(paste0(filename,"_overall_membership_iter0_",sam,".npy"))
 member <- np$load(paste0(filename,"_overall_membership_",sam,".npy"))
+
+member3 <- member3[-1,] ## need to change this.. every time
+member <- member[-1,] ## need to change this.. every time
 
 member3  <- as.data.frame(t(member3))
 member  <- as.data.frame(t(member))
@@ -148,7 +151,7 @@ member$iter <- "iter 499"
 df1 <- rbind(member, member3)
 
 p5 <- ggplot(df1, aes(x=posterior))+
-  geom_histogram(color="black", fill="black")+
+  geom_histogram(color="black", fill="black", bins = 100)+
   facet_grid(iter ~ .)
 
 ########### Calibration curves
@@ -156,6 +159,7 @@ p5 <- ggplot(df1, aes(x=posterior))+
 member <- np$load(paste0(filename,"_overall_membership_",sam,".npy"))
 member2 <- np$load(paste0(filename,"_ground_truth_membership_",sam,".npy"))
 # member2 <- member2[-1,]
+# member <- member[-1,] ## need to change this.. every time
 member  <- as.data.frame(t(member))
 member2 <- as.data.frame(t(member2))
 
@@ -178,7 +182,6 @@ for(i in unique(member2$comp)){
  }
  match <- append(match, k)
 }
-print(match)
 member2$comp <- as.numeric(as.matrix(member2$comp))
 member2$comp <- match[member2$comp]
 df <- merge(member, member2, by = c("comp","ID"))
@@ -194,6 +197,7 @@ colnames(df_calib) <- c("component", "match", "x", "y")
 df_calib$component <- paste0("comp", df_calib$component+1)
 df_calib$component <- as.factor(df_calib$component)
 df_calib %>% group_by(component) %>% filter( match == match[which.max(y)] ) -> df_calib
+df_calib %>% group_by(component) %>% filter( component == "comp1" ) -> df_calib
 p4 <- ggplot(df_calib) + geom_abline(slope = 1) + geom_abline(slope = -1) + geom_point(aes(x = x, y = y, colour = component), size = 2) + geom_line(aes(x = x, y = y, colour = component)) + ggthemes::theme_few() + coord_cartesian(xlim = c(0,1), ylim = c(0,1), expand = F) + xlab("Mean posterior probability") + ylab("Proportion in component") + scale_colour_manual(values = colours, name = "")
 
 
