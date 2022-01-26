@@ -1360,16 +1360,16 @@ def main(args, plot=False, gamma_arr=None):
             )  ## [start, end)
 
     if args.init_at_truth:
-        own_membership = ground_truth_membership[:, mask_dodgy]
+        own_membership = ground_truth_membership
     elif args.load_membership:
-        own_membership = np.load(args.load_membership)[:, mask_dodgy]
+        own_membership = np.load(args.load_membership)
     else:
         own_membership = np.array(
             np.random.dirichlet(
                 np.ones(num_clusters), len(args.sample_id) * num_trees
             ).T,
             dtype="float64",
-        )[:, mask_dodgy]
+        )
 
     if args.load_gamma:
         gamma_arr = np.load(args.load_gamma)
@@ -1385,6 +1385,18 @@ def main(args, plot=False, gamma_arr=None):
         filename_tau = args.output + "_" + sample_id_label + ".tau"
         f_logl = open(filename_logl, "w")
         f_tau = open(filename_tau, "w")
+
+        filename = (
+            "overall_membership_iter0_" + sample_id_label + ".npy"
+        )  ## this saves membership for all the trees (without the filtering)
+        if args.relate_trees:
+            filename = args.output + "_" + filename
+        else:
+            filename = "TrueTrees_" + filename
+        with open(filename, "wb") as f:
+            np.save(f, own_membership)
+
+        own_membership = own_membership[:, mask_dodgy]
 
         for epoch in range(args.num_iters):
             ## M-step
