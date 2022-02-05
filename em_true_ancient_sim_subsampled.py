@@ -797,6 +797,7 @@ def compute_tree_stats(
     frac_branches_with_snp_target = []
     frac_branches_with_snp = []
     num_snps_on_tree = []
+    num_snps_on_lineage = []
     count = 0
     recomb_window_size = 10000  ## window size for measure recombination rates
     num_nodes = len(list(ts_list[0].first().nodes()))
@@ -873,11 +874,17 @@ def compute_tree_stats(
                     num_snps_on_tree.append(
                         count_num_muts(relate_allmuts_tree, first_tree_nodes)
                     )
+                    num_snps_on_lineage.append(
+                        count_num_muts(
+                            relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                        )
+                    )
                 else:
                     rank_zero_snp_branches_target.append(0)
                     frac_branches_with_snp_target.append(0)
                     frac_branches_with_snp.append(0)
                     num_snps_on_tree.append(0)
+                    num_snps_on_lineage.append(0)
 
                 # relate_quality = relate_quality_output[
                 #     (relate_quality_output.pos < tree.interval[1])
@@ -906,6 +913,7 @@ def compute_tree_stats(
         frac_branches_with_snp_target,
         frac_branches_with_snp,
         num_snps_on_tree,
+        num_snps_on_lineage,
     )
 
 
@@ -1177,6 +1185,7 @@ def main(args, plot=False, gamma_arr=None):
                 frac_branches_with_snp_target,
                 frac_branches_with_snp,
                 num_snps_on_tree,
+                num_snps_on_lineage,
                 mask_dodgy,
             ) = pickle.load(f_pkl)
             f_pkl.close()
@@ -1193,6 +1202,7 @@ def main(args, plot=False, gamma_arr=None):
                 frac_branches_with_snp_target,
                 frac_branches_with_snp,
                 num_snps_on_tree,
+                num_snps_on_lineage,
             ) = compute_tree_stats(
                 ts_list,
                 chrs,
@@ -1207,9 +1217,29 @@ def main(args, plot=False, gamma_arr=None):
                 1 - args.masking_threshold,
             )
             if check_muts_target_name is not None:
-                mask_dodgy *= mask_for_dodgy_trees(
-                    rank_zero_snp_branches_target * len(args.sample_id),
-                    1 - args.masking_threshold,
+                # mask_dodgy *= mask_for_dodgy_trees(
+                #     rank_zero_snp_branches_target * len(args.sample_id),
+                #     1 - args.masking_threshold,
+                # )
+                mask_dodgy *= ~mask_for_dodgy_trees(
+                    frac_branches_with_snp_target * len(args.sample_id),
+                    args.masking_threshold,
+                )
+                mask_dodgy *= ~mask_for_dodgy_trees(
+                    frac_branches_with_snp * len(args.sample_id),
+                    args.masking_threshold,
+                )
+                mask_dodgy *= ~mask_for_dodgy_trees(
+                    num_snps_on_lineage * len(args.sample_id),
+                    args.masking_threshold,
+                )
+                mask_dodgy *= ~mask_for_dodgy_trees(
+                    num_snps_on_tree * len(args.sample_id),
+                    args.masking_threshold,
+                )
+                mask_dodgy *= ~mask_for_dodgy_trees(
+                    recomb_rates * len(args.sample_id),
+                    0.2,
                 )
 
             if args.load_mask:
@@ -1231,6 +1261,7 @@ def main(args, plot=False, gamma_arr=None):
                     frac_branches_with_snp_target,
                     frac_branches_with_snp,
                     num_snps_on_tree,
+                    num_snps_on_lineage,
                     mask_dodgy,
                 ],
                 f_pkl,
@@ -1337,9 +1368,9 @@ def main(args, plot=False, gamma_arr=None):
             ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
     denom = copy.deepcopy(np.maximum(denom, 0))
 
-    ##### Caution: manually downsampling HAN !! 🌵
+    # #### Caution: manually downsampling HAN (1) !! 🌵
     # print("Downsampling !! Caution !!")
-    # mask_dodgy *= downsample_trees(ground_truth_membership, 0, 0.25)
+    # mask_dodgy *= downsample_trees(ground_truth_membership, 1, 0.25)
 
     print(
         "Trees with high certainty = " + str(np.sum(mask_dodgy) / len(args.sample_id))
@@ -1442,11 +1473,11 @@ def main(args, plot=False, gamma_arr=None):
                     args.load_props
                 )  ### load taus only works for not(props_per_chrs)
 
-            # if tau[0] < tau[1]:
-            #     tau = [0.02, 0.98]  ## CAUTION: Fixing tau!!!
-            # else:
-            #     tau = [0.98, 0.02]
-            # tau = np.array(tau)
+            if tau[0] < tau[1]:
+                tau = [0.03, 0.97]  ## CAUTION: Fixing tau!!!
+            else:
+                tau = [0.97, 0.03]
+            tau = np.array(tau)
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
