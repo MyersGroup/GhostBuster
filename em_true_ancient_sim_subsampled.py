@@ -1212,15 +1212,9 @@ def main(args, plot=False, gamma_arr=None):
             )
             mask_dodgy = mask_for_dodgy_trees(
                 recomb_rates * len(args.sample_id),
-                # frac_branches_with_snp * len(args.sample_id),
-                # num_snps_on_tree * len(args.sample_id),
                 1 - args.masking_threshold,
             )
             if check_muts_target_name is not None:
-                # mask_dodgy *= mask_for_dodgy_trees(
-                #     rank_zero_snp_branches_target * len(args.sample_id),
-                #     1 - args.masking_threshold,
-                # )
                 mask_dodgy *= ~mask_for_dodgy_trees(
                     frac_branches_with_snp_target * len(args.sample_id),
                     args.masking_threshold,
@@ -1237,9 +1231,13 @@ def main(args, plot=False, gamma_arr=None):
                     num_snps_on_tree * len(args.sample_id),
                     args.masking_threshold,
                 )
+                print(
+                    "Proportion of trees with 0 recombination rate = "
+                    + str(np.mean(np.array(recomb_rates * len(args.sample_id)) <= 0))
+                )
                 mask_dodgy *= ~mask_for_dodgy_trees(
                     recomb_rates * len(args.sample_id),
-                    0.2,
+                    np.mean(np.array(recomb_rates * len(args.sample_id)) <= 0),
                 )
 
             if args.load_mask:
