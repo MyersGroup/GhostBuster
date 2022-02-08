@@ -239,8 +239,6 @@ epoch_intervals = np.array(
 )
 epoch_intervals_pow = np.power(10, epoch_intervals)
 
-# path = "/well/myers/users/ooz218/workspace/MixedAncestryCoalescenceRates/sim_debug/transfer/transfer/input/"
-# path="/data/smew1/speidel/genomics/relate_analyses/MixedCoalRates/stdpopsim_homsap/"
 path = args.path
 
 
@@ -331,88 +329,6 @@ def nodes_to_keep(tree, sample_ids):
                 out.append(node)
                 # out.append(num_samples + (node - num_samples) % (num_samples - 1))
     return out
-
-
-# def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
-#     ## Extracts the ground truth membership from the simulations
-#     start_time = time.time()
-#     print("Calculating the ground truth local ancestry..")
-
-#     true_assignment_chr = []
-#     true_assignment_bp = []
-#     true_assignment_group = []
-
-#     for sample_no, ind in enumerate(sample):
-#         with open(Path(path) / "assignment.txt") as fp:
-
-#             line = fp.readline().split()
-#             line = fp.readline().split()
-#             while line:
-#                 true_assignment_chr.append(str(line[0]))
-#                 true_assignment_bp.append(int(line[1]))
-#                 true_assignment_group.append(line[ind + 2])
-#                 line = fp.readline().split()
-
-#         true_assignment_group = pd.Series(true_assignment_group).astype("category")
-#         true_assignment_group = true_assignment_group.cat.codes
-
-#         ground_truth_membership_one_hot = np.zeros(
-#             (max(true_assignment_group) + 1, len(sample) * num_trees)
-#         )
-#         count = 0
-#         num_tree = 0
-#         for chr in chrs:
-#             ts = ts_list[count]
-#             count += 1
-#             tree = ts.first()
-#             prev_interval = tree.interval[0]
-#             for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
-#                 if tree.interval[1] >= prev_interval + window_size:
-#                     prev_interval = prev_interval + window_size
-
-#                     assigned = False
-#                     for j in range(0, len(true_assignment_bp)):
-#                         # print([tree.interval, true_assignment_bp[j], true_assignment_bp[j+1], true_assignment_chr[j+1] == str(chr), chr])
-#                         if true_assignment_chr[j] != str(chr):
-#                             continue
-#                         if true_assignment_chr[j] == str(chr) and j + 1 == len(
-#                             true_assignment_bp
-#                         ):
-#                             ground_truth_membership_one_hot[
-#                                 true_assignment_group[j],
-#                                 sample_no * num_trees + num_tree,
-#                             ] = 1
-#                             assigned = True
-#                             break
-#                         if true_assignment_chr[j] == str(chr) and true_assignment_chr[
-#                             j + 1
-#                         ] != str(chr):
-#                             ground_truth_membership_one_hot[
-#                                 true_assignment_group[j],
-#                                 sample_no * num_trees + num_tree,
-#                             ] = 1
-#                             assigned = True
-#                             break
-#                         if (
-#                             true_assignment_chr[j] == str(chr)
-#                             and tree.interval[0] < true_assignment_bp[j + 1]
-#                             and tree.interval[1] >= true_assignment_bp[j]
-#                         ):
-#                             # print(true_assignment_group[j])
-#                             ground_truth_membership_one_hot[
-#                                 true_assignment_group[j],
-#                                 sample_no * num_trees + num_tree,
-#                             ] = 1
-#                             assigned = True
-#                             break
-#                     if assigned == False:
-#                         print(chr, tree.interval)
-
-#                     num_tree += 1
-#                 tree.next()
-
-#     print("Done in " + str(time.time() - start_time))
-#     return ground_truth_membership_one_hot
 
 
 def make_ground_truth(ts_list, num_trees, window_size, sample=None, chrs=None):
@@ -917,16 +833,6 @@ def compute_tree_stats(
     )
 
 
-# def mask_for_dodgy_trees(frac_branches_with_snp, num_snps_on_tree, masking_thresh):
-#     print(np.percentile(frac_branches_with_snp, masking_thresh * 100))
-#     print(np.percentile(num_snps_on_tree, masking_thresh * 100))
-#     mask = (
-#         frac_branches_with_snp
-#         > np.percentile(frac_branches_with_snp, masking_thresh * 100)
-#     ) & (num_snps_on_tree > np.percentile(num_snps_on_tree, masking_thresh * 100))
-#     return mask
-
-
 def mask_for_dodgy_trees(recomb_rates, masking_thresh):
     recomb_rates = np.array(recomb_rates)
     print(np.percentile(recomb_rates, (masking_thresh) * 100))
@@ -1038,7 +944,7 @@ def main(args, plot=False, gamma_arr=None):
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     print("Considering sample ids: " + str(args.sample_id))
 
-    ### Add all input assertions here:
+    ##########    All input assertions    ##################################
     if (args.load_gamma == None and args.load_props != None) or (
         args.load_props != None and args.load_gamma == None
     ):
@@ -1066,7 +972,6 @@ def main(args, plot=False, gamma_arr=None):
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
-    # ts_list_subsampled = []
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
     tree_stats_file_name = (
@@ -1123,14 +1028,7 @@ def main(args, plot=False, gamma_arr=None):
                 Path(path) / str(args.trees + "_chr" + str(chr) + ".trees")
             )  ## relate trees
             ts_list.append(ts)
-            # if len(poplabels[poplabels.INCLUDE]) != len(poplabels):
-            #     ts_list_subsampled.append(
-            #         ts.simplify(poplabels[poplabels.INCLUDE].index.tolist())
-            #     )
-            # else:
-            #     ts_list_subsampled.append(ts)
         if len(poplabels) != ts_list[0].num_samples:
-            ## num_samples is number of haplotypes
             raise ValueError(
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
             )
@@ -1142,41 +1040,11 @@ def main(args, plot=False, gamma_arr=None):
         else:
             print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
 
-    filename = ".treepos"
-    if args.relate_trees:
-        filename = "Relate" + filename
-    else:
-        filename = "True" + filename
-    f = open(filename, "w")
-
-    if args.trees != None:
-        trees_per_chr = []
-        num_trees = 0
-        for sample_no in range(len(args.sample_id)):
-            for chr_no, ts in enumerate(ts_list):
-                tree = ts.first()
-                prev_interval = tree.interval[0]
-                # prev_interval = 0
-                start_pos = copy.deepcopy(num_trees)
-                for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
-                    if tree.interval[1] >= prev_interval + args.window_size:
-                        prev_interval = prev_interval + args.window_size
-                        f.write(
-                            str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n"
-                        )
-                        num_trees += 1
-                    tree.next()
-                trees_per_chr.append((start_pos, num_trees))
-        f.close()
-        num_trees = int(num_trees / len(args.sample_id))
-        print("Total number of trees = " + str(num_trees))
-
+    ##########    Calculating tree statistics    ##################################
     if args.relate_trees:
         try:
             f_pkl = open(tree_stats_file_name, "rb")
             (
-                num_trees,
-                trees_per_chr,
                 tree_size,
                 no_of_mutations,
                 tmrca,
@@ -1186,7 +1054,6 @@ def main(args, plot=False, gamma_arr=None):
                 frac_branches_with_snp,
                 num_snps_on_tree,
                 num_snps_on_lineage,
-                mask_dodgy,
             ) = pickle.load(f_pkl)
             f_pkl.close()
             print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -1210,6 +1077,25 @@ def main(args, plot=False, gamma_arr=None):
                 check_muts_target_name,
                 poplabels.index.values[args.sample_id],
             )
+
+            f_pkl = open(tree_stats_file_name, "wb")
+            pickle.dump(
+                [
+                    tree_size,
+                    no_of_mutations,
+                    tmrca,
+                    recomb_rates,
+                    rank_zero_snp_branches_target,
+                    frac_branches_with_snp_target,
+                    frac_branches_with_snp,
+                    num_snps_on_tree,
+                    num_snps_on_lineage,
+                ],
+                f_pkl,
+            )
+            f_pkl.close()
+            print("Tree statistics stored in: " + str(tree_stats_file_name))
+
             mask_dodgy = mask_for_dodgy_trees(
                 recomb_rates * len(args.sample_id),
                 1 - args.masking_threshold,
@@ -1246,31 +1132,44 @@ def main(args, plot=False, gamma_arr=None):
                 mask_dodgy = np.multiply(mask_dodgy, mask_dodgy2)
                 print(np.mean(mask_dodgy))
 
-            f_pkl = open(tree_stats_file_name, "wb")
-            pickle.dump(
-                [
-                    num_trees,
-                    trees_per_chr,
-                    tree_size,
-                    no_of_mutations,
-                    tmrca,
-                    recomb_rates,
-                    rank_zero_snp_branches_target,
-                    frac_branches_with_snp_target,
-                    frac_branches_with_snp,
-                    num_snps_on_tree,
-                    num_snps_on_lineage,
-                    mask_dodgy,
-                ],
-                f_pkl,
-            )
-            f_pkl.close()
-            print("Tree statistics stored in: " + str(tree_stats_file_name))
-
     else:
+        num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
         mask_dodgy = np.ones(
             num_trees * len(args.sample_id), dtype=bool
         )  ## No masking needed for true trees
+
+    ##########    Choosing trees based on windowing    ##################################
+
+    filename = ".treepos"
+    if args.relate_trees:
+        filename = "Relate" + filename
+    else:
+        filename = "True" + filename
+    f = open(filename, "w")
+
+    if args.trees != None:
+        trees_per_chr = []
+        num_trees = 0
+        for sample_no in range(len(args.sample_id)):
+            for chr_no, ts in enumerate(ts_list):
+                tree = ts.first()
+                prev_interval = tree.interval[0]
+                # prev_interval = 0
+                start_pos = copy.deepcopy(num_trees)
+                for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+                    if tree.interval[1] >= prev_interval + args.window_size:
+                        prev_interval = prev_interval + args.window_size
+                        f.write(
+                            str(tree.interval[0]) + " " + str(tree.interval[1]) + "\n"
+                        )
+                        num_trees += 1
+                    tree.next()
+                trees_per_chr.append((start_pos, num_trees))
+        f.close()
+        num_trees = int(num_trees / len(args.sample_id))
+        print("Total number of trees = " + str(num_trees))
+
+    ##########    Calculating fixed parameters    ##################################
 
     if args.relate_trees:
         try:
@@ -1388,6 +1287,8 @@ def main(args, plot=False, gamma_arr=None):
                 (start_in_masked, end_in_masked)
             )  ## [start, end)
 
+    ##########    Initializing local ancestry    ##################################
+
     if args.init_at_truth:
         own_membership = ground_truth_membership
     elif args.load_membership:
@@ -1426,6 +1327,8 @@ def main(args, plot=False, gamma_arr=None):
             np.save(f, own_membership)
 
         own_membership = own_membership[:, mask_dodgy]
+
+        ##########    Starting the EM    ##################################
 
         for epoch in range(args.num_iters):
             ## M-step
@@ -1693,20 +1596,6 @@ def main(args, plot=False, gamma_arr=None):
             ## Early-stopping
             print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
             f_logl.write(str(log_likelihood_arr[-1]) + "\n")
-            # if epoch > 100: ##min-iters = 100
-            #    if np.abs((log_likelihood_arr[-1] - log_likelihood_arr[-2])/log_likelihood_arr[-2]) < 0.00001:
-            #        break ## stop if log-likelihood isn't changing much
-
-        # if (
-        #    np.abs(
-        #        (log_likelihood_arr[-1] - log_likelihood_arr[-2])
-        #        / log_likelihood_arr[-2]
-        #    )
-        #    > 0.001
-        # ):
-        #    warnings.warn(
-        #        "The log-likelihood is still increasing, you should consider running for longer"
-        #    )
 
         print(
             "Sample = "
@@ -1825,14 +1714,8 @@ def main(args, plot=False, gamma_arr=None):
             proportion_of_coalescing_top2[tid, :, :] = proportion_of_coalescing_all[
                 tid
             ][0:2]
-            ## assuming each tree has atleast 2 coal events with the target
 
-        # silhouette_scores = _silhouette_score(
-        #     proportion_of_coalescing_top2[mask_dodgy],
-        #     np.argmax(own_membership[:, mask_dodgy], axis=0),
-        # )  ## calculating silhouette scores only on masked trees
         print("Test log-likelihood: " + str(log_likelihood))
-        # print("silhouette_scores: " + str(silhouette_scores))
 
         filename = (
             "overall_membership_" + sample_id_label + ".npy"
