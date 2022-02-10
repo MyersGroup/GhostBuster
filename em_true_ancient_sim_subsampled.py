@@ -350,9 +350,7 @@ def make_ground_truth(ts_list, num_trees, mask_dodgy, sample=None, chrs=None):
             )
             if ground_truth_membership_one_hot is None:
                 num_ref_groups = int(np.max(ground_truth["dest"]))
-                ground_truth_membership_one_hot = np.zeros(
-                    (num_ref_groups, int(len(sample) * num_trees))
-                )
+                ground_truth_membership_one_hot = np.zeros((num_ref_groups, num_trees))
             tree = ts_list[count].first()
             for tid in range(len(list(ts_list[count].trees()))):
                 if mask_dodgy[count_all_tree]:
@@ -401,7 +399,7 @@ def fixed_parameters(
         (
             len(unique_groups),
             len(epoch_intervals_pow) - 1,
-            num_trees * len(sample_list),
+            num_trees,
         ),
         dtype="float64",
     )
@@ -409,7 +407,7 @@ def fixed_parameters(
         (
             len(unique_groups),
             len(epoch_intervals_pow) - 1,
-            num_trees * len(sample_list),
+            num_trees,
         ),
         dtype="float64",
     )
@@ -809,7 +807,7 @@ def compute_tree_stats(ts_list, chrs, check_muts_target_name, sample_list=None):
 def mask_for_dodgy_trees(recomb_rates, masking_thresh):
     recomb_rates = np.array(recomb_rates)
     print(np.percentile(recomb_rates, (masking_thresh) * 100))
-    mask = recomb_rates < np.percentile(recomb_rates, (masking_thresh) * 100)
+    mask = recomb_rates <= np.percentile(recomb_rates, (masking_thresh) * 100)
     print(np.sum(mask) / len(mask))
     return mask
 
@@ -1073,10 +1071,6 @@ def main(args, plot=False, gamma_arr=None):
                 args.masking_threshold,
             )
             recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
-            print(
-                "Proportion of trees with 0 recombination rate = "
-                + str(recomb_0_thresh)
-            )
             mask_dodgy *= ~mask_for_dodgy_trees(
                 recomb_rates,
                 recomb_0_thresh,
@@ -1101,13 +1095,13 @@ def main(args, plot=False, gamma_arr=None):
     mask_dodgy = np.array(mask_dodgy, dtype=float)
     mask_dodgy[mask_dodgy == 0] = np.inf
     while np.sum(mask_dodgy != np.inf) > 0:
-        ## choose the best tree
-        best_id = np.argmin(recomb_rates * mask_dodgy)
+        ## choose the best tree (avoid inf x 0 multiplication)
+        best_id = np.argmin((recomb_rates + 1e-8) * mask_dodgy)
         mask_dodgy_windowed[best_id] = True
         ## mask (remove) the near-ones
         recomb_rate = recomb_rates[best_id]
         window = max(1e4, int(1e6 * args.window_size / recomb_rate / 2))  # bp
-        for i in range(max(0, best_id - 20), min(best_id + 20, len(cum_tree_size))):
+        for i in range(max(0, best_id - 100), min(best_id + 100, len(cum_tree_size))):
             if (
                 cum_tree_size[i] < cum_tree_size[best_id] + window
                 and cum_tree_size[i] > cum_tree_size[best_id] - window
@@ -1125,8 +1119,6 @@ def main(args, plot=False, gamma_arr=None):
                     num_trees += 1
                 count += 1
             trees_per_chr.append((start_pos, num_trees))
-    print(trees_per_chr)
-    num_trees = int(num_trees / len(args.sample_id))
     print("Total number of trees = " + str(num_trees))
 
     ##### Caution: manually downsampling HAN (1) !! 🌵
@@ -1150,7 +1142,6 @@ def main(args, plot=False, gamma_arr=None):
                 count += 1
             trees_per_chr.append((start_pos, num_trees))
 
-    num_trees = int(num_trees / len(args.sample_id))
     print("Total number of trees = " + str(num_trees))
 
     ##########    Calculating fixed parameters    ##################################
@@ -1276,9 +1267,7 @@ def main(args, plot=False, gamma_arr=None):
         own_membership = np.load(args.load_membership)
     else:
         own_membership = np.array(
-            np.random.dirichlet(
-                np.ones(num_clusters), len(args.sample_id) * num_trees
-            ).T,
+            np.random.dirichlet(np.ones(num_clusters), num_trees).T,
             dtype="float64",
         )
 
@@ -1469,9 +1458,9 @@ def main(args, plot=False, gamma_arr=None):
             ## Tree stats
             if args.verbose and args.relate_trees:
                 proportion_of_coalescing_top2 = np.zeros(
-                    (len(args.sample_id) * num_trees, 2, len(unique_groups))
+                    (num_trees, 2, len(unique_groups))
                 )
-                for tid in range(len(args.sample_id) * num_trees):
+                for tid in range(num_trees):
                     proportion_of_coalescing_top2[
                         tid, :, :
                     ] = proportion_of_coalescing_all[tid][0:2]
@@ -1490,9 +1479,9 @@ def main(args, plot=False, gamma_arr=None):
                     num_mutations_i = np.array(len(args.sample_id) * no_of_mutations)[
                         mask_dodgy
                     ][np.argmax(own_membership, axis=0) == i]
-                    recomb_rates_i = np.array(len(args.sample_id) * recomb_rates)[
-                        mask_dodgy
-                    ][np.argmax(own_membership, axis=0) == i]
+                    recomb_rates_i = np.array(
+                        len(args.sample_id) * recomb_rates.tolist()
+                    )[mask_dodgy][np.argmax(own_membership, axis=0) == i]
                     recomb_rates_i = recomb_rates_i[~np.isnan(np.array(recomb_rates_i))]
                     frac_branches_with_snp_i = np.array(
                         len(args.sample_id) * frac_branches_with_snp
@@ -1631,16 +1620,12 @@ def main(args, plot=False, gamma_arr=None):
     if args.evaluate_local_ancestry:
         ## Final local ancestry inference on all trees
         own_membership_update = np.ones(
-            (len(own_membership), len(args.sample_id) * num_trees), dtype="float64"
+            (len(own_membership), num_trees), dtype="float64"
         )
 
-        log_num_em = np.zeros(
-            (len(own_membership), len(args.sample_id) * num_trees), dtype="float64"
-        )
-        log_denom_em = np.zeros(
-            (len(own_membership), len(args.sample_id) * num_trees), dtype="float64"
-        )
-        for tid in range(len(args.sample_id) * num_trees):
+        log_num_em = np.zeros((len(own_membership), num_trees), dtype="float64")
+        log_denom_em = np.zeros((len(own_membership), num_trees), dtype="float64")
+        for tid in range(num_trees):
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
             for j in range(len(own_membership)):
@@ -1684,10 +1669,8 @@ def main(args, plot=False, gamma_arr=None):
 
         own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
-        proportion_of_coalescing_top2 = np.zeros(
-            (len(args.sample_id) * num_trees, 2, len(unique_groups))
-        )
-        for tid in range(len(args.sample_id) * num_trees):
+        proportion_of_coalescing_top2 = np.zeros((num_trees, 2, len(unique_groups)))
+        for tid in range(num_trees):
             proportion_of_coalescing_top2[tid, :, :] = proportion_of_coalescing_all[
                 tid
             ][0:2]
