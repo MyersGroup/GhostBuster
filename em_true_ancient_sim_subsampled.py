@@ -48,6 +48,13 @@ parser.add_argument(
     default=0.01,
 )
 parser.add_argument(
+    "-fb",
+    "--force_build",
+    help="force build size to subsample the trees in bp",
+    type=float,
+    default=1,
+)
+parser.add_argument(
     "-relate_trees",
     "--relate_trees",
     help="Do you wish to work with Relate trees",
@@ -303,6 +310,20 @@ def get_multinomial_frac_branches(mut_t, nodes, mut_rate=1e-6, num_samples=10000
     num_zero_branches = np.sum(rv.rvs(size=num_samples) == 0, axis=1)  # num_samples x 1
     rank = np.sum(num_zero_branches < np.sum(mut_t.num_muts[focal_mutations] == 0))
     return rank
+
+
+def get_poisson_logpmf(mut_t, nodes, mut_rate=1e-8):
+    mut_t_b = mut_t.branchID
+    focal_mutations = np.isin(mut_t_b, np.fromiter(nodes, mut_t_b.dtype))
+    opportunity = (
+        mut_rate * mut_t.dist[focal_mutations] * mut_t.branch_length[focal_mutations]
+    ).values
+    logpmf = 0
+    ## multiply pmf across branches as they are independent rv
+    for branch_no in range(len(opportunity)):
+        rv = stats.poisson(opportunity[branch_no])
+        logpmf += rv.logpmf(mut_t.num_muts[focal_mutations].tolist()[branch_no])
+    return logpmf
 
 
 def samples_below(tree, node):
@@ -704,6 +725,7 @@ def compute_gamma_denom(own_membership, denom):
 def compute_tree_stats(ts_list, chrs, check_muts_target_name, sample_list=None):
     num_trees = 0
     tree_size = []
+    tree_left_bp = []
     no_of_mutations = []
     tmrca = []
     recomb_rates = []
@@ -712,6 +734,9 @@ def compute_tree_stats(ts_list, chrs, check_muts_target_name, sample_list=None):
     frac_branches_with_snp = []
     num_snps_on_tree = []
     num_snps_on_lineage = []
+    num_branches_on_target = []
+    mutrate_logpmf_target = []
+    mutrate_logpmf_tree = []
     count = 0
     recomb_window_size = 10000  ## window size for measure recombination rates
     num_nodes = len(list(ts_list[0].first().nodes()))
@@ -753,6 +778,7 @@ def compute_tree_stats(ts_list, chrs, check_muts_target_name, sample_list=None):
             num_trees += 1
             i += 1
             tree_size.append(tree.interval[1] - tree.interval[0])
+            tree_left_bp.append(tree.interval[0])
             no_of_mutations.append(tree.num_mutations)
             tmrca.append(tree.time(tree.root))
             if check_muts_target_name is not None:
@@ -781,18 +807,31 @@ def compute_tree_stats(ts_list, chrs, check_muts_target_name, sample_list=None):
                         relate_allmuts_tree, lineage_nodes(tree, sample_list)
                     )
                 )
+                num_branches_on_target.append(len(lineage_nodes(tree, sample_list)))
+                mutrate_logpmf_target.append(
+                    get_poisson_logpmf(
+                        relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                    )
+                )
+                mutrate_logpmf_tree.append(
+                    get_poisson_logpmf(relate_allmuts_tree, first_tree_nodes)
+                )
             else:
                 rank_zero_snp_branches_target.append(0)
                 frac_branches_with_snp_target.append(0)
                 frac_branches_with_snp.append(0)
                 num_snps_on_tree.append(0)
                 num_snps_on_lineage.append(0)
+                num_branches_on_target.append(0)
+                mutrate_logpmf_target.append(0)
+                mutrate_logpmf_tree.append(0)
             tree.next()
 
         del tree
         del ts
     return (
         tree_size,
+        tree_left_bp,
         no_of_mutations,
         tmrca,
         recomb_rates,
@@ -801,6 +840,9 @@ def compute_tree_stats(ts_list, chrs, check_muts_target_name, sample_list=None):
         frac_branches_with_snp,
         num_snps_on_tree,
         num_snps_on_lineage,
+        num_branches_on_target,
+        mutrate_logpmf_target,
+        mutrate_logpmf_tree,
     )
 
 
@@ -1000,6 +1042,7 @@ def main(args, plot=False, gamma_arr=None):
             f_pkl = open(tree_stats_file_name, "rb")
             (
                 tree_size,
+                tree_left_bp,
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
@@ -1008,6 +1051,9 @@ def main(args, plot=False, gamma_arr=None):
                 frac_branches_with_snp,
                 num_snps_on_tree,
                 num_snps_on_lineage,
+                num_branches_on_target,
+                mutrate_logpmf_target,
+                mutrate_logpmf_tree,
             ) = pickle.load(f_pkl)
             f_pkl.close()
             print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -1016,6 +1062,7 @@ def main(args, plot=False, gamma_arr=None):
             ## mapping samples back to their original names
             (
                 tree_size,
+                tree_left_bp,
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
@@ -1024,6 +1071,9 @@ def main(args, plot=False, gamma_arr=None):
                 frac_branches_with_snp,
                 num_snps_on_tree,
                 num_snps_on_lineage,
+                num_branches_on_target,
+                mutrate_logpmf_target,
+                mutrate_logpmf_tree,
             ) = compute_tree_stats(
                 ts_list,
                 chrs,
@@ -1035,6 +1085,7 @@ def main(args, plot=False, gamma_arr=None):
             pickle.dump(
                 [
                     tree_size,
+                    tree_left_bp,
                     no_of_mutations,
                     tmrca,
                     recomb_rates,
@@ -1043,38 +1094,43 @@ def main(args, plot=False, gamma_arr=None):
                     frac_branches_with_snp,
                     num_snps_on_tree,
                     num_snps_on_lineage,
+                    num_branches_on_target,
+                    mutrate_logpmf_target,
+                    mutrate_logpmf_tree,
                 ],
                 f_pkl,
             )
             f_pkl.close()
             print("Tree statistics stored in: " + str(tree_stats_file_name))
 
-        mask_dodgy = mask_for_dodgy_trees(
-            recomb_rates,
-            1 - args.masking_threshold,
-        )
+        # mask_dodgy = mask_for_dodgy_trees(
+        #     recomb_rates,
+        #     1 - args.masking_threshold,
+        # )
         if check_muts_target_name is not None:
-            mask_dodgy *= ~mask_for_dodgy_trees(
-                frac_branches_with_snp_target,
-                args.masking_threshold,
-            )
-            mask_dodgy *= ~mask_for_dodgy_trees(
-                frac_branches_with_snp,
-                args.masking_threshold,
-            )
-            mask_dodgy *= ~mask_for_dodgy_trees(
-                num_snps_on_lineage,
-                args.masking_threshold,
-            )
-            mask_dodgy *= ~mask_for_dodgy_trees(
-                num_snps_on_tree,
-                args.masking_threshold,
-            )
-            recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
-            mask_dodgy *= ~mask_for_dodgy_trees(
-                recomb_rates,
-                recomb_0_thresh,
-            )
+            # mask_dodgy *= ~mask_for_dodgy_trees(
+            #     frac_branches_with_snp_target,
+            #     args.masking_threshold,
+            # )
+            # mask_dodgy *= ~mask_for_dodgy_trees(
+            #     frac_branches_with_snp,
+            #     args.masking_threshold,
+            # )
+            # mask_dodgy *= ~mask_for_dodgy_trees(
+            #     num_snps_on_lineage,
+            #     args.masking_threshold,
+            # )
+            # mask_dodgy *= ~mask_for_dodgy_trees(
+            #     num_snps_on_tree,
+            #     args.masking_threshold,
+            # )
+            # recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
+            # mask_dodgy *= ~mask_for_dodgy_trees(
+            #     recomb_rates,
+            #     recomb_0_thresh,
+            # )
+            num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
+            mask_dodgy = np.ones(num_trees, dtype=bool)
 
         if args.load_mask:
             mask_dodgy2 = np.load(args.load_mask)
@@ -1085,28 +1141,58 @@ def main(args, plot=False, gamma_arr=None):
     else:
         num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
         mask_dodgy = np.ones(num_trees, dtype=bool)
+        recomb_rates = np.ones(num_trees)
 
     ##########    Choosing trees based on windowing    ##################################
+    num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
+    chr_list = []
+    for c in range(len(ts_list)):
+        num_of_trees_in_chr = [c + 1] * ts_list[c].num_trees
+        chr_list.extend(num_of_trees_in_chr)
+    print(num_trees)
+
+    ### recomb rate filtering !!
+    mask_dodgy = mask_for_dodgy_trees(
+        recomb_rates,
+        1 - args.masking_threshold,
+    )
+    mask_dodgy = np.array(mask_dodgy)
 
     recomb_rates = np.array(recomb_rates)
-    cum_tree_size = np.cumsum(tree_size)
     mask_dodgy_windowed = np.zeros_like(mask_dodgy, dtype=bool)
 
-    mask_dodgy = np.array(mask_dodgy, dtype=float)
-    mask_dodgy[mask_dodgy == 0] = np.inf
-    while np.sum(mask_dodgy != np.inf) > 0:
-        ## choose the best tree (avoid inf x 0 multiplication)
-        best_id = np.argmin((recomb_rates + 1e-8) * mask_dodgy)
-        mask_dodgy_windowed[best_id] = True
-        ## mask (remove) the near-ones
-        recomb_rate = recomb_rates[best_id]
-        window = max(1e4, int(1e6 * args.window_size / recomb_rate / 2))  # bp
-        for i in range(max(0, best_id - 100), min(best_id + 100, len(cum_tree_size))):
-            if (
-                cum_tree_size[i] < cum_tree_size[best_id] + window
-                and cum_tree_size[i] > cum_tree_size[best_id] - window
-            ):
-                mask_dodgy[i] = np.inf
+    tree_position = []
+    for tid in range(num_trees):
+        if (
+            tree_left_bp[min(tid + 1, len(tree_left_bp) - 1)] // args.force_build
+            - tree_left_bp[tid] // args.force_build
+            > 0
+            and mask_dodgy[tid]
+        ):
+            mask_dodgy_windowed[tid] = True
+            tree_position.append([chr_list[tid], tree_left_bp[tid] // args.force_build])
+
+    # while np.sum(mask_dodgy != np.inf) > 0:
+    #     ## choose the best tree (avoid inf x 0 multiplication)
+    #     best_id = np.argmin((recomb_rates + 1e-8) * mask_dodgy)
+    #     ## only choose the force-build trees
+    #     if (
+    #         tree_left_bp[min(best_id + 1, len(tree_left_bp) - 1)] // args.force_build
+    #         - tree_left_bp[best_id] // args.force_build
+    #         > 0
+    #     ):
+    #         mask_dodgy_windowed[best_id] = True
+    #     ## mask (remove) the near-ones
+    #     recomb_rate = recomb_rates[best_id]
+    #     window = max(
+    #         args.force_build, int(1e6 * args.window_size / (recomb_rate + 1e-22) / 2)
+    #     )  # bp
+    #     for i in range(max(0, best_id - 100), min(best_id + 100, len(tree_left_bp))):
+    #         if (
+    #             tree_left_bp[i] < tree_left_bp[best_id] + window
+    #             and tree_left_bp[i] > tree_left_bp[best_id] - window
+    #         ):
+    #             mask_dodgy[i] = np.inf
     mask_dodgy = np.tile(mask_dodgy_windowed, len(args.sample_id))
 
     trees_per_chr = []
@@ -1122,27 +1208,27 @@ def main(args, plot=False, gamma_arr=None):
     print("Total number of trees = " + str(num_trees))
 
     ##### Caution: manually downsampling HAN (1) !! 🌵
-    print("Downsampling !! Caution !!")
-    ground_truth_membership = make_ground_truth(
-        ts_list,
-        num_trees,
-        mask_dodgy=mask_dodgy,
-        sample=args.sample_id,
-        chrs=chrs,
-    )
-    mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.25)
-    trees_per_chr = []
-    num_trees, count = 0, 0
-    for sample_no in range(len(args.sample_id)):
-        for chr_no, ts in enumerate(ts_list):
-            start_pos = copy.deepcopy(num_trees)
-            for tid in range(len(list(ts.trees()))):
-                if mask_dodgy[count]:
-                    num_trees += 1
-                count += 1
-            trees_per_chr.append((start_pos, num_trees))
+    # print("Downsampling !! Caution !!")
+    # ground_truth_membership = make_ground_truth(
+    #     ts_list,
+    #     num_trees,
+    #     mask_dodgy=mask_dodgy,
+    #     sample=args.sample_id,
+    #     chrs=chrs,
+    # )
+    # mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.25)
+    # trees_per_chr = []
+    # num_trees, count = 0, 0
+    # for sample_no in range(len(args.sample_id)):
+    #     for chr_no, ts in enumerate(ts_list):
+    #         start_pos = copy.deepcopy(num_trees)
+    #         for tid in range(len(list(ts.trees()))):
+    #             if mask_dodgy[count]:
+    #                 num_trees += 1
+    #             count += 1
+    #         trees_per_chr.append((start_pos, num_trees))
 
-    print("Total number of trees = " + str(num_trees))
+    # print("Total number of trees = " + str(num_trees))
 
     ##########    Calculating fixed parameters    ##################################
 
@@ -1342,11 +1428,11 @@ def main(args, plot=False, gamma_arr=None):
                     args.load_props
                 )  ### load taus only works for not(props_per_chrs)
 
-            if tau[0] < tau[1]:
-                tau = [0.12, 0.88]  ## CAUTION: Fixing tau!!!
-            else:
-                tau = [0.88, 0.12]
-            tau = np.array(tau)
+            # if tau[0] < tau[1]:
+            #     tau = [0.12, 0.88]  ## CAUTION: Fixing tau!!!
+            # else:
+            #     tau = [0.88, 0.12]
+            # tau = np.array(tau)
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
@@ -1678,12 +1764,16 @@ def main(args, plot=False, gamma_arr=None):
         print("Test log-likelihood: " + str(log_likelihood))
 
         filename = (
-            "overall_membership_" + sample_id_label + ".npy"
+            "overall_membership_" + sample_id_label + ".csv"
         )  ## this saves membership for all the trees (without the filtering)
         if args.relate_trees:
             filename = args.output + "_" + filename
         else:
             filename = "TrueTrees_" + filename
+        pd.DataFrame(np.hstack((np.array(tree_position), own_membership.T))).to_csv(
+            filename, index=False
+        )
+        filename = filename[:-4] + ".npy"
         with open(filename, "wb") as f:
             np.save(f, own_membership)
 
