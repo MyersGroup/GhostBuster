@@ -377,13 +377,17 @@ def make_ground_truth(ts_list, num_trees, mask_dodgy, sample=None, chrs=None):
                 if mask_dodgy[count_all_tree]:
                     if tree.num_sites > 0:
                         for j in range(len(ground_truth)):
-                            if ~(
-                                (tree.interval[1] < ground_truth["startpos"].loc[j])
-                                | (tree.interval[0] > ground_truth["endpos"].loc[j])
-                            ):
-                                ground_truth_membership_one_hot[
-                                    int(ground_truth["dest"].loc[j]) - 1, num_tree
-                                ] = 1
+                            for mut in tree.mutations():
+                                if (
+                                    mut.position > ground_truth["startpos"].loc[j]
+                                    and mut.position < ground_truth["endpos"].loc[j]
+                                ):
+                                    ground_truth_membership_one_hot[
+                                        int(ground_truth["dest"].loc[j]) - 1, num_tree
+                                    ] = 1
+                                    break
+                                else:
+                                    break
                     num_tree += 1
                 count_all_tree += 1
                 tree.next()
@@ -1773,7 +1777,7 @@ def main(args, plot=False, gamma_arr=None):
         pd.DataFrame(np.hstack((np.array(tree_position), own_membership.T))).to_csv(
             filename, index=False
         )
-        filename = filename[:-4] + ".npy"
+        filename = filename[:-3] + ".npy"
         with open(filename, "wb") as f:
             np.save(f, own_membership)
 
