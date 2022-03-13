@@ -10,8 +10,8 @@ from sklearn.preprocessing import StandardScaler
 
 
 def remove_outlier(arr, thresh=0.01):
-    return (arr <= np.percentile(arr, 100 * (1 - thresh))) & (
-        arr >= np.percentile(arr, thresh * 100)
+    return (arr < np.percentile(arr, 100 * (1 - thresh))) & (
+        arr > np.percentile(arr, thresh * 100)
     )
 
 
@@ -20,12 +20,12 @@ def histedges_equalN(x, nbin):
     return np.interp(np.linspace(0, npt, nbin + 1), np.arange(npt), np.sort(x))
 
 
-true_prob = pd.read_csv("force_filter_50/stdpopsim_homsap_2_overall_membership_51.csv")
+# true_prob = pd.read_csv("force_filter_50/stdpopsim_homsap_2_overall_membership_51.csv")
 ground_truth = np.load("force_filter_50/relate_homsap_2_ground_truth_membership_51.npy")
 relate_prob = pd.read_csv("force_filter_50/relate_homsap_2_overall_membership_51.csv")
-# true_prob = pd.DataFrame(
-#     np.hstack((relate_prob[["0", "1"]], ground_truth.T)), columns=["0", "1", "2", "3"]
-# )
+true_prob = pd.DataFrame(
+    np.hstack((relate_prob[["0", "1"]], ground_truth.T)), columns=["0", "1", "2", "3"]
+)
 
 f_pkl = open(
     "force_filter_50/relate_homsap_2_tree_stats_True_1,2,3,4,5.pkl",
@@ -35,16 +35,21 @@ filter_tree = np.load("force_filter_50/relate_homsap_2.mask.npy")
 tree_stats_pickle = pickle.load(f_pkl)
 f_pkl.close()
 
-tree_stats = np.vstack(tree_stats_pickle[:-1])
+tree_stats = np.vstack(tree_stats_pickle[0:4])
 tree_stats_filterd = tree_stats[:, filter_tree].T
-
 relate_prob[
     [
         "tree_size",
         "tree_left_bp",
         "no_of_muts",
         "tmrca",
-        "recomb_rates",
+    ]
+] = tree_stats_filterd
+
+tree_stats = np.vstack(tree_stats_pickle[5:-3])
+tree_stats_filterd = tree_stats[:, filter_tree].T
+relate_prob[
+    [
         "rank_zero_snp_branches_target",
         "frac_branch_target",
         "frac_branch_tree",
@@ -54,10 +59,26 @@ relate_prob[
     ]
 ] = tree_stats_filterd
 
+relate_prob["chr"] = np.array(tree_stats_pickle[-1])[filter_tree]
+
+
 #### See if atleast one epoch is negtaive
-logpmf_target = np.array(tree_stats_pickle[-1])
+opportunity_target = np.array(tree_stats_pickle[-2])
+opportunity_target_list = [[] for _ in range(opportunity_target.shape[1])]
+for tid in range(opportunity_target.shape[0]):
+    if filter_tree[tid]:
+        opportunity_target_tid = opportunity_target[tid]
+        for i in range(len(opportunity_target_tid)):
+            opportunity_target_list[i].append(opportunity_target_tid[i])
+
+opportunity_target_list = np.array(opportunity_target_list)
+for i in range(len(opportunity_target_list)):
+    relate_prob["opportunity_" + str(i)] = opportunity_target_list[i]
+
+
+logpmf_target = np.array(tree_stats_pickle[-3])
 logpmf_list = [[] for _ in range(logpmf_target.shape[1])]
-for tid in range(tree_stats.shape[1]):
+for tid in range(logpmf_target.shape[0]):
     if filter_tree[tid]:
         logpmf_tid = logpmf_target[tid]
         for i in range(len(logpmf_tid)):
@@ -68,25 +89,36 @@ relate_prob["logpmf_sum"] = 0
 for i in range(len(logpmf_list)):
     relate_prob["logpmf_target_" + str(i)] = logpmf_list[i]
     relate_prob["logpmf_sum"] += np.nan_to_num(logpmf_list[i], nan=0)
+
+
+recomb_rates = np.array(tree_stats_pickle[4])
+recomb_rates = recomb_rates[:, filter_tree]
+
+for i in range(len(recomb_rates)):
+    relate_prob["recomb_rate_" + str(i)] = recomb_rates[i]
+
 merged_prob = pd.merge(true_prob, relate_prob, on=["0", "1"])
 
 
 merged_prob["2_diff"] = np.abs(merged_prob["2_x"] - merged_prob["2_y"])
 
-# ### ONLY looking at NEA
-# merged_prob = merged_prob[merged_prob["2_x"] == 0]
+# !!!!!! ### ONLY looking at NEA
+# merged_prob = merged_prob[merged_prob["2_x"] == 1]
+# print(merged_prob.shape)
 
 mask = np.ones(len(merged_prob), dtype=bool)
 for ts in [
     "tree_size",
     "tmrca",
-    "recomb_rates",
+    "recomb_rate_0",
+    "recomb_rate_1",
+    "recomb_rate_2",
+    "recomb_rate_3",
     "frac_branch_target",
     "frac_branch_tree",
     "num_snps_tree",
     "num_snps_target",
     "num_branch_target",
-    "logpmf_sum",
 ]:
     mask = mask & remove_outlier(merged_prob[ts])
 merged_prob = merged_prob.loc[mask]
@@ -104,33 +136,33 @@ for i in range(1, len(bins)):
             ]["2_y"].mean()
         )
 y_list = np.array(y_list)
-print(bins)
-print(y_list)
 plt.scatter(bins[1:], y_list, s=20)
 plt.plot([0, 1], [0, 1], linestyle="dashed", color="grey")
 plt.xlabel("True tree prob.")
 plt.ylabel("Relate tree prob.")
 plt.savefig("outlier_removed_true_relate.png")
 
-fig, axes = plt.subplots(2, 7, figsize=(10, 4), dpi=200, sharey=True)
+fig, axes = plt.subplots(2, 8, figsize=(10, 4), dpi=200, sharey=True)
 fig.suptitle("Comparing tree statistics with absolute error loss")
 
 for j, ts in enumerate(
     [
         "tree_size",
         "tmrca",
-        "recomb_rates",
+        "recomb_rate_0",
+        "recomb_rate_1",
+        "recomb_rate_2",
+        "recomb_rate_3",
         "frac_branch_target",
         "frac_branch_tree",
         "num_snps_tree",
         "num_snps_target",
         "num_branch_target",
-        "logpmf_target_0",
-        "logpmf_target_1",
-        "logpmf_target_2",
-        "logpmf_target_3",
-        "logpmf_target_4",
-        "logpmf_sum",
+        "opportunity_0",
+        "opportunity_1",
+        "opportunity_2",
+        "opportunity_3",
+        "chr",
     ]
 ):
     # sns.scatterplot(data=merged_prob, x="2_x", y="2_y", hue=ts)
@@ -140,7 +172,7 @@ for j, ts in enumerate(
     # plt.savefig("outlier_removed_true_relate_1_" + ts + ".png")
     prob_diff = []
     # weights, bins = np.histogram(merged_prob[ts], bins=100)
-    bins = histedges_equalN(merged_prob[ts].dropna(), 40)
+    bins = histedges_equalN(merged_prob[ts].dropna(), 10)
     for i in range(1, len(bins)):
         if i > 0:
             prob_diff.append(
@@ -149,18 +181,18 @@ for j, ts in enumerate(
                 ]["2_diff"].mean()
             )
     prob_diff = np.array(prob_diff)
-    axes[j // 7, j % 7].scatter(bins[1:], prob_diff, s=20)
+    axes[j // 8, j % 8].scatter(bins[1:], prob_diff, s=20)
     regr = LinearRegression()
     regr.fit(
         bins[1:].reshape(-1, 1),
         prob_diff,
     )
-    axes[j // 7, j % 7].plot(
+    axes[j // 8, j % 8].plot(
         bins[1:].reshape(-1, 1),
         regr.predict(bins[1:].reshape(-1, 1)),
         color="grey",
     )
-    axes[j // 7, j % 7].set_xlabel(ts)
+    axes[j // 8, j % 8].set_xlabel(ts)
 
 plt.tight_layout()
 plt.savefig("linear_regr.pdf")
@@ -173,26 +205,24 @@ for i, ts1 in enumerate(
     [
         "tree_size",
         "tmrca",
-        "recomb_rates",
+        "recomb_rate_0",
         "frac_branch_target",
         "frac_branch_tree",
         "num_snps_tree",
         "num_snps_target",
         "num_branch_target",
-        "logpmf_sum",
     ]
 ):
     for j, ts2 in enumerate(
         [
             "tree_size",
             "tmrca",
-            "recomb_rates",
+            "recomb_rate_0",
             "frac_branch_target",
             "frac_branch_tree",
             "num_snps_tree",
             "num_snps_target",
             "num_branch_target",
-            "logpmf_sum",
         ]
     ):
         ts2_list = []
@@ -230,23 +260,29 @@ plt.savefig("corr_comparision.pdf")
 
 ## standardize data
 
-scaler = StandardScaler()
-merged_prob[merged_prob.columns[6:-1]] = scaler.fit_transform(
-    merged_prob[merged_prob.columns[6:-1]]
-)
 
 ## multiple linear regression
 orig_train_cols = [
     "tree_size",
     "tmrca",
-    "recomb_rates",
+    "recomb_rate_0",
+    "recomb_rate_1",
+    "recomb_rate_2",
+    "recomb_rate_3",
     "frac_branch_target",
     "frac_branch_tree",
     "num_snps_tree",
     "num_snps_target",
     "num_branch_target",
-    "logpmf_sum",
+    "chr"
+    # "opportunity_0",
+    # "opportunity_1",
+    # "opportunity_2",
+    # "opportunity_3",
+    # "opportunity_4",
 ]
+scaler = StandardScaler()
+merged_prob[orig_train_cols] = scaler.fit_transform(merged_prob[orig_train_cols])
 regr = LinearRegression()
 regr.fit(
     merged_prob[orig_train_cols],
@@ -264,37 +300,7 @@ print(
     )
 )
 
-## multiple linear regression (digitized)
-for col in orig_train_cols:
-    _, bins = np.histogram(merged_prob[col], bins=40)
-    merged_prob[col] = np.digitize(merged_prob[col], bins=bins)
-
-regr = LinearRegression()
-regr.fit(
-    merged_prob[orig_train_cols],
-    merged_prob["2_diff"],
-)
-print(
-    "Explained variance score (digitized): "
-    + str(
-        explained_variance_score(
-            merged_prob["2_diff"], regr.predict(merged_prob[orig_train_cols])
-        )
-    )
-)
-
 ## multiple linear regression (+ non-linearity)
-orig_train_cols = [
-    "tree_size",
-    "tmrca",
-    "recomb_rates",
-    "frac_branch_target",
-    "frac_branch_tree",
-    "num_snps_tree",
-    "num_snps_target",
-    "num_branch_target",
-    "logpmf_sum",
-]
 train_cols = []
 for col1 in orig_train_cols:
     for col2 in orig_train_cols:
@@ -308,39 +314,6 @@ regr.fit(
 )
 print(
     "Explained variance score (non-linear): "
-    + str(
-        explained_variance_score(
-            merged_prob["2_diff"], regr.predict(merged_prob[train_cols])
-        )
-    )
-)
-
-
-## multiple linear regression (+ non-linearity)
-orig_train_cols = [
-    # "tree_size",
-    # "tmrca",
-    "recomb_rates",
-    "frac_branch_target",
-    "frac_branch_tree",
-    "num_snps_tree",
-    "num_snps_target",
-    # "num_branch_target",
-    "logpmf_sum",
-]
-train_cols = []
-for col1 in orig_train_cols:
-    for col2 in orig_train_cols:
-        merged_prob[col1 + "*" + col2] = merged_prob[col1] * merged_prob[col2]
-        train_cols.append(col1 + "*" + col2)
-    train_cols.append(col1)
-regr = LinearRegression()
-regr.fit(
-    merged_prob[train_cols],
-    merged_prob["2_diff"],
-)
-print(
-    "Explained variance score subset (non-linear): "
     + str(
         explained_variance_score(
             merged_prob["2_diff"], regr.predict(merged_prob[train_cols])
