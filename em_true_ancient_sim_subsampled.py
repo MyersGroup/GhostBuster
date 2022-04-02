@@ -19,6 +19,7 @@ import warnings
 import os
 from pathlib import Path
 import scipy.stats as stats
+import pdb
 
 
 def boolean(v):
@@ -837,32 +838,31 @@ def compute_tree_stats(
             no_of_mutations.append(tree.num_mutations)
             tmrca.append(tree.time(tree.root))
             chr_map.append(chr)
+            for r_i, recomb_window_size_i in enumerate(recomb_window_size):
+                recomb_events = recomb_map[
+                    ~(
+                        (
+                            recomb_map["Start Position(bp)"]
+                            > tree.interval[1] + recomb_window_size_i
+                        )
+                        | (
+                            recomb_map["Position(bp)"]
+                            < tree.interval[0] - recomb_window_size_i
+                        )
+                    )
+                ]
+                if len(recomb_events) > 1:
+                    recomb_rate = (
+                        recomb_events.iloc[-1]["Map(cM)"]
+                        - recomb_events.iloc[0]["Map(cM)"]
+                    ) / (
+                        recomb_events.iloc[-1]["Position(bp)"]
+                        - recomb_events.iloc[0]["Position(bp)"]
+                    )
+                else:
+                    recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
+                recomb_rates[r_i].append(recomb_rate)
             if check_muts_target_name is not None:
-                for r_i, recomb_window_size_i in enumerate(recomb_window_size):
-                    recomb_events = recomb_map[
-                        ~(
-                            (
-                                recomb_map["Start Position(bp)"]
-                                > tree.interval[1] + recomb_window_size_i
-                            )
-                            | (
-                                recomb_map["Position(bp)"]
-                                < tree.interval[0] - recomb_window_size_i
-                            )
-                        )
-                    ]
-                    if len(recomb_events) > 1:
-                        recomb_rate = (
-                            recomb_events.iloc[-1]["Map(cM)"]
-                            - recomb_events.iloc[0]["Map(cM)"]
-                        ) / (
-                            recomb_events.iloc[-1]["Position(bp)"]
-                            - recomb_events.iloc[0]["Position(bp)"]
-                        )
-                    else:
-                        recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"]
-                    recomb_rates[r_i].append(recomb_rate)
-
                 relate_allmuts_tree = relate_allmuts_file.iloc[
                     tid * num_nodes : (tid + 1) * num_nodes
                 ]
@@ -900,8 +900,6 @@ def compute_tree_stats(
                     mut_rates_tid[mutrate_num_epochs : 2 * mutrate_num_epochs]
                 )
             else:
-                for r_i in range(len(recomb_rates)):
-                    recomb_rates[r_i].append(0)
                 rank_zero_snp_branches_target.append(0)
                 frac_branches_with_snp_target.append(0)
                 frac_branches_with_snp.append(0)
@@ -1260,6 +1258,12 @@ def main(args, plot=False, gamma_arr=None):
         recomb_rates,
         1 - args.masking_threshold,
     )
+    recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
+    print(recomb_0_thresh)
+    mask_dodgy *= ~mask_for_dodgy_trees(
+        recomb_rates,
+        recomb_0_thresh,
+    )
     # mask_dodgy = ~mask_for_dodgy_trees(
     #     frac_branches_with_snp_target,
     #     args.masking_threshold,
@@ -1469,35 +1473,54 @@ def main(args, plot=False, gamma_arr=None):
             )  ## [start, end)
 
     ##########    Filter epochs in trees         #################################
-    mutrate_opportunity_target_masked = np.array(mutrate_opportunity_target)[mask_dodgy]
-    mutrate_opportunity_thresh = np.percentile(
-        mutrate_opportunity_target_masked, 50, axis=0
-    )
-    mutrate_logpmf_target_masked = np.array(mutrate_logpmf_target)[mask_dodgy]
-    mutrate_logpmf_thresh = np.percentile(mutrate_logpmf_target_masked, 50, axis=0)
-    epoch_bin_mask = np.ones(
-        (
-            mutrate_opportunity_target_masked.shape[0],
-            mutrate_opportunity_target_masked.shape[1] - 1,
-        ),
-        dtype=bool,
-    )
-    for epoch in range(epoch_bin_mask.shape[1]):
-        epoch_bin_mask[:, epoch] = (
-            mutrate_opportunity_target_masked[:, epoch]
-            >= mutrate_opportunity_thresh[epoch]
-        ) & (mutrate_logpmf_target_masked[:, epoch] >= mutrate_logpmf_thresh[epoch])
+    if args.check_muts_target:
+        mutrate_opportunity_target_masked = np.array(mutrate_opportunity_target)[
+            mask_dodgy
+        ]
+        mutrate_opportunity_thresh = np.percentile(
+            mutrate_opportunity_target_masked, args.masking_threshold * 100, axis=0
+        )
+        mutrate_logpmf_target_masked = np.array(mutrate_logpmf_target)[mask_dodgy]
+        mutrate_logpmf_thresh = []
+        for epoch in range(mutrate_opportunity_target_masked.shape[1]):
+            mutrate_logpmf_target_masked_ep = mutrate_logpmf_target_masked[:, epoch]
+            if sum(np.isnan(mutrate_logpmf_target_masked_ep)) == len(
+                mutrate_logpmf_target_masked_ep
+            ):
+                mutrate_logpmf_thresh.append(0)
+            else:
+                mutrate_logpmf_thresh.append(
+                    np.percentile(
+                        mutrate_logpmf_target_masked_ep[
+                            ~np.isnan(mutrate_logpmf_target_masked_ep)
+                        ],
+                        args.masking_threshold * 100,
+                    )
+                )
 
-    for ref_gp in range(len(denom)):
-        denom[ref_gp] = denom[ref_gp] * (epoch_bin_mask.T)
-    for tid in range(len(epoch_index_all)):
-        indices_to_remove = []
-        for ce in range(len(epoch_index_all[tid])):
-            if not epoch_bin_mask[tid, epoch_index_all[tid][ce]]:
-                indices_to_remove.append(ce)
-        for i_remove in sorted(indices_to_remove, reverse=True):
-            del epoch_index_all[tid][i_remove]
-            del proportion_of_coalescing_all[tid][i_remove]
+        epoch_bin_mask = np.ones(
+            (
+                mutrate_opportunity_target_masked.shape[0],
+                mutrate_opportunity_target_masked.shape[1] - 1,
+            ),
+            dtype=bool,
+        )
+        for epoch in range(epoch_bin_mask.shape[1]):
+            epoch_bin_mask[:, epoch] = (
+                mutrate_opportunity_target_masked[:, epoch]
+                >= mutrate_opportunity_thresh[epoch]
+            )  # & (mutrate_logpmf_target_masked[:, epoch] >= mutrate_logpmf_thresh[epoch])
+
+        for ref_gp in range(len(denom)):
+            denom[ref_gp] = denom[ref_gp] * (epoch_bin_mask.T)
+        for tid in range(len(epoch_index_all)):
+            indices_to_remove = []
+            for ce in range(len(epoch_index_all[tid])):
+                if not epoch_bin_mask[tid, epoch_index_all[tid][ce]]:
+                    indices_to_remove.append(ce)
+            for i_remove in sorted(indices_to_remove, reverse=True):
+                del epoch_index_all[tid][i_remove]
+                del proportion_of_coalescing_all[tid][i_remove]
 
     ##########    Initializing local ancestry    ##################################
 
@@ -1582,11 +1605,11 @@ def main(args, plot=False, gamma_arr=None):
                     args.load_props
                 )  ### load taus only works for not(props_per_chrs)
 
-            # if tau[0] < tau[1]:
-            #     tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
-            # else:
-            #     tau = [0.95, 0.05]
-            # tau = np.array(tau)
+            if tau[0] < tau[1]:
+                tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
+            else:
+                tau = [0.95, 0.05]
+            tau = np.array(tau)
 
             assert (gamma_arr >= 0).all()
             prev_gamma = copy.deepcopy(gamma_arr)
@@ -1667,6 +1690,8 @@ def main(args, plot=False, gamma_arr=None):
             membership_thresh = make_one_hot(
                 np.argmax(own_membership, axis=0), len(own_membership)
             )
+            if epoch == 0:
+                own_membership_0 = copy.deepcopy(own_membership)
             # print("e-step: " + str(time.time() - start_e_time))
 
             if args.mode == "sim":
@@ -1927,9 +1952,9 @@ def main(args, plot=False, gamma_arr=None):
             filename = args.output + "_" + filename
         else:
             filename = "TrueTrees_" + filename
-        pd.DataFrame(np.hstack((np.array(tree_position), own_membership.T))).to_csv(
-            filename, index=False
-        )
+        pd.DataFrame(
+            np.hstack((np.array(tree_position), own_membership_0.T, own_membership.T))
+        ).to_csv(filename, index=False)
         filename = filename[:-4] + ".npy"
         with open(filename, "wb") as f:
             np.save(f, own_membership)
