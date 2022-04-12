@@ -46,7 +46,7 @@ parser.add_argument(
     "-fb",
     "--force_build",
     help="force build size to subsample the trees in bp",
-    type=float,
+    type=int,
     default=1,
 )
 parser.add_argument(
@@ -1326,7 +1326,7 @@ def main(args, plot=False, gamma_arr=None):
             sample=args.sample_id,
             chrs=chrs,
         )
-        mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
+        mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.33)
         tree_position = []
         for tid in range(int(np.sum([ts.num_trees for ts in ts_list]))):
             if (
@@ -1590,6 +1590,34 @@ def main(args, plot=False, gamma_arr=None):
                 trees_per_chr_masked.append(
                     (start_in_masked, end_in_masked)
                 )  ## [start, end)
+
+    f_pkl = open(fixed_params_file_name[:-4] + ".filtered.pkl", "wb")
+    if args.mode == "sim":
+        pickle.dump(
+            [
+                num,
+                denom,
+                proportion_of_coalescing_all,
+                epoch_index_all,
+                ground_truth_membership,
+            ],
+            f_pkl,
+        )
+    else:
+        pickle.dump(
+            [
+                num,
+                denom,
+                proportion_of_coalescing_all,
+                epoch_index_all,
+            ],
+            f_pkl,
+        )
+        f_pkl.close()
+    print(
+        "Filtered fixed parameters stored in: "
+        + str(fixed_params_file_name[:-4] + ".filtered.pkl")
+    )
 
     ##########    Initializing local ancestry    ##################################
 
