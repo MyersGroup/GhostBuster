@@ -111,23 +111,21 @@ def compute_gamma_num(
     return num_full_tree
 
 
-def compute_gamma_denom(own_membership, denom, mask_dodgy):
+def compute_gamma_denom(own_membership, denom):
     eps = 1e-200
     denom_1 = np.zeros(len(epoch_intervals) - 1, dtype="float64")
     for epoch in range(len(epoch_intervals) - 1):  #
-        denom_1[epoch] = sum(denom[epoch][mask_dodgy] * own_membership)
+        denom_1[epoch] = sum(denom[epoch] * own_membership)
     return denom_1 + eps
 
 
 def load_data(args):
     ## loads the necessary data, e.g. trees, tree stats, fixed parameters, etc.
-    sample_id_label = "_".join([str(e) for e in args.sample_id])
     print("Considering sample ids: " + str(args.sample_id))
     poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep=" ")
     if poplabels.shape[1] != 4:
         poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep="\t")
     assert poplabels.shape[1] == 4
-    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
     # ts_list_subsampled = []
@@ -143,41 +141,35 @@ def load_data(args):
             "Number of samples in trees doesnt match number of samples in poplabels.txt"
         )
 
-    f_pkl = open(args.tree_stats_file_name, "rb")
-    (
-        num_trees,
-        trees_per_chr,
-        tree_size,
-        no_of_mutations,
-        tmrca,
-        recomb_rates,
-        rank_zero_snp_branches_target,
-        frac_branches_with_snp_target,
-        frac_branches_with_snp,
-        num_snps_on_tree,
-        mask_dodgy,
-    ) = pickle.load(f_pkl)
-    f_pkl.close()
-    print("Done loading tree statistics from: " + str(args.tree_stats_file_name))
-    masked_trees_index = np.arange(0, num_trees * len(args.sample_id))[mask_dodgy]
-
     f_pkl = open(args.fixed_params_file_name, "rb")
-    (
-        num,
-        denom,
-        proportion_of_coalescing_all,
-        epoch_index_all,
-    ) = pickle.load(f_pkl)
-    f_pkl.close()
+    if args.mode == "sim":
+        (
+            num,
+            denom,
+            proportion_of_coalescing_all,
+            epoch_index_all,
+            ground_truth_membership,
+        ) = pickle.load(f_pkl)
+    else:
+        (
+            num,
+            denom,
+            proportion_of_coalescing_all,
+            epoch_index_all,
+        ) = pickle.load(f_pkl)
+        f_pkl.close()
     print("Done loading fixed parameters from: " + str(args.fixed_params_file_name))
+
     denom = copy.deepcopy(np.maximum(denom, 0))
+    num_trees = denom.shape[2]
+    masked_trees_index = np.arange(0, num_trees)
+
     return (
         masked_trees_index,
         proportion_of_coalescing_all,
         epoch_index_all,
         denom,
         num_trees,
-        mask_dodgy,
     )
 
 
@@ -190,7 +182,6 @@ def e_step(
     denom,
     num_clusters,
     num_trees,
-    mask_dodgy=None,
 ):
     own_membership_update = np.ones((num_clusters, num_trees), dtype="float64")
     log_num_em = np.zeros((num_clusters, num_trees), dtype="float64")
@@ -226,16 +217,10 @@ def e_step(
     for j in range(num_clusters):
         own_membership_update[j] *= tau[j]
 
-    if mask_dodgy is None:
-        log_likelihood = np.sum(
-            np.log(np.sum(own_membership_update, axis=0))
-            + np.max(log_num_em + log_denom_em, axis=0)
-        )
-    else:
-        log_likelihood = np.sum(
-            np.log(np.sum(own_membership_update, axis=0))[mask_dodgy]
-            + np.max(log_num_em + log_denom_em, axis=0)[mask_dodgy]
-        )
+    log_likelihood = np.sum(
+        np.log(np.sum(own_membership_update, axis=0))
+        + np.max(log_num_em + log_denom_em, axis=0)
+    )
 
     own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
     return log_likelihood, own_membership
@@ -248,7 +233,6 @@ def m_step(
     proportion_of_coalescing_all,
     epoch_index_all,
     denom,
-    mask_dodgy,
 ):
     gamma_arr = np.zeros(
         (len(own_membership), args.num_reference_groups, args.num_epochs),
@@ -264,7 +248,7 @@ def m_step(
             masked_trees_index,
         )
         for i in range(args.num_reference_groups):
-            d = compute_gamma_denom(own_membership[j], denom[i], mask_dodgy)
+            d = compute_gamma_denom(own_membership[j], denom[i])
             gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
     tau = np.mean(own_membership, axis=1)
@@ -280,7 +264,6 @@ def get_log_likelihood(
     epoch_index_all,
     denom,
     num_trees,
-    mask_dodgy,
 ):
     ## Gives the loglikelihood of observing the data given the coalescene rates
     _, own_membership = e_step(
@@ -300,7 +283,6 @@ def get_log_likelihood(
         proportion_of_coalescing_all,
         epoch_index_all,
         denom,
-        mask_dodgy,
     )
     log_likelihood, own_membership = e_step(
         np.arange(len(args.sample_id) * num_trees),
@@ -311,7 +293,6 @@ def get_log_likelihood(
         denom,
         args.num_clusters,
         num_trees,
-        mask_dodgy,
     )
     return log_likelihood, own_membership
 
@@ -346,7 +327,6 @@ def main(config=None):
             epoch_index_all,
             denom,
             num_trees,
-            mask_dodgy,
         )
         wandb.log({"log_likelihood": log_likelihood})
         global best_log_likelihood
@@ -410,12 +390,6 @@ if __name__ == "__main__":
         default="1,2",
     )
     parser.add_argument(
-        "--tree_stats_file_name",
-        help="Location to the tree stats file",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
         "--fixed_params_file_name",
         help="Location to the fixed params file",
         type=str,
@@ -470,6 +444,14 @@ if __name__ == "__main__":
         type=int,
         default=100,
     )
+    parser.add_argument(
+        "-mode",
+        "--mode",
+        help="Which mode do you want to run in? Simulation or Real-world ?",
+        type=str,
+        default="real",
+        choices=("sim", "real"),
+    )
 
     args = parser.parse_args()
     if args.wandb_mode == "offline":
@@ -485,12 +467,9 @@ if __name__ == "__main__":
         "method": "bayes",
         "metric": {"name": "log_likelihood", "goal": "maximize"},
         "parameters": {
-            "tau0": {"distribution": "uniform", "min": 0.01, "max": 0.99},
-            "tau1": {"distribution": "uniform", "min": 0.01, "max": 0.99},
             "path": {"value": args.path},
             "trees": {"value": args.trees},
             "chrs": {"value": args.chrs},
-            "tree_stats_file_name": {"value": args.tree_stats_file_name},
             "fixed_params_file_name": {"value": args.fixed_params_file_name},
             "sample_id": {"value": args.sample_id},
             "ignore_first_epoch": {"value": args.ignore_first_epoch},
@@ -546,7 +525,6 @@ if __name__ == "__main__":
         epoch_index_all,
         denom,
         num_trees,
-        mask_dodgy,
     ) = load_data(args)
 
     wandb.agent(sweep_id, main, count=args.bayes_steps)
