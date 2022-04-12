@@ -1751,61 +1751,6 @@ def main(args, plot=False, gamma_arr=None):
                 f_tau.write("\n")
 
             # print("m-step: " + str(time.time() - start_m_time))
-
-            assert args.ignore_first_epoch and args.ignore_last_epoch
-            log_num_em = np.zeros(
-                (
-                    len(own_membership),
-                    int(np.sum(mask_dodgy)),
-                    len(epoch_intervals_pow) - 3,
-                ),
-                dtype="float64",
-            )
-            log_denom_em = np.zeros(
-                (
-                    len(own_membership),
-                    int(np.sum(mask_dodgy)),
-                    len(epoch_intervals_pow) - 3,
-                ),
-                dtype="float64",
-            )
-            count_masked_trees = 0
-
-            for tid in masked_trees_index:
-                proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-                epoch_index_in_tree = epoch_index_all[tid]
-                for j in range(len(own_membership)):
-                    log_num_em_j, log_denom_em_j = epoch_wise_update_membership(
-                        proportion_of_coalescing_in_tree,
-                        epoch_index_in_tree,
-                        denom,
-                        gamma_arr[j],
-                        tid,
-                        args.ignore_first_epoch,
-                        args.ignore_last_epoch,
-                    )
-                    log_num_em[j, count_masked_trees, :] = log_num_em_j
-                    log_denom_em[j, count_masked_trees, :] = log_denom_em_j
-                count_masked_trees += 1
-            own_membership_update = np.exp(
-                log_num_em + log_denom_em - np.max(log_num_em + log_denom_em)
-            )
-
-            if not args.props_per_chrs:
-                for j in range(len(own_membership)):
-                    own_membership_update[j] *= tau[j]
-            else:
-                for chr, (start, end) in enumerate(trees_per_chr_masked):
-                    for j in range(len(own_membership)):
-                        own_membership_update[j, start:end] *= tau[chr, j]
-
-            log_likelihood = np.sum(
-                np.log(np.sum(own_membership_update, axis=0))
-                + np.max(log_num_em + log_denom_em),
-                axis=0,
-            )
-            # log_likelihood_arr.append(log_likelihood)
-
             ## E-step
 
             start_e_time = time.time()
@@ -2010,10 +1955,6 @@ def main(args, plot=False, gamma_arr=None):
             ## Early-stopping
             print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
             f_logl.write(str(log_likelihood_arr[-1]) + "\n")
-            # log_like_str = ""
-            # for log_like_epoch in log_likelihood_arr[-1]:
-            #     log_like_str += str(log_like_epoch) + " "
-            # f_logl.write(log_like_str + "\n")
 
         print(
             "Sample = "
