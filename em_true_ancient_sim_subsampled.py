@@ -43,13 +43,6 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-    "-window_size",
-    "--window_size",
-    help="Window size to subsample the trees in cM",
-    type=float,
-    default=0.01,
-)
-parser.add_argument(
     "-fb",
     "--force_build",
     help="force build size to subsample the trees in bp",
@@ -1073,7 +1066,7 @@ def main(args, plot=False, gamma_arr=None):
         + "_fixed_params_"
         + sample_id_label
         + "_"
-        + str(args.window_size)
+        + str(args.force_build)
         + "_"
         + str(args.relate_trees)
         + "_"
@@ -1323,36 +1316,39 @@ def main(args, plot=False, gamma_arr=None):
             trees_per_chr.append((start_pos, num_trees))
     print("Total number of trees = " + str(num_trees))
 
-    ##### Caution: manually downsampling HAN (1) !! 🌵
-    print("Downsampling !! Caution !!")
-    ground_truth_membership = make_ground_truth(
-        ts_list,
-        num_trees,
-        mask_dodgy=mask_dodgy,
-        sample=args.sample_id,
-        chrs=chrs,
-    )
-    mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
-    tree_position = []
-    for tid in range(int(np.sum([ts.num_trees for ts in ts_list]))):
-        if (
-            tree_left_bp[min(tid + 1, len(tree_left_bp) - 1)] // args.force_build
-            - tree_left_bp[tid] // args.force_build
-            > 0
-            and mask_dodgy[tid]
-        ):
-            tree_position.append([chr_list[tid], tree_left_bp[tid] // args.force_build])
+    if args.mode == "sim":
+        ##### Caution: manually downsampling HAN (1) !! 🌵
+        print("Downsampling !! Caution !!")
+        ground_truth_membership = make_ground_truth(
+            ts_list,
+            num_trees,
+            mask_dodgy=mask_dodgy,
+            sample=args.sample_id,
+            chrs=chrs,
+        )
+        mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
+        tree_position = []
+        for tid in range(int(np.sum([ts.num_trees for ts in ts_list]))):
+            if (
+                tree_left_bp[min(tid + 1, len(tree_left_bp) - 1)] // args.force_build
+                - tree_left_bp[tid] // args.force_build
+                > 0
+                and mask_dodgy[tid]
+            ):
+                tree_position.append(
+                    [chr_list[tid], tree_left_bp[tid] // args.force_build]
+                )
 
-    trees_per_chr = []
-    num_trees, count = 0, 0
-    for sample_no in range(len(args.sample_id)):
-        for chr_no, ts in enumerate(ts_list):
-            start_pos = copy.deepcopy(num_trees)
-            for tid in range(len(list(ts.trees()))):
-                if mask_dodgy[count]:
-                    num_trees += 1
-                count += 1
-            trees_per_chr.append((start_pos, num_trees))
+        trees_per_chr = []
+        num_trees, count = 0, 0
+        for sample_no in range(len(args.sample_id)):
+            for chr_no, ts in enumerate(ts_list):
+                start_pos = copy.deepcopy(num_trees)
+                for tid in range(len(list(ts.trees()))):
+                    if mask_dodgy[count]:
+                        num_trees += 1
+                    count += 1
+                trees_per_chr.append((start_pos, num_trees))
 
     print("Total number of trees = " + str(num_trees))
     np.save(args.output + ".mask", mask_dodgy)
@@ -1544,7 +1540,10 @@ def main(args, plot=False, gamma_arr=None):
 
         mask_dodgy_low_evidence = np.sum(epoch_bin_mask, axis=1) > 8
         denom = denom[:, :, mask_dodgy_low_evidence]
-        ground_truth_membership = ground_truth_membership[:, mask_dodgy_low_evidence]
+        if args.mode == "sim":
+            ground_truth_membership = ground_truth_membership[
+                :, mask_dodgy_low_evidence
+            ]
         for tid in sorted(range(len(epoch_index_all)), reverse=True):
             if not mask_dodgy_low_evidence[tid]:
                 del epoch_index_all[tid]
