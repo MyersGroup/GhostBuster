@@ -12,11 +12,10 @@ do
 echo ${k}
 python em_true_ancient_sim_subsampled.py \
 --mode sim \
---chr 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22 \
+--chr 1,2,3,4,5 \
 --relate_trees True \
 --masking_thresh 0.5 \
 --plot_intermediate_gammas True \
---window_size 0 \
 --force_build 10000 \
 --sample_id 51 \
 --init_at_truth 1 \
@@ -24,7 +23,7 @@ python em_true_ancient_sim_subsampled.py \
 --trees relate_homsap \
 --output ${out}_${k} \
 -k ${k} \
--i 400 \
+-i 200 \
 -start_time 4.5 \
 -end_time 6.5 \
 --num_epochs 9 \
