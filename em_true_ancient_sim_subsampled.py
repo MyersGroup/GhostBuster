@@ -1025,56 +1025,6 @@ def update_membership(
     return log_num_em_j_i, log_denom_em_j
 
 
-def epoch_wise_update_membership(
-    proportion_of_coalescing_in_tree,
-    epoch_index_in_tree,
-    denom,
-    gamma_arr,
-    tid,
-    ignore_first_epoch,
-    ignore_last_epoch,
-):
-    assert ignore_first_epoch and ignore_last_epoch
-    log_num_em_j = np.zeros(len(epoch_intervals_pow) - 3)
-    for i in range(len(proportion_of_coalescing_in_tree)):
-        if (
-            (
-                ignore_first_epoch
-                and not ignore_last_epoch
-                and epoch_index_in_tree[i] >= 1
-            )
-            or (
-                ignore_last_epoch
-                and not ignore_first_epoch
-                and epoch_index_in_tree[i] < len(epoch_intervals) - 2
-            )
-            or (
-                ignore_first_epoch
-                and ignore_last_epoch
-                and epoch_index_in_tree[i] >= 1
-                and epoch_index_in_tree[i] < len(epoch_intervals) - 2
-            )
-            or (not ignore_first_epoch and not ignore_last_epoch)
-        ):
-            log_num_em_j[epoch_index_in_tree[i] - 1] += np.log(
-                sum(
-                    gamma_arr[:, epoch_index_in_tree[i]]
-                    * proportion_of_coalescing_in_tree[i]
-                ),
-            )
-
-    if ignore_first_epoch and ignore_last_epoch:
-        log_denom_em_j = -sum(gamma_arr[:, 1:-1] * denom[:, 1:-1, tid])
-    elif ignore_first_epoch and not ignore_last_epoch:
-        log_denom_em_j = -sum(gamma_arr[:, 1:] * denom[:, 1:, tid])
-    elif ignore_last_epoch and not ignore_first_epoch:
-        log_denom_em_j = -sum(gamma_arr[:, :-1] * denom[:, :-1, tid])
-    else:
-        log_denom_em_j = -sum(gamma_arr * denom[:, :, tid])
-
-    return log_num_em_j, log_denom_em_j
-
-
 def main(args, plot=False, gamma_arr=None):
 
     sample_id_label = "_".join([str(e) for e in args.sample_id])
