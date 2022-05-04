@@ -5,7 +5,7 @@ source /well/myers/users/tgh473/python/tskit_venv/bin/activate
 
 #ind=51
 path="../sims/stdpopsim_ancient_small/devel_relate_trees_force_50/"
-out="force_filter_50/relate_homsap"
+out="force_filter_50/post_rand_relate_homsap"
 
 for k in 2
 do
@@ -20,12 +20,12 @@ python em_true_ancient_sim_subsampled.py \
 --sample_id 51 \
 --init_at_truth 1 \
 --path ${path} \
---trees relate_homsap \
+--trees post_rand_relate \
 --output ${out}_${k} \
 -k ${k} \
 -i 200 \
 -start_time 4.5 \
--end_time 6.5 \
+-end_time 6.0 \
 --num_epochs 9 \
 -ignore_first_epoch True \
 --rec ../msprime_maps/genetic_map_GRCh37 \
