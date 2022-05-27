@@ -1044,10 +1044,8 @@ def main(args, plot=False, gamma_arr=None):
         )
     start_time = time.time()
     num_clusters = args.num_clusters
-    poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep=" ")
-    if poplabels.shape[1] != 4:
-        poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep="\t")
-    assert poplabels.shape[1] == 4
+    poplabels = pd.read_csv(Path(path) / "poplabels.txt", sep="\s+")
+    assert poplabels.shape[1] >= 4
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
     ts_list = []
@@ -1101,6 +1099,11 @@ def main(args, plot=False, gamma_arr=None):
                 Path(path) / str(args.trees + "_chr" + str(chr) + ".trees")
             )  ## relate trees
             ts_list.append(ts)
+        if len(poplabels) == ts_list[0].num_samples // 2:
+            ## If the poplabels files is one entry per individual (not haplotype)
+            poplabels = pd.DataFrame(
+                np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
+            )
         if len(poplabels) != ts_list[0].num_samples:
             raise ValueError(
                 "Number of samples in trees doesnt match number of samples in poplabels.txt"
