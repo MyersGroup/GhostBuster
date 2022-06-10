@@ -3,31 +3,34 @@ source ~/.bashrc
 module load Python/3.7.4-GCCcore-8.3.0
 source /well/myers/users/tgh473/python/tskit_venv/bin/activate
 
-ind=0
-path="../sims/stdpopsim_ancient_small/relate_trees/"
+#ind=51
+path="../sims/stdpopsim_ancient_small/devel_relate_trees_force_50/"
+out="force_filter_50/post_rand_relate_homsap"
 
-for k in 1 2 3 4
+for k in 2
 do
 echo ${k}
 python em_true_ancient_sim_subsampled.py \
---mode real \
+--mode sim \
 --chr 1,2,3,4,5 \
 --relate_trees True \
---masking_thresh 0.8 \
+--masking_thresh 0.5 \
 --plot_intermediate_gammas True \
---window_size 0 \
---sample_id ${ind} \
---init_at_truth 0 \
+--force_build 10000 \
+--sample_id 51 \
+--init_at_truth 1 \
 --path ${path} \
---trees relate_homsap \
---output stdpopsim_ancient_small/relate_homsap_${k} \
+--trees post_rand_relate \
+--output ${out}_${k} \
 -k ${k} \
--i 500 \
--start_time 4 \
--end_time 6 \
---num_epochs 7 \
+-i 200 \
+-start_time 4.5 \
+-end_time 6.0 \
+--num_epochs 9 \
 -ignore_first_epoch True \
 --rec ../msprime_maps/genetic_map_GRCh37 \
---verbose False
-python em_true_ancient_sim_subsampled.py --evaluate_gamma False --mode real --chr 6 --relate_trees True --masking_thresh 0.8 --plot_intermediate_gammas False --window_size 0 --sample_id ${ind} --path ${path} --trees relate_homsap --output stdpopsim_ancient_small/relate_homsap_${k} -k ${k} -start_time 4 -end_time 6 --num_epochs 7 --ignore_first_epoch True --rec ../msprime_maps/genetic_map_GRCh37 --load_props stdpopsim_ancient_small/relate_homsap_${k}_props_${ind}_iter499.npy --load_gamma stdpopsim_ancient_small/relate_homsap_${k}_gamma_${ind}_iter499.npy
+--verbose False \
+--check_muts_target True \
+#--load_membership devel_relate_homsap_2_overall_membership_51.npy \
+# python em_true_ancient_sim_subsampled.py --evaluate_gamma False --mode real --chr 6 --relate_trees True --masking_thresh 0.8 --plot_intermediate_gammas False --window_size 0 --sample_id ${ind} --path ${path} --trees relate_homsap --output stdpopsim_ancient_small/relate_homsap_${k} -k ${k} -start_time 4 -end_time 6 --num_epochs 7 --ignore_first_epoch True --rec ../msprime_maps/genetic_map_GRCh37 --load_props stdpopsim_ancient_small/relate_homsap_${k}_props_${ind}_iter499.npy --load_gamma stdpopsim_ancient_small/relate_homsap_${k}_gamma_${ind}_iter499.npy
 done
