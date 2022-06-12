@@ -5,7 +5,6 @@ Includes: make_ground_truth()
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 
 def make_ground_truth(
@@ -21,8 +20,7 @@ def make_ground_truth(
         count = 0
         for chr in chrs:
             ground_truth = pd.read_csv(
-                Path(path)
-                / str("local_ancestry_chr" + str(chr) + "_" + str(ind) + ".csv"),
+                path + str(chr) + "_" + str(ind) + ".csv",
                 names=["startpos", "endpos", "dest"],
             )
             if ground_truth_membership_one_hot is None:

@@ -142,7 +142,7 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
     #         ts_list,
     #         np.sum(mask_dodgy),
     #         mask_dodgy=mask_dodgy,
-    #         path=args.path,
+    #         path=args.ground_truth_path,
     #         sample=args.sample_id,
     #         chrs=chrs,
     #         force_build=args.force_build,
@@ -173,6 +173,9 @@ def filter_opportunity(
         num_of_trees_in_chr = [c + 1] * ts_list[c].num_trees
         chr_list.extend(num_of_trees_in_chr)
 
+    mutrate_opportunity_target = np.tile(
+        np.array(mutrate_opportunity_target), (len(args.sample_id), 1)
+    )
     mutrate_opportunity_target_masked = np.array(mutrate_opportunity_target)[mask_dodgy]
     mutrate_opportunity_thresh = np.percentile(
         mutrate_opportunity_target_masked, args.masking_threshold * 100, axis=0

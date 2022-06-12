@@ -5,7 +5,6 @@ import time
 import tskit
 import argparse
 import copy
-from pathlib import Path
 
 from calc_tree_stats import load_tree_stats
 from calc_fixed_params import load_fixed_params
@@ -38,6 +37,14 @@ def input_assertions(args):
         raise ValueError(
             "Propotions per chromosomes not supported when you load proportions"
         )
+    if args.mode == "sim" and args.ground_truth_path is None:
+        raise ValueError(
+            "Supply the location of ground_truth file or run in mode = real"
+        )
+    if args.opportunity_filter and (args.mutden is None or args.allmuts is None):
+        raise ValueError(
+            "Supply the location for mutden and allmuts file to filter trees based on opportunity"
+        )
 
 
 def load_trees(args, poplabels):
@@ -45,9 +52,7 @@ def load_trees(args, poplabels):
     ts_list = []
     if args.trees != None:
         for chr in chrs:
-            ts = tskit.load(
-                Path(args.path) / str(args.trees + "_chr" + str(chr) + ".trees")
-            )  ## relate trees
+            ts = tskit.load(args.trees + str(chr) + ".trees")  ## relate trees
             ts_list.append(ts)
 
     num_samples = len(poplabels)
@@ -268,7 +273,7 @@ def main(args):
         dtype="float64",
     )
     sample_id_label = "_".join([str(e) for e in args.sample_id])
-    poplabels = pd.read_csv(Path(args.path) / "poplabels.txt", sep="\s+")
+    poplabels = pd.read_csv(args.poplabels, sep="\s+")
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
     chrs = list(map(int, args.chrs.split(",")))
     print("Considering chromosomes: " + str(chrs))
@@ -477,16 +482,28 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "-path",
-        "--path",
-        help="Location to the trees, ground truth assignments and recombination maps ",
+        "-trees",
+        "--trees",
+        help="Location to trees in tskit format",
+        type=str,
+        default=None,
+    )
+    parser.add_argument("--poplabels", help="Location to poplabels file", type=str)
+    parser.add_argument(
+        "--mutden",
+        help="Location prefix to mutation density file from Relate",
         type=str,
         default=None,
     )
     parser.add_argument(
-        "-trees",
-        "--trees",
-        help="Prefix of the trees file present in args.path folder",
+        "--allmuts",
+        help="Location prefix to allmuts file from Relate",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--ground_truth_path",
+        help="Location prefix to groundtruth file generated from tskit in simulations",
         type=str,
         default=None,
     )
@@ -566,4 +583,5 @@ if __name__ == "__main__":
     np.random.seed(args.seed)  ## fix the random seed
     main(args)
 
-## python ghost_buster.py --mode sim --path example/ --rec example/genetic_map_GRCh37 --sample_id 51 --chr 22 --trees stdpopsim_homsap --output example/stdpopsim_homsap
+## python ghost_buster.py --mode sim --trees example/stdpopsim_homsap_chr --poplabels example/poplabels.txt --ground_truth example/local_ancestry_chr  --rec example/genetic_map_GRCh37_chr --sample_id 51 --chr 22 --output example/stdpopsim_homsap --init_at_truth 1
+## python ghost_buster.py --mode sim --trees example/relate_homsap_chr --poplabels example/poplabels.txt --ground_truth example/local_ancestry_chr  --rec example/genetic_map_GRCh37_chr --mutden example/relate_homsap_chr --allmuts example/relate_homsap_chr --opportunity_filter 1 --sample_id 51 52 --chr 22 --output example/relate_homsap --init_at_truth 1

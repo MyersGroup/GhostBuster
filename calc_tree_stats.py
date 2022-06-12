@@ -10,7 +10,6 @@ import scipy.stats as stats
 import pandas as pd
 from tqdm import tqdm
 import pickle
-from pathlib import Path
 
 
 def lineage_nodes(tree, sample_ids):
@@ -85,7 +84,7 @@ def compute_tree_stats(
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
     for chr_no, chr in enumerate(chrs):
         recomb_map = pd.read_csv(
-            rec + "_chr" + str(chr) + ".txt",
+            rec + str(chr) + ".txt",
             sep="\t",
         )
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
@@ -94,11 +93,11 @@ def compute_tree_stats(
         )
         if check_muts_target_name is not None:
             relate_allmuts_file = pd.read_csv(
-                check_muts_target_name[chr_no],
+                check_muts_target_name[chr_no][0],
                 sep=" ",
                 engine="c",
             )
-            mut_den_filename = check_muts_target_name[chr_no][:-8] + ".mutden"
+            mut_den_filename = check_muts_target_name[chr_no][1]
             mutrates = pd.read_csv(mut_den_filename, sep=" ", header=None)
             mutrates = mutrates.dropna(axis=1)
             epoch_intervals_mutrate = mutrates.iloc[0][0 : int(mutrates.shape[1] / 2)]
@@ -213,7 +212,10 @@ def load_tree_stats(args, ts_list, poplabels):
         check_muts_target_name = []
         for chr in chrs:
             check_muts_target_name.append(
-                str(Path(args.path) / str(args.trees + "_chr" + str(chr) + ".allmuts"))
+                (
+                    args.allmuts + str(chr) + ".allmuts",
+                    args.mutden + str(chr) + ".mutden",
+                )
             )
     else:
         check_muts_target_name = None

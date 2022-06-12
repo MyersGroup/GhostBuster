@@ -370,7 +370,7 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
                 ts_list,
                 num_trees,
                 mask_dodgy=mask_dodgy,
-                path=args.path,
+                path=args.ground_truth_path,
                 sample=args.sample_id,
                 chrs=chrs,
                 force_build=args.force_build,
