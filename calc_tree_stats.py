@@ -110,73 +110,77 @@ def compute_tree_stats(
         count += 1
         tree = ts.first()
         for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
-            tree_size.append(tree.interval[1] - tree.interval[0])
-            tree_left_bp.append(tree.interval[0])
-            no_of_mutations.append(tree.num_mutations)
-            tmrca.append(tree.time(tree.root))
-            chr_map.append(chr)
-            recomb_events = recomb_map[
-                ~(
-                    (
-                        recomb_map["Start Position(bp)"]
-                        > tree.interval[1] + recomb_window_size
+            if tree.interval[1] // force_build - tree.interval[0] // force_build > 0:
+                tree_size.append(tree.interval[1] - tree.interval[0])
+                tree_left_bp.append(tree.interval[0])
+                no_of_mutations.append(tree.num_mutations)
+                tmrca.append(tree.time(tree.root))
+                chr_map.append(chr)
+                recomb_events = recomb_map[
+                    ~(
+                        (
+                            recomb_map["Start Position(bp)"]
+                            > tree.interval[1] + recomb_window_size
+                        )
+                        | (
+                            recomb_map["Position(bp)"]
+                            < tree.interval[0] - recomb_window_size
+                        )
                     )
-                    | (
-                        recomb_map["Position(bp)"]
-                        < tree.interval[0] - recomb_window_size
-                    )
-                )
-            ]
-            if len(recomb_events) > 1:
-                recomb_rate = (
-                    recomb_events.iloc[-1]["Map(cM)"] - recomb_events.iloc[0]["Map(cM)"]
-                ) / (
-                    recomb_events.iloc[-1]["Position(bp)"]
-                    - recomb_events.iloc[0]["Position(bp)"]
-                )
-            else:
-                recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
-            recomb_rates.append(recomb_rate)
-            if check_muts_target_name is not None:
-                relate_allmuts_tree = relate_allmuts_file.iloc[
-                    tid * num_nodes : (tid + 1) * num_nodes
                 ]
-                mut_rates_tid = mutrates[tid]
-                rank_zero_snp_branches_target.append(0)
-                frac_branches_with_snp_target.append(
-                    count_lineage_branch_has_muts(
-                        relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                if len(recomb_events) > 1:
+                    recomb_rate = (
+                        recomb_events.iloc[-1]["Map(cM)"]
+                        - recomb_events.iloc[0]["Map(cM)"]
+                    ) / (
+                        recomb_events.iloc[-1]["Position(bp)"]
+                        - recomb_events.iloc[0]["Position(bp)"]
                     )
-                )
-                frac_branches_with_snp.append(
-                    count_lineage_branch_has_muts(relate_allmuts_tree, first_tree_nodes)
-                )
-                num_snps_on_tree.append(
-                    count_num_muts(relate_allmuts_tree, first_tree_nodes)
-                )
-                num_snps_on_lineage.append(
-                    count_num_muts(
-                        relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                else:
+                    recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
+                recomb_rates.append(recomb_rate)
+                if check_muts_target_name is not None:
+                    relate_allmuts_tree = relate_allmuts_file.iloc[
+                        tid * num_nodes : (tid + 1) * num_nodes
+                    ]
+                    mut_rates_tid = mutrates[tid]
+                    rank_zero_snp_branches_target.append(0)
+                    frac_branches_with_snp_target.append(
+                        count_lineage_branch_has_muts(
+                            relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                        )
                     )
-                )
-                num_branches_on_target.append(len(lineage_nodes(tree, sample_list)))
-                mutrate_logpmf_target.append(
-                    get_poisson_logpmf_bins(
-                        mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
+                    frac_branches_with_snp.append(
+                        count_lineage_branch_has_muts(
+                            relate_allmuts_tree, first_tree_nodes
+                        )
                     )
-                )
-                mutrate_opportunity_target.append(
-                    mut_rates_tid[mutrate_num_epochs : 2 * mutrate_num_epochs]
-                )
-            else:
-                rank_zero_snp_branches_target.append(0)
-                frac_branches_with_snp_target.append(0)
-                frac_branches_with_snp.append(0)
-                num_snps_on_tree.append(0)
-                num_snps_on_lineage.append(0)
-                num_branches_on_target.append(0)
-                mutrate_logpmf_target.append([0])
-                mutrate_opportunity_target.append([0])
+                    num_snps_on_tree.append(
+                        count_num_muts(relate_allmuts_tree, first_tree_nodes)
+                    )
+                    num_snps_on_lineage.append(
+                        count_num_muts(
+                            relate_allmuts_tree, lineage_nodes(tree, sample_list)
+                        )
+                    )
+                    num_branches_on_target.append(len(lineage_nodes(tree, sample_list)))
+                    mutrate_logpmf_target.append(
+                        get_poisson_logpmf_bins(
+                            mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
+                        )
+                    )
+                    mutrate_opportunity_target.append(
+                        mut_rates_tid[mutrate_num_epochs : 2 * mutrate_num_epochs]
+                    )
+                else:
+                    rank_zero_snp_branches_target.append(0)
+                    frac_branches_with_snp_target.append(0)
+                    frac_branches_with_snp.append(0)
+                    num_snps_on_tree.append(0)
+                    num_snps_on_lineage.append(0)
+                    num_branches_on_target.append(0)
+                    mutrate_logpmf_target.append([0])
+                    mutrate_opportunity_target.append([0])
             tree.next()
 
         del tree
@@ -258,6 +262,7 @@ def load_tree_stats(args, ts_list, poplabels):
             check_muts_target_name,
             args.rec,
             poplabels.index.values[args.sample_id],
+            args.force_build,
         )
 
         f_pkl = open(tree_stats_file_name, "wb")

@@ -8,7 +8,9 @@ import pandas as pd
 from pathlib import Path
 
 
-def make_ground_truth(ts_list, num_trees, mask_dodgy, path, sample=None, chrs=None):
+def make_ground_truth(
+    ts_list, num_trees, mask_dodgy, path, sample=None, chrs=None, force_build=1
+):
     ## Extracts the ground truth membership from the simulations
     print("Calculating the ground truth local ancestry..")
     ground_truth_membership_one_hot = None
@@ -28,22 +30,27 @@ def make_ground_truth(ts_list, num_trees, mask_dodgy, path, sample=None, chrs=No
                 ground_truth_membership_one_hot = np.zeros((num_ref_groups, num_trees))
             tree = ts_list[count].first()
             for tid in range(len(list(ts_list[count].trees()))):
-                if mask_dodgy[count_all_tree]:
-                    if tree.num_sites > 0:
-                        for j in range(len(ground_truth)):
-                            for mut in tree.sites():
-                                if (
-                                    mut.position > ground_truth["startpos"].loc[j]
-                                    and mut.position < ground_truth["endpos"].loc[j]
-                                ):
-                                    ground_truth_membership_one_hot[
-                                        int(ground_truth["dest"].loc[j]) - 1, num_tree
-                                    ] = 1
-                                    break
-                                else:
-                                    break
-                    num_tree += 1
-                count_all_tree += 1
+                if (
+                    tree.interval[1] // force_build - tree.interval[0] // force_build
+                    > 0
+                ):
+                    if mask_dodgy[count_all_tree]:
+                        if tree.num_sites > 0:
+                            for j in range(len(ground_truth)):
+                                for mut in tree.sites():
+                                    if (
+                                        mut.position > ground_truth["startpos"].loc[j]
+                                        and mut.position < ground_truth["endpos"].loc[j]
+                                    ):
+                                        ground_truth_membership_one_hot[
+                                            int(ground_truth["dest"].loc[j]) - 1,
+                                            num_tree,
+                                        ] = 1
+                                        break
+                                    else:
+                                        break
+                        num_tree += 1
+                    count_all_tree += 1
                 tree.next()
             count += 1
     ## only return ground truth of groups which actually contribute

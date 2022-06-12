@@ -135,29 +135,21 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
         recomb_0_thresh,
     )
     mask_dodgy = np.array(mask_dodgy)
-    if args.mode == "sim":
-        ##### Caution: manually downsampling HAN (1) !! 🌵
-        print("Downsampling !! Caution !!")
-        ground_truth_membership = make_ground_truth(
-            ts_list,
-            np.sum(mask_dodgy),
-            mask_dodgy=mask_dodgy,
-            path=args.path,
-            sample=args.sample_id,
-            chrs=chrs,
-        )
-        mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
+    # if args.mode == "sim":
+    #     ##### Caution: manually downsampling HAN (1) !! 🌵
+    #     print("Downsampling !! Caution !!")
+    #     ground_truth_membership = make_ground_truth(
+    #         ts_list,
+    #         np.sum(mask_dodgy),
+    #         mask_dodgy=mask_dodgy,
+    #         path=args.path,
+    #         sample=args.sample_id,
+    #         chrs=chrs,
+    #         force_build=args.force_build,
+    #     )
+    #     mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
 
-    mask_dodgy_windowed = np.zeros_like(mask_dodgy, dtype=bool)
-    for tid in range(num_trees):
-        if (
-            tree_left_bp[min(tid + 1, len(tree_left_bp) - 1)] // args.force_build
-            - tree_left_bp[tid] // args.force_build
-            > 0
-            and mask_dodgy[tid]
-        ):
-            mask_dodgy_windowed[tid] = True
-    mask_dodgy = np.tile(mask_dodgy_windowed, len(args.sample_id))
+    mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     print(
         "Filtering based on recombination rate, trees remaining: "
         + str(sum(mask_dodgy))
