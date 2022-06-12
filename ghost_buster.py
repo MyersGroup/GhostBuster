@@ -511,6 +511,12 @@ def main(args):
 
         if args.mode == "sim":
             write_calibration(args, own_membership, ground_truth_membership)
+            filename = (
+                "ground_truth_membership_" + sample_id_label + ".npy"
+            )  ## this saves membership for all the trees (without the filtering)
+            filename = args.output + "_" + filename
+            with open(filename, "wb") as f:
+                np.save(f, ground_truth_membership)
 
     return 0
 
