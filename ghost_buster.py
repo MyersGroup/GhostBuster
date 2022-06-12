@@ -437,6 +437,13 @@ def main(args):
 
     ### EM
     if args.evaluate_gamma:
+        filename = (
+            "overall_membership_iter0_" + sample_id_label + ".npy"
+        )  ## this saves membership for all the trees (without the filtering)
+        filename = args.output + "_" + filename
+        with open(filename, "wb") as f:
+            np.save(f, own_membership)
+
         log_likelihood_arr = []
         start_time_em = time.time()
         print("Starting the EM..")
@@ -460,6 +467,14 @@ def main(args):
             )
             print(tau)
 
+            if epoch == 0:
+                write_coal(
+                    gamma_arr,
+                    sample_id_label + "_iter0.coal",
+                    unique_groups,
+                    args.output,
+                    epoch_intervals,
+                )
             for i in range(np.shape(tau)[0]):
                 f_tau.write(str(tau[i]) + " ")
             f_tau.write("\n")
