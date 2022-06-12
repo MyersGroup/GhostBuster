@@ -6,6 +6,8 @@ Includes: boolean(), make_one_hot(), mask_for_dodgy_trees(), downsample_trees(),
 import argparse
 import numpy as np
 from sklearn.calibration import calibration_curve
+import pandas as pd
+
 from calc_ground_truth import make_ground_truth
 
 
@@ -147,7 +149,7 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
     #         chrs=chrs,
     #         force_build=args.force_build,
     #     )
-    #     mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
+    #     mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.25)
 
     print(
         "Filtering based on recombination rate, trees remaining: "
@@ -228,3 +230,40 @@ def filter_opportunity(
         + str(sum(mask_dodgy[mask_dodgy] * mask_dodgy_low_evidence))
     )
     return mask_dodgy_low_evidence
+
+
+def load_mask_csv(args, sample_id_list, ts_list, mask_dodgy, chrs):
+    membership_mask = pd.read_csv(args.load_mask, sep="\s+")
+    count = 0
+    for sample_no in range(len(sample_id_list)):
+        membership_mask_count = 0
+        for chr_count, chr in enumerate(chrs):
+            tree = ts_list[chr_count].first()
+            membership_mask_chr = membership_mask[membership_mask.chr == chr]
+            for tid in range(ts_list[chr_count].num_trees):
+                if (
+                    tree.interval[1] // args.force_build
+                    - tree.interval[0] // args.force_build
+                    > 0
+                ):
+                    if (
+                        tree.interval[0] // args.force_build
+                        == membership_mask_chr["pos"].iloc[membership_mask_count]
+                    ):
+                        mask_dodgy[count] = True
+                        if membership_mask_count < len(membership_mask_chr) - 1:
+                            membership_mask_count += 1
+                    else:
+                        mask_dodgy[count] = False
+                    count += 1
+                if (
+                    tree.interval[0] // args.force_build
+                    <= membership_mask_chr["pos"].iloc[membership_mask_count]
+                ):
+                    tree.next()
+                elif membership_mask_count < len(membership_mask_chr) - 1:
+                    membership_mask_count += 1
+                    count -= 1
+
+    print("Number of trees = " + str(np.sum(mask_dodgy)))
+    return mask_dodgy

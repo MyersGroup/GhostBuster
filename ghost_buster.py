@@ -12,6 +12,7 @@ from calc_fixed_params import load_fixed_params
 from utils import (
     filter_recomb_rate,
     filter_opportunity,
+    load_mask_csv,
     write_coal,
     write_calibration,
     calculate_accuracy,
@@ -340,6 +341,51 @@ def random_sweep(
     return own_membership
 
 
+def write_membership_gamma(
+    own_membership,
+    gamma_arr,
+    mask_dodgy,
+    chr_map,
+    tree_left_bp,
+    epoch_intervals,
+    unique_groups,
+    sample_id_label,
+):
+    ## gamma and membership plots
+    filename = (
+        "overall_membership_" + sample_id_label + ".npy"
+    )  ## this saves membership for all the trees (without the filtering)
+    filename = args.output + "_" + filename
+    with open(filename, "wb") as f:
+        np.save(f, own_membership)
+
+    write_coal(
+        gamma_arr,
+        sample_id_label + ".coal",
+        unique_groups,
+        args.output,
+        epoch_intervals,
+    )
+
+    with open(
+        args.output + "_gamma_" + sample_id_label + ".npy",
+        "wb",
+    ) as f:
+        np.save(f, gamma_arr)
+
+    tree_position = []
+    for tid in range(len(mask_dodgy)):
+        if mask_dodgy[tid]:
+            tree_position.append([chr_map[tid], tree_left_bp[tid] // args.force_build])
+    filename = (
+        "mask_" + sample_id_label + ".csv"
+    )  ## this saves membership for all the trees (without the filtering)
+    filename = args.output + "_" + filename
+    pd.DataFrame(np.array(tree_position), columns=["chr", "pos"]).to_csv(
+        filename, index=False, sep="\t"
+    )
+
+
 def main(args):
     ### Initialize some global variables
     epoch_intervals = np.array(
@@ -371,12 +417,14 @@ def main(args):
         )
 
     ### Load tree stats
-    recomb_rates, mutrate_opportunity_target, tree_left_bp = load_tree_stats(
+    recomb_rates, mutrate_opportunity_target, tree_left_bp, chr_map = load_tree_stats(
         args, ts_list, poplabels
     )
 
     ### Filter based on recombination rates
     mask_dodgy = filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates)
+    if args.load_mask is not None:
+        mask_dodgy = load_mask_csv(args, args.sample_id, ts_list, mask_dodgy, chrs)
 
     ### Load fixed params
     (
@@ -413,8 +461,6 @@ def main(args):
     ### Initialize local ancestry
     if args.init_at_truth:
         own_membership = ground_truth_membership
-    elif args.load_membership:
-        own_membership = np.load(args.load_membership)
     else:
         num_trees = np.sum(mask_dodgy)
         own_membership = random_sweep(
@@ -487,28 +533,6 @@ def main(args):
             print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
             f_logl.write(str(log_likelihood_arr[-1]) + "\n")
 
-        ## gamma and membership plots
-        filename = (
-            "overall_membership_" + sample_id_label + ".npy"
-        )  ## this saves membership for all the trees (without the filtering)
-        filename = args.output + "_" + filename
-        with open(filename, "wb") as f:
-            np.save(f, own_membership)
-
-        write_coal(
-            gamma_arr,
-            sample_id_label + ".coal",
-            unique_groups,
-            args.output,
-            epoch_intervals,
-        )
-
-        with open(
-            args.output + "_gamma_" + sample_id_label + ".npy",
-            "wb",
-        ) as f:
-            np.save(f, gamma_arr)
-
         if args.mode == "sim":
             write_calibration(args, own_membership, ground_truth_membership)
             filename = (
@@ -517,6 +541,17 @@ def main(args):
             filename = args.output + "_" + filename
             with open(filename, "wb") as f:
                 np.save(f, ground_truth_membership)
+
+        write_membership_gamma(
+            own_membership,
+            gamma_arr,
+            mask_dodgy,
+            chr_map,
+            tree_left_bp,
+            epoch_intervals,
+            unique_groups,
+            sample_id_label,
+        )
 
     return 0
 
@@ -581,9 +616,9 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "-load_membership",
-        "--load_membership",
-        help="Starting gamma values written in a file",
+        "-load_mask",
+        "--load_mask",
+        help="Load mask csv file with chr, tree_position_left//force_build",
         type=str,
         default=None,
     )
@@ -595,13 +630,6 @@ if __name__ == "__main__":
         default=None,
     )
 
-    parser.add_argument(
-        "-load_mask",
-        "--load_mask",
-        help="Load precomputed mask file (0/1s of length number of trees)",
-        type=str,
-        default=None,
-    )
     parser.add_argument(
         "-trees",
         "--trees",
