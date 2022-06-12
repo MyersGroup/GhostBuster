@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from tqdm import tqdm
-import msprime
+import tskit
 
 path = sys.argv[1]
 focal = int(sys.argv[2])
@@ -49,7 +49,7 @@ def get_migrating_tracts_with_id(ts):
 
 
 for chr in chrs:
-    ts = msprime.load(path + "stdpopsim_homsap_chr" + str(chr) + ".trees")
+    ts = tskit.load(path + "stdpopsim_homsap_chr" + str(chr) + ".trees")
     migrating_tracts = get_migrating_tracts_with_id(ts)
     for j in [focal]:  ## only first 10 are admixed
         migrating_tracts_i = migrating_tracts[j][1:]
@@ -84,4 +84,4 @@ for chr in chrs:
                     delimiter=",",
                 )
 
-## python get_local_anc.py /well/myers/users/tgh473/workspace/ghost_buster/sims/stdpopsim_ancient_small/data_50/ 51 2272 1,2,3,4,5
+## python get_local_anc.py ../example/ 52 2272 22
