@@ -5,6 +5,7 @@ import time
 import tskit
 import argparse
 import copy
+from tqdm import tqdm
 
 from calc_tree_stats import load_tree_stats
 from calc_fixed_params import load_fixed_params
@@ -203,7 +204,6 @@ def e_m_step(
             gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
     tau = np.mean(own_membership, axis=1)
-    print(tau)
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = np.load(args.load_gamma)
@@ -258,6 +258,86 @@ def e_m_step(
     )
     own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
     return own_membership, gamma_arr, tau, log_likelihood
+
+
+def random_sweep(
+    proportion_of_coalescing_all,
+    epoch_index_all,
+    denom,
+    n_clusters,
+    n_unique_groups,
+    n_epochs,
+    n_trees,
+    n_repeats,
+):
+    print("Performing a random sweep for better initialization")
+    masked_trees_index = np.arange(0, n_trees)
+    best_loglikelihood = -np.inf
+    for n_iters in tqdm(range(n_repeats)):
+        gamma_arr = np.power(
+            np.e,
+            np.random.uniform(
+                -16.11, -4.6, (n_clusters, n_unique_groups, n_epochs - 1)
+            ),
+        )
+        tau = np.random.uniform(0.01, 0.99, n_clusters)
+
+        own_membership_trial = np.ones((n_clusters, n_trees), dtype="float64")
+        log_num_em = np.zeros((n_clusters, n_trees), dtype="float64")
+        log_denom_em = np.zeros((n_clusters, n_trees), dtype="float64")
+        count_masked_trees = 0
+
+        for tid in masked_trees_index:
+            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
+            epoch_index_in_tree = epoch_index_all[tid]
+            for j in range(n_unique_groups):
+                log_num_em_j, log_denom_em_j = update_membership(
+                    proportion_of_coalescing_in_tree,
+                    epoch_index_in_tree,
+                    denom,
+                    gamma_arr[j],
+                    tid,
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                    n_epochs,
+                )
+                log_num_em[j, count_masked_trees] = log_num_em_j
+                log_denom_em[j, count_masked_trees] = log_denom_em_j
+            count_masked_trees += 1
+        own_membership_trial = np.exp(
+            log_num_em
+            + log_denom_em
+            - np.repeat(
+                np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
+                n_clusters,
+                axis=1,
+            ).T
+        )
+
+        for j in range(n_clusters):
+            own_membership_trial[j] *= tau[j]
+
+        own_membership_trial = own_membership_trial / (
+            np.sum(own_membership_trial, axis=0)
+        )
+
+        for epoch in range(10):
+            own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
+                own_membership_trial,
+                gamma_arr,
+                proportion_of_coalescing_all,
+                epoch_index_all,
+                denom,
+                n_unique_groups,
+                n_epochs,
+                n_trees,
+                epoch,
+            )
+        if log_likelihood > best_loglikelihood:
+            best_loglikelihood = log_likelihood
+            own_membership = own_membership_trial
+
+    return own_membership
 
 
 def main(args):
@@ -337,9 +417,15 @@ def main(args):
         own_membership = np.load(args.load_membership)
     else:
         num_trees = np.sum(mask_dodgy)
-        own_membership = np.array(
-            np.random.dirichlet(np.ones(args.num_clusters), num_trees).T,
-            dtype="float64",
+        own_membership = random_sweep(
+            proportion_of_coalescing_all,
+            epoch_index_all,
+            denom,
+            args.num_clusters,
+            len(unique_groups),
+            len(epoch_intervals),
+            np.sum(mask_dodgy),
+            args.n_repeats,
         )
 
     if args.load_gamma:
@@ -372,6 +458,7 @@ def main(args):
                 np.sum(mask_dodgy),
                 epoch,
             )
+            print(tau)
 
             for i in range(np.shape(tau)[0]):
                 f_tau.write(str(tau[i]) + " ")
@@ -451,6 +538,12 @@ if __name__ == "__main__":
         help="Do you wish to initialize at ground-truth",
         type=boolean,
         default=False,
+    )
+    parser.add_argument(
+        "--n_repeats",
+        help="Number of restarts when randomly initializing local ancestry, we choose best out of n_trails",
+        default=100,
+        type=int,
     )
     parser.add_argument(
         "-load_gamma",
@@ -562,7 +655,7 @@ if __name__ == "__main__":
         "--ignore_first_epoch",
         help="Ignore first epoch while calculating the local ancestry in the EM",
         type=boolean,
-        default=False,
+        default=True,
     )
     parser.add_argument(
         "-ignore_last_epoch",

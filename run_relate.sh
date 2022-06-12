@@ -4,33 +4,21 @@ module load Python/3.7.4-GCCcore-8.3.0
 source /well/myers/users/tgh473/python/tskit_venv/bin/activate
 
 #ind=51
-path="../sims/stdpopsim_ancient_small/devel_relate_trees_force_50/"
-out="force_filter_50/post_rand_relate_homsap"
+out="output/relate_homsap"
+path="../sims/stdpopsim_ancient_small/relate_postprocess_recomb_filter/"
+tree="relate_homsap_chr"
 
-for k in 2
-do
-echo ${k}
-python em_true_ancient_sim_subsampled.py \
+python ghost_buster.py \
 --mode sim \
---chr 1,2,3,4,5 \
---relate_trees True \
---masking_thresh 0.5 \
---plot_intermediate_gammas True \
---force_build 10000 \
+--chr 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22 \
 --sample_id 51 \
---init_at_truth 1 \
---path ${path} \
---trees post_rand_relate \
---output ${out}_${k} \
--k ${k} \
 -i 200 \
--start_time 4.5 \
--end_time 6.0 \
---num_epochs 9 \
--ignore_first_epoch True \
---rec ../msprime_maps/genetic_map_GRCh37 \
---verbose False \
---check_muts_target True \
-#--load_membership devel_relate_homsap_2_overall_membership_51.npy \
-# python em_true_ancient_sim_subsampled.py --evaluate_gamma False --mode real --chr 6 --relate_trees True --masking_thresh 0.8 --plot_intermediate_gammas False --window_size 0 --sample_id ${ind} --path ${path} --trees relate_homsap --output stdpopsim_ancient_small/relate_homsap_${k} -k ${k} -start_time 4 -end_time 6 --num_epochs 7 --ignore_first_epoch True --rec ../msprime_maps/genetic_map_GRCh37 --load_props stdpopsim_ancient_small/relate_homsap_${k}_props_${ind}_iter499.npy --load_gamma stdpopsim_ancient_small/relate_homsap_${k}_gamma_${ind}_iter499.npy
-done
+--trees ${path}${tree} \
+--poplabels ${path}poplabels.txt \
+--rec ../msprime_maps_filtered/genetic_map_GRCh37_chr \
+--mutden ${path}${tree} \
+--allmuts ${path}${tree} \
+--ground_truth_path ${path}local_ancestry_chr \
+--init_at_truth 1 \
+--opportunity_filter 1 \
+--output ${out}_${k} \
