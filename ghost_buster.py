@@ -487,7 +487,14 @@ def main(args):
             print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
             f_logl.write(str(log_likelihood_arr[-1]) + "\n")
 
-        ## gamma plots
+        ## gamma and membership plots
+        filename = (
+            "overall_membership_" + sample_id_label + ".npy"
+        )  ## this saves membership for all the trees (without the filtering)
+        filename = args.output + "_" + filename
+        with open(filename, "wb") as f:
+            np.save(f, own_membership)
+
         write_coal(
             gamma_arr,
             sample_id_label + ".coal",
