@@ -342,6 +342,7 @@ def random_sweep(
 
 
 def write_membership_gamma(
+    args,
     own_membership,
     gamma_arr,
     mask_dodgy,
@@ -374,7 +375,7 @@ def write_membership_gamma(
         np.save(f, gamma_arr)
 
     tree_position = []
-    for tid in range(len(mask_dodgy)):
+    for tid in range(len(mask_dodgy) // len(args.sample_id)):
         if mask_dodgy[tid]:
             tree_position.append([chr_map[tid], tree_left_bp[tid] // args.force_build])
     filename = (
@@ -543,6 +544,7 @@ def main(args):
                 np.save(f, ground_truth_membership)
 
         write_membership_gamma(
+            args,
             own_membership,
             gamma_arr,
             mask_dodgy,
