@@ -63,23 +63,14 @@ def get_poisson_logpmf_bins(mutrates, num_epochs, mut_rate):
 
 
 def compute_tree_stats(
-    ts_list,
-    chrs,
-    check_muts_target_name,
-    rec,
-    sample_list=None,
+    ts_list, chrs, check_muts_target_name, rec, sample_list=None, force_build=1
 ):
     tree_size = []
     tree_left_bp = []
     no_of_mutations = []
     tmrca = []
-    recomb_window_size = [
-        10000,
-        50000,
-        100000,
-        250000,
-    ]  ## window size for measure recombination rates
-    recomb_rates = [[] for _ in recomb_window_size]
+    recomb_window_size = 50000  ## window size for measure recombination rates
+    recomb_rates = []
     rank_zero_snp_branches_target = []
     frac_branches_with_snp_target = []
     frac_branches_with_snp = []
@@ -124,30 +115,28 @@ def compute_tree_stats(
             no_of_mutations.append(tree.num_mutations)
             tmrca.append(tree.time(tree.root))
             chr_map.append(chr)
-            for r_i, recomb_window_size_i in enumerate(recomb_window_size):
-                recomb_events = recomb_map[
-                    ~(
-                        (
-                            recomb_map["Start Position(bp)"]
-                            > tree.interval[1] + recomb_window_size_i
-                        )
-                        | (
-                            recomb_map["Position(bp)"]
-                            < tree.interval[0] - recomb_window_size_i
-                        )
+            recomb_events = recomb_map[
+                ~(
+                    (
+                        recomb_map["Start Position(bp)"]
+                        > tree.interval[1] + recomb_window_size
                     )
-                ]
-                if len(recomb_events) > 1:
-                    recomb_rate = (
-                        recomb_events.iloc[-1]["Map(cM)"]
-                        - recomb_events.iloc[0]["Map(cM)"]
-                    ) / (
-                        recomb_events.iloc[-1]["Position(bp)"]
-                        - recomb_events.iloc[0]["Position(bp)"]
+                    | (
+                        recomb_map["Position(bp)"]
+                        < tree.interval[0] - recomb_window_size
                     )
-                else:
-                    recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
-                recomb_rates[r_i].append(recomb_rate)
+                )
+            ]
+            if len(recomb_events) > 1:
+                recomb_rate = (
+                    recomb_events.iloc[-1]["Map(cM)"] - recomb_events.iloc[0]["Map(cM)"]
+                ) / (
+                    recomb_events.iloc[-1]["Position(bp)"]
+                    - recomb_events.iloc[0]["Position(bp)"]
+                )
+            else:
+                recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
+            recomb_rates.append(recomb_rate)
             if check_muts_target_name is not None:
                 relate_allmuts_tree = relate_allmuts_file.iloc[
                     tid * num_nodes : (tid + 1) * num_nodes
@@ -232,7 +221,7 @@ def load_tree_stats(args, ts_list, poplabels):
             tree_left_bp,
             no_of_mutations,
             tmrca,
-            recomb_rates_all,
+            recomb_rates,
             rank_zero_snp_branches_target,
             frac_branches_with_snp_target,
             frac_branches_with_snp,
@@ -253,7 +242,7 @@ def load_tree_stats(args, ts_list, poplabels):
             tree_left_bp,
             no_of_mutations,
             tmrca,
-            recomb_rates_all,
+            recomb_rates,
             rank_zero_snp_branches_target,
             frac_branches_with_snp_target,
             frac_branches_with_snp,
@@ -278,7 +267,7 @@ def load_tree_stats(args, ts_list, poplabels):
                 tree_left_bp,
                 no_of_mutations,
                 tmrca,
-                recomb_rates_all,
+                recomb_rates,
                 rank_zero_snp_branches_target,
                 frac_branches_with_snp_target,
                 frac_branches_with_snp,
@@ -295,7 +284,6 @@ def load_tree_stats(args, ts_list, poplabels):
         print("Tree statistics stored in: " + str(tree_stats_file_name))
 
     ### Temporarily only using recomb rates with window_size = 50000
-    recomb_rates = recomb_rates_all[1]
     num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
     mask_dodgy = np.ones(num_trees, dtype=bool)
 

@@ -49,15 +49,6 @@ def load_trees(args, poplabels):
                 Path(args.path) / str(args.trees + "_chr" + str(chr) + ".trees")
             )  ## relate trees
             ts_list.append(ts)
-        if len(poplabels) == ts_list[0].num_samples // 2:
-            ## If the poplabels files is one entry per individual (not haplotype)
-            poplabels = pd.DataFrame(
-                np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
-            )
-        if len(poplabels) != ts_list[0].num_samples:
-            raise ValueError(
-                "Number of samples in trees doesnt match number of samples in poplabels.txt"
-            )
 
     num_samples = len(poplabels)
     for sample in args.sample_id:
@@ -284,6 +275,15 @@ def main(args):
 
     ### Load all the trees in a list
     ts_list = load_trees(args, poplabels)
+    if len(poplabels) == ts_list[0].num_samples // 2:
+        ## If the poplabels files is one entry per individual (not haplotype)
+        poplabels = pd.DataFrame(
+            np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
+        )
+    if len(poplabels) != ts_list[0].num_samples:
+        raise ValueError(
+            "Number of samples in trees doesnt match number of samples in poplabels.txt"
+        )
 
     ### Load tree stats
     recomb_rates, mutrate_opportunity_target, tree_left_bp = load_tree_stats(
@@ -566,4 +566,4 @@ if __name__ == "__main__":
     np.random.seed(args.seed)  ## fix the random seed
     main(args)
 
-## python ghost_buster.py --mode sim --path example/ --rec example/genetic_map_GRCh37 --sample_id 51 --chr 22 --trees relate_homsap --output example/
+## python ghost_buster.py --mode sim --path example/ --rec example/genetic_map_GRCh37 --sample_id 51 --chr 22 --trees stdpopsim_homsap --output example/stdpopsim_homsap
