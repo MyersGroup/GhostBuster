@@ -149,12 +149,13 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
     #     )
     #     mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
 
-    mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     print(
         "Filtering based on recombination rate, trees remaining: "
         + str(sum(mask_dodgy))
+        + " average recomb. rate: "
+        + str(np.mean(np.array(recomb_rates)[mask_dodgy]))
     )
-
+    mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     return mask_dodgy
 
 
