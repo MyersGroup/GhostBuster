@@ -236,8 +236,8 @@ def load_mask_csv(args, sample_id_list, ts_list, mask_dodgy, chrs):
     membership_mask = pd.read_csv(args.load_mask, sep="\s+")
     count = 0
     for sample_no in range(len(sample_id_list)):
-        membership_mask_count = 0
         for chr_count, chr in enumerate(chrs):
+            membership_mask_count = 0
             tree = ts_list[chr_count].first()
             membership_mask_chr = membership_mask[membership_mask.chr == chr]
             for tid in range(ts_list[chr_count].num_trees):
