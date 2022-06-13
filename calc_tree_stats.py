@@ -290,12 +290,4 @@ def load_tree_stats(args, ts_list, poplabels):
         f_pkl.close()
         print("Tree statistics stored in: " + str(tree_stats_file_name))
 
-    ### Temporarily only using recomb rates with window_size = 50000
-    num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
-    mask_dodgy = np.ones(num_trees, dtype=bool)
-
-    if args.load_mask:
-        mask_dodgy2 = np.load(args.load_mask)
-        mask_dodgy = np.multiply(mask_dodgy, mask_dodgy2)
-
-    return recomb_rates, mutrate_opportunity_target, tree_left_bp
+    return recomb_rates, mutrate_opportunity_target, tree_left_bp, chr_map
