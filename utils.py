@@ -264,6 +264,8 @@ def load_mask_csv(args, sample_id_list, ts_list, mask_dodgy, chrs):
                 elif membership_mask_count < len(membership_mask_chr) - 1:
                     membership_mask_count += 1
                     count -= 1
+                else:
+                    count -= 1
 
     print("Number of trees = " + str(np.sum(mask_dodgy)))
     return mask_dodgy
