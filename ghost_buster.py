@@ -423,8 +423,10 @@ def main(args):
     )
 
     ### Filter based on recombination rates
-    mask_dodgy = filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates)
+    if args.load_mask is None:
+        mask_dodgy = filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates)
     if args.load_mask is not None:
+        mask_dodgy = np.zeros(len(recomb_rates), dtype='bool')
         mask_dodgy = load_mask_csv(args, args.sample_id, ts_list, mask_dodgy, chrs)
 
     ### Load fixed params
@@ -437,7 +439,7 @@ def main(args):
     ) = load_fixed_params(args, ts_list, poplabels, mask_dodgy)
 
     ### Filter based on opportunity filter
-    if args.opportunity_filter:
+    if args.opportunity_filter and args.load_mask is None:
         mask_dodgy_low_evidence = filter_opportunity(
             args,
             ts_list,
