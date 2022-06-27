@@ -137,8 +137,9 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
         recomb_0_thresh,
     )
     mask_dodgy = np.array(mask_dodgy)
+    mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     if args.mode == "sim":
-       ##### Caution: manually downsampling HAN (1) !! 🌵
+       #### Caution: manually downsampling HAN (1) !! 🌵
        print("Downsampling !! Caution !!")
        ground_truth_membership = make_ground_truth(
            ts_list,
@@ -149,15 +150,14 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
            chrs=chrs,
            force_build=args.force_build,
        )
-       mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.25)
+       mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
 
     print(
         "Filtering based on recombination rate, trees remaining: "
         + str(sum(mask_dodgy))
         + " average recomb. rate: "
-        + str(np.mean(np.array(recomb_rates)[mask_dodgy]))
+        + str(np.mean(np.tile(np.array(recomb_rates), len(args.sample_id))[mask_dodgy]))
     )
-    mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     return mask_dodgy
 
 
@@ -175,9 +175,9 @@ def filter_opportunity(
         num_of_trees_in_chr = [c + 1] * ts_list[c].num_trees
         chr_list.extend(num_of_trees_in_chr)
 
-    mutrate_opportunity_target = np.tile(
-        np.array(mutrate_opportunity_target), (len(args.sample_id), 1)
-    )
+    #mutrate_opportunity_target = np.tile(
+    #    np.array(mutrate_opportunity_target), (len(args.sample_id), 1)
+    #)
     mutrate_opportunity_target_masked = np.array(mutrate_opportunity_target)[mask_dodgy]
     mutrate_opportunity_thresh = np.percentile(
         mutrate_opportunity_target_masked, args.masking_threshold * 100, axis=0
