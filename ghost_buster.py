@@ -291,7 +291,7 @@ def random_sweep(
         for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
-            for j in range(n_unique_groups):
+            for j in range(n_clusters):
                 log_num_em_j, log_denom_em_j = update_membership(
                     proportion_of_coalescing_in_tree,
                     epoch_index_in_tree,
