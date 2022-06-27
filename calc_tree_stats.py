@@ -76,8 +76,8 @@ def compute_tree_stats(
     num_snps_on_tree = []
     num_snps_on_lineage = []
     num_branches_on_target = []
-    mutrate_logpmf_target = []
-    mutrate_opportunity_target = []
+    # mutrate_logpmf_target = []
+    # mutrate_opportunity_target = []
     chr_map = []
     count = 0
     num_nodes = len(list(ts_list[0].first().nodes()))
@@ -97,13 +97,13 @@ def compute_tree_stats(
                 sep=" ",
                 engine="c",
             )
-            mut_den_filename = check_muts_target_name[chr_no][1]
-            mutrates = pd.read_csv(mut_den_filename, sep=" ", header=None)
-            mutrates = mutrates.dropna(axis=1)
-            epoch_intervals_mutrate = mutrates.iloc[0][0 : int(mutrates.shape[1] / 2)]
-            mutrates = mutrates.drop(0)
-            mutrates = np.array(mutrates)
-            mutrate_num_epochs = int(mutrates.shape[1] / 2)
+            # mut_den_filename = check_muts_target_name[chr_no][1]
+            # mutrates = pd.read_csv(mut_den_filename, sep=" ", header=None)
+            # mutrates = mutrates.dropna(axis=1)
+            # epoch_intervals_mutrate = mutrates.iloc[0][0 : int(mutrates.shape[1] / 2)]
+            # mutrates = mutrates.drop(0)
+            # mutrates = np.array(mutrates)
+            # mutrate_num_epochs = int(mutrates.shape[1] / 2)
 
         ts = ts_list[count]
         count += 1
@@ -142,7 +142,7 @@ def compute_tree_stats(
                     relate_allmuts_tree = relate_allmuts_file.iloc[
                         tid * num_nodes : (tid + 1) * num_nodes
                     ]
-                    mut_rates_tid = mutrates[tid]
+                    # mut_rates_tid = mutrates[tid]
                     rank_zero_snp_branches_target.append(0)
                     frac_branches_with_snp_target.append(
                         count_lineage_branch_has_muts(
@@ -163,14 +163,14 @@ def compute_tree_stats(
                         )
                     )
                     num_branches_on_target.append(len(lineage_nodes(tree, sample_list)))
-                    mutrate_logpmf_target.append(
-                        get_poisson_logpmf_bins(
-                            mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
-                        )
-                    )
-                    mutrate_opportunity_target.append(
-                        mut_rates_tid[mutrate_num_epochs : 2 * mutrate_num_epochs]
-                    )
+                    # mutrate_logpmf_target.append(
+                    #     get_poisson_logpmf_bins(
+                    #         mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
+                    #     )
+                    # )
+                    # mutrate_opportunity_target.append(
+                    #     mut_rates_tid[mutrate_num_epochs : 2 * mutrate_num_epochs]
+                    # )
                 else:
                     rank_zero_snp_branches_target.append(0)
                     frac_branches_with_snp_target.append(0)
@@ -178,12 +178,21 @@ def compute_tree_stats(
                     num_snps_on_tree.append(0)
                     num_snps_on_lineage.append(0)
                     num_branches_on_target.append(0)
-                    mutrate_logpmf_target.append([0])
-                    mutrate_opportunity_target.append([0])
+                    # mutrate_logpmf_target.append([0])
+                    # mutrate_opportunity_target.append([0])
             tree.next()
 
         del tree
         del ts
+
+    if check_muts_target_name is not None:
+        mutrate_logpmf_target, mutrate_opportunity_target = compute_mutden(
+            ts_list, chrs, sample_list, check_muts_target_name, force_build
+        )
+    else:
+        mutrate_logpmf_target = np.zeros(len(recomb_rates)).tolist()
+        mutrate_opportunity_target = np.zeros(len(recomb_rates)).tolist()
+
     return (
         tree_size,
         tree_left_bp,
@@ -202,6 +211,43 @@ def compute_tree_stats(
     )
 
 
+def compute_mutden(ts_list, chrs, samples, check_muts_target_name, force_build=1):
+    print("Using mutden files to get tree statistics on target lineage")
+    mutrate_logpmf_target = []
+    mutrate_opportunity_target = []
+    for sample_no in samples:
+        count = 0
+        for chr_no, chr in enumerate(chrs):
+            mut_den_filename = (
+                check_muts_target_name[chr_no][1] + "_" + str(sample_no) + ".mutden"
+            )
+            mutrates = pd.read_csv(mut_den_filename, sep=" ", header=None)
+            mutrates = mutrates.dropna(axis=1)
+            mutrates = mutrates.drop(0)
+            mutrates = np.array(mutrates)
+            mutrate_num_epochs = int(mutrates.shape[1] / 2)
+            ts = ts_list[count]
+            count += 1
+            tree = ts.first()
+            for tid in range(ts.num_trees):  # len(list(ts.trees()))
+                if (
+                    tree.interval[1] // force_build - tree.interval[0] // force_build
+                    > 0
+                ):
+                    mut_rates_tid = mutrates[tid]
+                    mutrate_logpmf_target.append(
+                        get_poisson_logpmf_bins(
+                            mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
+                        )
+                    )
+                    mutrate_opportunity_target.append(
+                        mut_rates_tid[mutrate_num_epochs : 2 * mutrate_num_epochs]
+                    )
+                tree.next()
+
+    return mutrate_logpmf_target, mutrate_opportunity_target
+
+
 def load_tree_stats(args, ts_list, poplabels):
     chrs = list(map(int, args.chrs.split(",")))
     tree_stats_file_name = args.output + "_tree_stats_" + str(args.chrs) + ".pkl"
@@ -214,7 +260,7 @@ def load_tree_stats(args, ts_list, poplabels):
             check_muts_target_name.append(
                 (
                     args.allmuts + str(chr) + ".allmuts",
-                    args.mutden + str(chr) + ".mutden",
+                    args.mutden + str(chr),
                 )
             )
     else:
@@ -263,7 +309,7 @@ def load_tree_stats(args, ts_list, poplabels):
             chrs,
             check_muts_target_name,
             args.rec,
-            poplabels.index.values[args.sample_id],
+            args.sample_id,
             args.force_build,
         )
 

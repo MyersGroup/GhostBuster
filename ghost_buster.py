@@ -210,11 +210,11 @@ def e_m_step(
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
 
-    # if tau[0] < tau[1]:
-    #     tau = [0.025, 0.975]  ## CAUTION: Fixing tau!!!
-    # else:
-    #     tau = [0.975, 0.025]
-    # tau = np.array(tau)
+    if tau[0] < tau[1]:
+        tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
+    else:
+        tau = [0.95, 0.05]
+    tau = np.array(tau)
 
     assert (gamma_arr >= 0).all()
     prev_gamma = copy.deepcopy(gamma_arr)
