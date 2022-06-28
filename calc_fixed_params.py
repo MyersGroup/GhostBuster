@@ -361,6 +361,7 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
                 epoch_index_all,
             ) = pickle.load(f_pkl)
             f_pkl.close()
+            ground_truth_membership = None
         print("Done loading fixed parameters from: " + str(fixed_params_file_name))
 
     except:
