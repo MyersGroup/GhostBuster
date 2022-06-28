@@ -119,7 +119,7 @@ def write_calibration(args, own_membership, ground_truth_membership):
                     )
 
 
-def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
+def filter_recomb_rate(args, ts_list, frac_branches, recomb_rates):
     chrs = list(map(int, args.chrs.split(",")))
     num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
     chr_list = []
@@ -136,21 +136,28 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates):
         recomb_rates,
         recomb_0_thresh,
     )
+
+    ### Added frac_branch_target to filter trees aswell
+    #mask_dodgy *= ~mask_for_dodgy_trees(
+    #    frac_branches,
+    #    args.masking_threshold,
+    #)
+
     mask_dodgy = np.array(mask_dodgy)
     mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
-    if args.mode == "sim":
-       #### Caution: manually downsampling HAN (1) !! 🌵
-       print("Downsampling !! Caution !!")
-       ground_truth_membership = make_ground_truth(
-           ts_list,
-           np.sum(mask_dodgy),
-           mask_dodgy=mask_dodgy,
-           path=args.ground_truth_path,
-           sample=args.sample_id,
-           chrs=chrs,
-           force_build=args.force_build,
-       )
-       mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
+    #if args.mode == "sim":
+    #   #### Caution: manually downsampling HAN (1) !! 🌵
+    #   print("Downsampling !! Caution !!")
+    #   ground_truth_membership = make_ground_truth(
+    #       ts_list,
+    #       np.sum(mask_dodgy),
+    #       mask_dodgy=mask_dodgy,
+    #       path=args.ground_truth_path,
+    #       sample=args.sample_id,
+    #       chrs=chrs,
+    #       force_build=args.force_build,
+    #   )
+    #   mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
 
     print(
         "Filtering based on recombination rate, trees remaining: "

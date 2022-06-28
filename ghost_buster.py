@@ -210,11 +210,11 @@ def e_m_step(
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
 
-    if tau[0] < tau[1]:
-        tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
-    else:
-        tau = [0.95, 0.05]
-    tau = np.array(tau)
+    #if tau[0] < tau[1]:
+    #    tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
+    #else:
+    #    tau = [0.95, 0.05]
+    #tau = np.array(tau)
 
     assert (gamma_arr >= 0).all()
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -418,15 +418,21 @@ def main(args):
         )
 
     ### Load tree stats
-    recomb_rates, mutrate_opportunity_target, tree_left_bp, chr_map = load_tree_stats(
-        args, ts_list, poplabels
-    )
+    (
+        recomb_rates,
+        mutrate_opportunity_target,
+        tree_left_bp,
+        chr_map,
+        frac_branches_with_snp_target,
+    ) = load_tree_stats(args, ts_list, poplabels)
 
     ### Filter based on recombination rates
     if args.load_mask is None:
-        mask_dodgy = filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates)
+        mask_dodgy = filter_recomb_rate(
+            args, ts_list, frac_branches_with_snp_target, recomb_rates
+        )
     if args.load_mask is not None:
-        mask_dodgy = np.zeros(len(recomb_rates), dtype='bool')
+        mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
         mask_dodgy = load_mask_csv(args, args.sample_id, ts_list, mask_dodgy, chrs)
 
     ### Load fixed params
