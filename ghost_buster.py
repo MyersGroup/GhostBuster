@@ -57,13 +57,6 @@ def load_trees(args, poplabels):
             ts = tskit.load(args.trees + str(chr) + ".trees")  ## relate trees
             ts_list.append(ts)
 
-    num_samples = len(poplabels)
-    for sample in args.sample_id:
-        if sample >= num_samples or sample < 0:
-            raise ValueError("The sample ids are out of range")
-        else:
-            print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
-
     return ts_list
 
 
@@ -416,7 +409,12 @@ def main(args):
         raise ValueError(
             "Number of samples in trees doesnt match number of samples in poplabels.txt"
         )
-
+    num_samples = len(poplabels)
+    for sample in args.sample_id:
+        if sample >= num_samples or sample < 0:
+            raise ValueError("The sample ids are out of range")
+        else:
+            print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
     ### Load tree stats
     (
         recomb_rates,

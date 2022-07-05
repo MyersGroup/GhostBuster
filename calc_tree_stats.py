@@ -62,7 +62,7 @@ def get_poisson_logpmf_bins(mutrates, num_epochs, mut_rate):
 
 
 def compute_tree_stats(
-    ts_list, chrs, check_muts_target_name, rec, sample_list=None, force_build=1
+    ts_list, chrs, allmuts, mutden, rec, sample_list=None, force_build=1
 ):
     tree_size = []
     tree_left_bp = []
@@ -89,11 +89,11 @@ def compute_tree_stats(
         )
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
         recomb_map["Start Position(bp)"] = np.array(
-            [0] + recomb_map_arr[:-1, 0].tolist()
+            [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
         )
-        if check_muts_target_name is not None:
+        if allmuts is not None:
             relate_allmuts_file = pd.read_csv(
-                check_muts_target_name[chr_no][0],
+                allmuts + str(chr) + ".allmuts",
                 sep=" ",
                 engine="c",
             )
@@ -138,7 +138,7 @@ def compute_tree_stats(
                 else:
                     recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
                 recomb_rates.append(recomb_rate)
-                if check_muts_target_name is not None:
+                if allmuts is not None:
                     relate_allmuts_tree = relate_allmuts_file.iloc[
                         tid * num_nodes : (tid + 1) * num_nodes
                     ]
@@ -185,9 +185,9 @@ def compute_tree_stats(
         del tree
         del ts
 
-    if check_muts_target_name is not None:
+    if mutden is not None:
         mutrate_logpmf_target, mutrate_opportunity_target = compute_mutden(
-            ts_list, chrs, sample_list, check_muts_target_name, force_build
+            ts_list, chrs, sample_list, mutden, force_build
         )
     else:
         mutrate_logpmf_target = np.zeros(len(recomb_rates)).tolist()
@@ -211,16 +211,14 @@ def compute_tree_stats(
     )
 
 
-def compute_mutden(ts_list, chrs, samples, check_muts_target_name, force_build=1):
+def compute_mutden(ts_list, chrs, samples, mutden, force_build=1):
     print("Using mutden files to get tree statistics on target lineage")
     mutrate_logpmf_target = []
     mutrate_opportunity_target = []
     for sample_no in samples:
         count = 0
         for chr_no, chr in enumerate(chrs):
-            mut_den_filename = (
-                check_muts_target_name[chr_no][1] + "_" + str(sample_no) + ".mutden"
-            )
+            mut_den_filename = mutden + str(chr) + "_" + str(sample_no) + ".mutden"
             mutrates = pd.read_csv(mut_den_filename, sep=" ", header=None)
             mutrates = mutrates.dropna(axis=1)
             mutrates = mutrates.drop(0)
@@ -229,7 +227,7 @@ def compute_mutden(ts_list, chrs, samples, check_muts_target_name, force_build=1
             ts = ts_list[count]
             count += 1
             tree = ts.first()
-            for tid in range(ts.num_trees):  # len(list(ts.trees()))
+            for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
                 if (
                     tree.interval[1] // force_build - tree.interval[0] // force_build
                     > 0
@@ -251,21 +249,6 @@ def compute_mutden(ts_list, chrs, samples, check_muts_target_name, force_build=1
 def load_tree_stats(args, ts_list, poplabels):
     chrs = list(map(int, args.chrs.split(",")))
     tree_stats_file_name = args.output + "_tree_stats_" + str(args.chrs) + ".pkl"
-    if args.opportunity_filter is True:
-        print(
-            "Note: Filtering based on mutations on target lineage.. ancestry proportion estimates might be biased"
-        )
-        check_muts_target_name = []
-        for chr in chrs:
-            check_muts_target_name.append(
-                (
-                    args.allmuts + str(chr) + ".allmuts",
-                    args.mutden + str(chr),
-                )
-            )
-    else:
-        check_muts_target_name = None
-
     try:
         f_pkl = open(tree_stats_file_name, "rb")
         (
@@ -307,7 +290,8 @@ def load_tree_stats(args, ts_list, poplabels):
         ) = compute_tree_stats(
             ts_list,
             chrs,
-            check_muts_target_name,
+            args.allmuts,
+            args.mutden,
             args.rec,
             args.sample_id,
             args.force_build,
@@ -336,4 +320,10 @@ def load_tree_stats(args, ts_list, poplabels):
         f_pkl.close()
         print("Tree statistics stored in: " + str(tree_stats_file_name))
 
-    return recomb_rates, mutrate_opportunity_target, tree_left_bp, chr_map
+    return (
+        recomb_rates,
+        mutrate_opportunity_target,
+        tree_left_bp,
+        chr_map,
+        frac_branches_with_snp_target,
+    )

@@ -127,7 +127,8 @@ def filter_recomb_rate(args, ts_list, frac_branches, recomb_rates):
         num_of_trees_in_chr = [c + 1] * ts_list[c].num_trees
         chr_list.extend(num_of_trees_in_chr)
 
-    mask_dodgy = mask_for_dodgy_trees(
+    mask_dodgy = ~np.isnan(recomb_rates)
+    mask_dodgy *= mask_for_dodgy_trees(
         recomb_rates,
         1 - args.masking_threshold,
     )
@@ -136,13 +137,11 @@ def filter_recomb_rate(args, ts_list, frac_branches, recomb_rates):
         recomb_rates,
         recomb_0_thresh,
     )
-
     ### Added frac_branch_target to filter trees aswell
     #mask_dodgy *= ~mask_for_dodgy_trees(
     #    frac_branches,
     #    args.masking_threshold,
     #)
-
     mask_dodgy = np.array(mask_dodgy)
     mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     #if args.mode == "sim":
