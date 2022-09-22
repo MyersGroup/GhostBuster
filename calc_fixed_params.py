@@ -10,6 +10,7 @@ from tqdm import tqdm
 import pickle
 import math
 from calc_ground_truth import make_ground_truth
+from utils import get_epoch_interval
 
 
 def fixed_parameters(
@@ -319,16 +320,17 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
     num_trees = np.sum(mask_dodgy)
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
-    epoch_intervals = np.array(
-        [-np.inf]
-        + np.linspace(
-            args.start_time - math.log(28, 10),
-            args.end_time - math.log(28, 10),
-            args.num_epochs - 1,
-        ).tolist()
-        + [np.inf],
-        dtype="float64",
-    )
+    # epoch_intervals = np.array(
+    #     [-np.inf]
+    #     + np.linspace(
+    #         args.start_time - math.log(28, 10),
+    #         args.end_time - math.log(28, 10),
+    #         args.num_epochs - 1,
+    #     ).tolist()
+    #     + [np.inf],
+    #     dtype="float64",
+    # )
+    epoch_intervals = get_epoch_interval(args, ts_list)
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
     fixed_params_file_name = (
