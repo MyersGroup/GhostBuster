@@ -52,6 +52,8 @@ def make_ground_truth(
                 tree.next()
             count += 1
     ## only return ground truth of groups which actually contribute
+    ground_truth_membership_one_hot = ground_truth_membership_one_hot[np.sum(ground_truth_membership_one_hot, axis=1) != 0]
+    print(ground_truth_membership_one_hot.shape)
     if ground_truth_membership_one_hot.shape[0] == 1:
         return np.vstack(
             (

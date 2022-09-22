@@ -12,13 +12,19 @@ from calc_fixed_params import load_fixed_params
 from utils import (
     filter_recomb_rate,
     filter_opportunity,
+    filter_prior_likelihood,
     load_mask_csv,
     write_coal,
     write_calibration,
     calculate_accuracy,
     boolean,
+    mask_for_dodgy_trees, 
+    get_epoch_interval,
+    compute_gamma_num,
+    compute_gamma_denom,
+    get_epochwise_likelihood
 )
-
+import pdb
 
 def input_assertions(args):
     if (args.load_gamma == None and args.load_props != None) or (
@@ -43,10 +49,10 @@ def input_assertions(args):
         raise ValueError(
             "Supply the location of ground_truth file or run in mode = real"
         )
-    if args.opportunity_filter and (args.mutden is None or args.allmuts is None):
-        raise ValueError(
-            "Supply the location for mutden and allmuts file to filter trees based on opportunity"
-        )
+    # if args.opportunity_filter and (args.mutden is None or args.allmuts is None):
+    #     raise ValueError(
+    #         "Supply the location for mutden and allmuts file to filter trees based on opportunity"
+    #     )
 
 
 def load_trees(args, poplabels):
@@ -58,54 +64,6 @@ def load_trees(args, poplabels):
             ts_list.append(ts)
 
     return ts_list
-
-
-def compute_gamma_num(
-    own_membership,
-    prev_gamma,
-    proportion_of_coalescing_all,
-    epoch_index_all,
-    num_ref_groups,
-    masked_trees_index,
-    n_epochs,
-):
-    num_full_tree = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
-    count_masked_trees = 0
-    if not (isinstance(prev_gamma, np.ndarray)):
-        for tid in masked_trees_index:
-            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            epoch_index_in_tree = epoch_index_all[tid]
-            for i in range(len(proportion_of_coalescing_in_tree)):
-                epoch = epoch_index_in_tree[i]
-                num = proportion_of_coalescing_in_tree[i]
-                num = num / sum(num)
-                num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
-            count_masked_trees += 1
-    else:
-        for tid in masked_trees_index:
-            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-            epoch_index_in_tree = epoch_index_all[tid]
-            for i in range(len(proportion_of_coalescing_in_tree)):
-                epoch = epoch_index_in_tree[i]
-                prev_gamma_e = prev_gamma[:, epoch]
-                num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
-                sum_of_num = sum(num)
-                if (
-                    sum_of_num != 0
-                ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
-                    num = num / sum_of_num
-                num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
-            count_masked_trees += 1
-    return num_full_tree
-
-
-def compute_gamma_denom(own_membership, denom, n_epochs):
-    eps = 1e-200
-    denom_1 = np.zeros(n_epochs - 1, dtype="float64")
-    for epoch in range(n_epochs - 1):  #
-        denom_1[epoch] = sum(denom[epoch] * own_membership)
-    return denom_1 + eps
-
 
 def update_membership(
     proportion_of_coalescing_in_tree,
@@ -155,8 +113,8 @@ def update_membership(
         log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
     return log_num_em_j_i, log_denom_em_j
 
-
 def e_m_step(
+    args,
     own_membership,
     prev_gamma,
     proportion_of_coalescing_all,
@@ -202,12 +160,17 @@ def e_m_step(
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
+    
 
-    #if tau[0] < tau[1]:
-    #    tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
-    #else:
-    #    tau = [0.95, 0.05]
-    #tau = np.array(tau)
+    # if tau[0] < tau[1]:
+    #     tau = [0.03, 0.97]  ## CAUTION: Fixing tau!!!
+    # else:
+    #     tau = [0.97, 0.03]
+    # tau = np.array(tau)
+    # for i in range(n_unique_groups):
+    #     d = compute_gamma_denom(own_membership[j], np.sum(denom, axis=0), n_epochs)
+    #     gamma_arr[j][i] = copy.deepcopy(np.sum(n, axis=0) / d)  # n/d #
+    # get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees)
 
     assert (gamma_arr >= 0).all()
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -255,6 +218,7 @@ def e_m_step(
 
 
 def random_sweep(
+    args,
     proportion_of_coalescing_all,
     epoch_index_all,
     denom,
@@ -317,6 +281,7 @@ def random_sweep(
 
         for epoch in range(10):
             own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
+                args,
                 own_membership_trial,
                 gamma_arr,
                 proportion_of_coalescing_all,
@@ -338,6 +303,7 @@ def write_membership_gamma(
     args,
     own_membership,
     gamma_arr,
+    tau,
     mask_dodgy,
     chr_map,
     tree_left_bp,
@@ -367,6 +333,12 @@ def write_membership_gamma(
     ) as f:
         np.save(f, gamma_arr)
 
+    with open(
+        args.output + "_props_" + sample_id_label + ".npy",
+        "wb",
+    ) as f:
+        np.save(f, tau)
+
     tree_position = []
     for tid in range(len(mask_dodgy) // len(args.sample_id)):
         if mask_dodgy[tid]:
@@ -378,20 +350,21 @@ def write_membership_gamma(
     pd.DataFrame(np.array(tree_position), columns=["chr", "pos"]).to_csv(
         filename, index=False, sep="\t"
     )
+    np.save(args.output + "_" + "mask_" + sample_id_label + ".npy",mask_dodgy)
 
 
 def main(args):
     ### Initialize some global variables
-    epoch_intervals = np.array(
-        [-np.inf]
-        + np.linspace(
-            args.start_time - math.log(28, 10),
-            args.end_time - math.log(28, 10),
-            args.num_epochs - 1,
-        ).tolist()
-        + [np.inf],
-        dtype="float64",
-    )
+    # epoch_intervals = np.array(
+    #     [-np.inf]
+    #     + np.linspace(
+    #         args.start_time - math.log(28, 10),
+    #         args.end_time - math.log(28, 10),
+    #         args.num_epochs - 1,
+    #     ).tolist()
+    #     + [np.inf],
+    #     dtype="float64",
+    # )
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     poplabels = pd.read_csv(args.poplabels, sep="\s+")
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
@@ -409,6 +382,7 @@ def main(args):
         raise ValueError(
             "Number of samples in trees doesnt match number of samples in poplabels.txt"
         )
+    epoch_intervals = get_epoch_interval(args, ts_list)
     num_samples = len(poplabels)
     for sample in args.sample_id:
         if sample >= num_samples or sample < 0:
@@ -422,13 +396,20 @@ def main(args):
         tree_left_bp,
         chr_map,
         frac_branches_with_snp_target,
+        mutrate_logpmf_target,
+        num_snps_on_lineage
     ) = load_tree_stats(args, ts_list, poplabels)
 
     ### Filter based on recombination rates
     if args.load_mask is None:
         mask_dodgy = filter_recomb_rate(
-            args, ts_list, frac_branches_with_snp_target, recomb_rates
+            args, ts_list, tree_left_bp, recomb_rates, frac_branches_with_snp_target, num_snps_on_lineage
         )
+        # mask_dodgy *= mask_for_dodgy_trees(
+        #     snps_not_mapping,
+        #     1 - args.masking_threshold,
+        # )
+
     if args.load_mask is not None:
         mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
         mask_dodgy = load_mask_csv(args, args.sample_id, ts_list, mask_dodgy, chrs)
@@ -444,14 +425,24 @@ def main(args):
 
     ### Filter based on opportunity filter
     if args.opportunity_filter and args.load_mask is None:
-        mask_dodgy_low_evidence = filter_opportunity(
+        # mask_dodgy_low_evidence = filter_opportunity(
+        #     args,
+        #     ts_list,
+        #     mutrate_opportunity_target,
+        #     mutrate_logpmf_target,
+        #     epoch_index_all,
+        #     proportion_of_coalescing_all,
+        #     denom,
+        #     mask_dodgy,
+        # )
+        mask_dodgy_low_evidence = filter_prior_likelihood(
             args,
-            ts_list,
-            mutrate_opportunity_target,
-            epoch_index_all,
             proportion_of_coalescing_all,
+            epoch_index_all,
             denom,
-            mask_dodgy,
+            len(unique_groups),
+            len(epoch_intervals),
+            np.sum(mask_dodgy),
         )
         if args.mode == "sim":
             ground_truth_membership = ground_truth_membership[
@@ -467,10 +458,19 @@ def main(args):
 
     ### Initialize local ancestry
     if args.init_at_truth:
+        # chr_map_mask = np.array(chr_map)[mask_dodgy] 
+        # tree_pos_mask = np.array(tree_left_bp)[mask_dodgy] // args.force_build
+        # mask_true = pd.DataFrame(np.array([chr_map_mask, tree_pos_mask]).T, columns=["chr", "pos"])
+
+        # mask_relate = pd.read_csv(args.load_mask, sep='\t')
+        # mask_relate['post1'] = np.load('output/nea_ghost_relate2_overall_membership_51.npy')[0]
+        # mask_relate['post2'] = np.load('output/nea_ghost_relate2_overall_membership_51.npy')[1]
+        # own_membership = np.array([pd.merge(mask_relate, mask_true, on=['chr','pos']).post1, pd.merge(mask_relate, mask_true, on=['chr','pos']).post2])
         own_membership = ground_truth_membership
     else:
         num_trees = np.sum(mask_dodgy)
         own_membership = random_sweep(
+            args,
             proportion_of_coalescing_all,
             epoch_index_all,
             denom,
@@ -508,6 +508,7 @@ def main(args):
 
         for epoch in range(args.num_iters):
             own_membership, gamma_arr, tau, log_likelihood = e_m_step(
+                args,
                 own_membership,
                 gamma_arr,
                 proportion_of_coalescing_all,
@@ -553,6 +554,7 @@ def main(args):
             args,
             own_membership,
             gamma_arr,
+            tau,
             mask_dodgy,
             chr_map,
             tree_left_bp,
@@ -613,7 +615,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_repeats",
         help="Number of restarts when randomly initializing local ancestry, we choose best out of n_trails",
-        default=100,
+        default=20,
         type=int,
     )
     parser.add_argument(
