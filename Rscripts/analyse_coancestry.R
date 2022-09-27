@@ -5,24 +5,26 @@ library(tidyr)
 library(purrr)
 #library(nls2)
 library(stats)
-library(reticulate)
 library(parallel)
+library(reticulate)
+virtualenv_create(envname = "python_environment",python= "/apps/eb/2020b/skylake/software/Python/3.9.6-GCCcore-11.2.0/bin/python")
+reticulate::use_virtualenv("python_environment", required = TRUE)
 np <- import("numpy")
 
 set.seed(1)
 
-binsize <- 0.05
-binmax  <- 10
+binsize <- 0.001
+binmax  <- 2
 recbins <- as.numeric(seq(0,binmax,binsize))
 L       <- length(recbins)
 
-filename_local_ancestry <- "True_ground_truth_membership_0.npy"	
-filename_mut <- "msprime"
+filename_local_ancestry <- "../output/sgdp_punjabi_test_overall_membership_39.npy"	
+filename_mut <- "/well/myers/users/tgh473/workspace/ghost_buster/SGDP/result/SGDP_Africa"
 
 if(1){
 
   member <- np$load(filename_local_ancestry)
-  member   <- member[-1,]
+  #member   <- member[-1,]
   gwmember <- rowSums(member)
   gwmember <- gwmember/sum(gwmember)
   member <- member/gwmember
@@ -45,8 +47,8 @@ if(1){
     }
     bp     <- (bp_raw[-length(bp_raw)] + bp_raw[-1])/2
 
-    rec <- read.table(paste0("/camp/lab/skoglundp/working/leo/datasets/human_genome/recomb_maps/genetic_map_combined_b37_chr",chr,".txt"), header = T)
-    rec <- stepfun(rec[-1,1], rec[,3])
+    rec <- read.table(paste0("/well/myers/users/tgh473/workspace/ghost_buster/msprime_maps_sgdp/genetic_map_GRCh37_chr",chr,".txt"), header = T)
+    rec <- stepfun(as.numeric(rec[-1,2]), as.numeric(rec[,4]))
 
     recrates_start <- rec(bp_raw[-length(bp_raw)])
     recrates_end   <- rec(bp_raw[-1])
@@ -55,10 +57,12 @@ if(1){
   }
 
   print(dim(member))
+  print(head(df))
   df <- cbind(df, t(member))
   df %>% group_by(CHR) %>% filter(rec > 0, rec < 0.5) -> df
   df %>% group_by(CHR) -> df
   df$BP_bin <- cut(df$BP, breaks = seq(0,300e6,10e6))
+  print(df)
 
   #read in recombination rates
   #for each tree in the genome, choose midpoint and store as BP
@@ -66,8 +70,8 @@ if(1){
 
   df_coan <- data.frame()
 
-  for(comp1 in c("1", "2", "3", "4")){
-    for(comp2 in c("1", "2", "3", "4")){
+  for(comp1 in c("1", "2")){
+    for(comp2 in c("1", "2")){
 
       df %>% group_by(CHR) %>% mutate(ind = 1:length(BP)) -> df_all
       df_all %>% group_by(CHR, BP_bin) %>% summarize( ind = list(ind[sample(1:length(BP),min(length(BP),30), replace = F)]) ) %>% unnest(cols = ind) -> df_chosen
