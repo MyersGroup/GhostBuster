@@ -222,12 +222,13 @@ def filter_prior_likelihood(
 
     tau = np.mean(own_membership, axis=1)
     
-    ll_k1 = get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees)
+    ll_k1 = get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees, 'likelihood_k1.npy')
 
     for i in range(n_unique_groups):
         d = compute_gamma_denom(own_membership[j], np.sum(denom, axis=0), n_epochs)
         gamma_arr[j][i] = copy.deepcopy(np.sum(n, axis=0) / d)  # n/d #
-    ll_prior = get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees)
+    ll_prior = get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees, 'likelihood_prior.npy')
+
     print("Filtered " + str(np.sum(np.sum(ll_k1,axis=1) < np.sum(ll_prior, axis=1)))  + " trees based on likelihood filter")
     return np.sum(ll_k1,axis=1) > np.sum(ll_prior, axis=1)
 
@@ -465,6 +466,7 @@ def get_epochwise_likelihood(
     n_unique_groups,
     n_epochs,
     n_trees,
+    name=None
 ):
     masked_trees_index = np.arange(0, n_trees)
     assert (gamma_arr >= 0).all()
@@ -497,5 +499,6 @@ def get_epochwise_likelihood(
         own_membership_update[j] *= tau[j]
 
     ll_per_tree = np.log(np.sum(own_membership_update, axis=0))
-    # np.save('likelihood_prior.npy', ll_per_tree)
+    if name is not None:
+        np.save(name, ll_per_tree)
     return ll_per_tree

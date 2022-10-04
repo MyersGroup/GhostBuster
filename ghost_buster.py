@@ -6,6 +6,7 @@ import tskit
 import argparse
 import copy
 from tqdm import tqdm
+import random
 
 from calc_tree_stats import load_tree_stats
 from calc_fixed_params import load_fixed_params
@@ -113,6 +114,14 @@ def update_membership(
         log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
     return log_num_em_j_i, log_denom_em_j
 
+def combine_local_ancestry(arr, n):
+    ## combines the arr values every n elements
+    ## Input: arr of shape c x N => output of shape c x N/n
+    out = np.zeros((arr.shape[0], arr.shape[1]//n))
+    for i in range(n):
+        out += arr[:, i::n]
+    return out/n
+
 def e_m_step(
     args,
     own_membership,
@@ -171,7 +180,6 @@ def e_m_step(
     #     d = compute_gamma_denom(own_membership[j], np.sum(denom, axis=0), n_epochs)
     #     gamma_arr[j][i] = copy.deepcopy(np.sum(n, axis=0) / d)  # n/d #
     # get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees)
-
     assert (gamma_arr >= 0).all()
     prev_gamma = copy.deepcopy(gamma_arr)
     own_membership_update = np.ones((len(own_membership), n_trees), dtype="float64")
@@ -196,6 +204,10 @@ def e_m_step(
             log_num_em[j, count_masked_trees] = log_num_em_j
             log_denom_em[j, count_masked_trees] = log_denom_em_j
         count_masked_trees += 1
+
+    log_num_em = 1*combine_local_ancestry(log_num_em, args.num_subtrees)
+    log_denom_em = 1*combine_local_ancestry(log_denom_em, args.num_subtrees)
+    
     own_membership_update = np.exp(
         log_num_em
         + log_denom_em
@@ -214,6 +226,8 @@ def e_m_step(
         + np.max(log_num_em + log_denom_em, axis=0)
     )
     own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
+
+    own_membership = np.repeat(own_membership, args.num_subtrees, axis=1)
     return own_membership, gamma_arr, tau, log_likelihood
 
 
@@ -244,7 +258,6 @@ def random_sweep(
         log_num_em = np.zeros((n_clusters, n_trees), dtype="float64")
         log_denom_em = np.zeros((n_clusters, n_trees), dtype="float64")
         count_masked_trees = 0
-
         for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
@@ -340,6 +353,7 @@ def write_membership_gamma(
         np.save(f, tau)
 
     tree_position = []
+    mask_dodgy = mask_dodgy[::args.num_subtrees]
     for tid in range(len(mask_dodgy) // len(args.sample_id)):
         if mask_dodgy[tid]:
             tree_position.append([chr_map[tid], tree_left_bp[tid] // args.force_build])
@@ -414,6 +428,7 @@ def main(args):
         mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
         mask_dodgy = load_mask_csv(args, args.sample_id, ts_list, mask_dodgy, chrs)
 
+    mask_dodgy = np.repeat(mask_dodgy, args.num_subtrees)
     ### Load fixed params
     (
         num,
@@ -423,18 +438,7 @@ def main(args):
         ground_truth_membership,
     ) = load_fixed_params(args, ts_list, poplabels, mask_dodgy)
 
-    ### Filter based on opportunity filter
     if args.opportunity_filter and args.load_mask is None:
-        # mask_dodgy_low_evidence = filter_opportunity(
-        #     args,
-        #     ts_list,
-        #     mutrate_opportunity_target,
-        #     mutrate_logpmf_target,
-        #     epoch_index_all,
-        #     proportion_of_coalescing_all,
-        #     denom,
-        #     mask_dodgy,
-        # )
         mask_dodgy_low_evidence = filter_prior_likelihood(
             args,
             proportion_of_coalescing_all,
@@ -444,17 +448,16 @@ def main(args):
             len(epoch_intervals),
             np.sum(mask_dodgy),
         )
-        if args.mode == "sim":
-            ground_truth_membership = ground_truth_membership[
-                :, mask_dodgy_low_evidence
-            ]
+        if args.mode == 'sim':
+            ground_truth_membership = ground_truth_membership[:, mask_dodgy_low_evidence]
         denom = denom[:, :, mask_dodgy_low_evidence]
         for tid in sorted(range(len(epoch_index_all)), reverse=True):
             if not mask_dodgy_low_evidence[tid]:
                 del epoch_index_all[tid]
                 del proportion_of_coalescing_all[tid]
-
         mask_dodgy[mask_dodgy] *= mask_dodgy_low_evidence
+
+    num_trees = np.sum(mask_dodgy)
 
     ### Initialize local ancestry
     if args.init_at_truth:
@@ -468,7 +471,6 @@ def main(args):
         # own_membership = np.array([pd.merge(mask_relate, mask_true, on=['chr','pos']).post1, pd.merge(mask_relate, mask_true, on=['chr','pos']).post2])
         own_membership = ground_truth_membership
     else:
-        num_trees = np.sum(mask_dodgy)
         own_membership = random_sweep(
             args,
             proportion_of_coalescing_all,
@@ -477,9 +479,10 @@ def main(args):
             args.num_clusters,
             len(unique_groups),
             len(epoch_intervals),
-            np.sum(mask_dodgy),
+            num_trees,
             args.n_repeats,
         )
+        # own_membership = np.ones((args.num_clusters, num_trees), dtype="float64")
 
     if args.load_gamma:
         gamma_arr = np.load(args.load_gamma)
@@ -516,7 +519,7 @@ def main(args):
                 denom,
                 len(unique_groups),
                 len(epoch_intervals),
-                np.sum(mask_dodgy),
+                num_trees,
                 epoch,
             )
             print(tau)
@@ -580,7 +583,7 @@ if __name__ == "__main__":
         "-fb",
         "--force_build",
         help="force build size to subsample the trees in bp",
-        type=int,
+        type=float,
         default=10000,
     )
     parser.add_argument("-r", "--rec", help="Filename of rec maps.", type=str)
@@ -736,10 +739,23 @@ if __name__ == "__main__":
         type=boolean,
         default=False,
     )
+    parser.add_argument(
+        "--num_subtrees",
+        help="Number of subtrees in the composite likelihood",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--max_per_group",
+        help="Maximum number of individuals in a subtrees for the composite likelihood",
+        type=int,
+        default=-1,
+    )
     parser.add_argument("--seed", type=int, default=2)
     args = parser.parse_args()
 
     np.random.seed(args.seed)  ## fix the random seed
+    random.seed(args.seed)
     main(args)
 
 ## python ghost_buster.py --mode sim --trees example/stdpopsim_homsap_chr --poplabels example/poplabels.txt --ground_truth example/local_ancestry_chr  --rec example/genetic_map_GRCh37_chr --sample_id 51 --chr 22 --output example/stdpopsim_homsap --init_at_truth 1
