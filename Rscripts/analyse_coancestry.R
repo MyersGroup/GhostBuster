@@ -13,15 +13,15 @@ np <- import("numpy")
 
 set.seed(1)
 
-binsize <- 0.001
-binmax  <- 2
+binsize <- 0.01
+binmax  <- 1
 recbins <- as.numeric(seq(0,binmax,binsize))
 L       <- length(recbins)
 
 filename_local_ancestry <- "../output/sgdp_punjabi_test_overall_membership_39.npy"	
 filename_mut <- "/well/myers/users/tgh473/workspace/ghost_buster/SGDP/result/SGDP_Africa"
 
-if(1){
+if(0){
 
   member <- np$load(filename_local_ancestry)
   #member   <- member[-1,]
@@ -141,7 +141,7 @@ if(1){
 
   df_params <- data.frame()
 
-  for(c in unique(df_coan$comp1)){ 
+  for(c in c("2")){ 
 
     df_sub <- subset(df_coan, comp1 == paste0(c) & comp2 == paste0(c))
 
@@ -160,9 +160,8 @@ if(1){
       bstart <- -goo$coefficients[2]*100
 
       bstart <- 200
-      print(c(astart,bstart))
 
-      #astart <- mean((df_resampled$coancestry-1)/exp(-as.numeric(df_resampled$val)/100*bstart))
+      # astart <- mean((df_resampled$coancestry-1)/exp(-as.numeric(df_resampled$val)/100*bstart))
       fitted <- nls(data = df_resampled, algorithm = "port",
                     coancestry ~ c+a*exp(-as.numeric(val)/100*b), start = list(a = astart, b = bstart, c = 1), control = list(minFactor = 1e-10, maxiter = 1e4), lower = c(0,0))
       df_params <- rbind(df_params, data.frame(comp1 = c, comp2 = c, boot = i, date = round(28*summary(fitted)$parameters[2,1]), a = summary(fitted)$parameters[1,1], c = summary(fitted)$parameters[3,1]))
@@ -177,7 +176,7 @@ if(1){
                                                      mean_c = mean(c), lower_c = quantile(c, p = 0.025), upper_c = quantile(c, p = 0.975),
                                                      ) -> df_params_sum
   print(df_params_sum)
-
+  print(df_params$date)
 
   df_params %>% group_by(comp1, comp2, boot) %>% mutate( val = list(seq(0,binmax,0.01)), 
                                                         coancestry = list(c+a*exp(-as.numeric(seq(0,binmax,0.01))/100*date/28))
@@ -191,7 +190,7 @@ if(1){
   df_curves$lower <- as.numeric(df_curves$lower)
   df_curves$upper <- as.numeric(df_curves$upper)
 
-  print(head(df_curves))
+  # print(head(df_curves))
 }
 
 df_coan %>% group_by(comp1, comp2, val) %>% summarize(coancestry = mean(coancestry)) -> df_coan
