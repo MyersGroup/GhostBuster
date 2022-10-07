@@ -12,6 +12,7 @@ import math
 from calc_ground_truth import make_ground_truth
 from utils import get_epoch_interval
 import random
+import time
 
 def subsample_poplabels(poplabels, sample_list, max_per_group):
     '''
@@ -42,7 +43,8 @@ def fixed_parameters(
     epoch_intervals_pow,
     force_build=1,
     num_subtrees=1,
-    max_per_group=-1
+    max_per_group=-1,
+    gt_ref=None
 ):
     assert [
         s in poplabels_orig[poplabels_orig.INCLUDE == 1].index.tolist() for s in sample_list
@@ -72,8 +74,8 @@ def fixed_parameters(
     count_mut_trees = -1
     count_all_tree = 0
     group_id = {}
-    for u in range(len(unique_groups)):
-        group_id[unique_groups[u]] = u
+    for u in range(len(np.unique(poplabels_orig[poplabels_orig.INCLUDE == 1].GROUP))):
+        group_id[np.unique(poplabels_orig[poplabels_orig.INCLUDE == 1].GROUP)[u]] = u
 
     for sample_no, target_seq_ in enumerate(sample_list):
         count_mut_trees_prev = copy.deepcopy(count_mut_trees)
@@ -126,9 +128,14 @@ def fixed_parameters(
                             for m in range(len(poplabels)):
                                 ## Only count lineage content for included samples
                                 if poplabels.INCLUDE.iloc[m]:
-                                    lineage_content[
-                                        m, group_id[poplabels.GROUP.iloc[m]]
-                                    ] = 1
+                                    if gt_ref is None:
+                                        lineage_content[
+                                            m, group_id[poplabels.GROUP.iloc[m]]
+                                        ] = 1
+                                    else:
+                                        lineage_content[
+                                            m, gt_ref[m, count_mut_trees//num_subtrees]
+                                        ] = 1
 
                             for t in sample_list_tree:
                                 lineage_content[
@@ -337,11 +344,11 @@ def fixed_parameters(
     return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
 
 
-def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
+def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_groups_inp=None):
     chrs = list(map(int, args.chrs.split(",")))
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     num_trees = np.sum(mask_dodgy)
-    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
+    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP) if unique_groups_inp is None else unique_groups_inp
 
     # epoch_intervals = np.array(
     #     [-np.inf]
@@ -414,7 +421,8 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
             epoch_intervals_pow,
             args.force_build,
             args.num_subtrees,
-            args.max_per_group
+            args.max_per_group,
+            gt_ref=gt_ref
         )
         f_pkl = open(fixed_params_file_name, "wb")
         if args.mode == "sim":

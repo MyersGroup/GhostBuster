@@ -42,7 +42,7 @@ read.coal <- function(filename){
 	coal                    <- coal[order(paste(coal[,1], coal[,2], sep = "")),]
 	coal$epoch.start        <- as.numeric(as.matrix(coal$epoch.start))
 
-	coal$group2 <- poplabs[as.numeric(as.matrix(coal$group2))+1]
+	coal$group2 <- groups[as.numeric(as.matrix(coal$group2))+1]
 
 	#coal <- subset(coal, group2 %in% assignment[grep(as.matrix(assignment), pattern = "v1")] )
 	#coal <- subset(coal, group2 %in% c("Sardinian", "Khomani-San", "Mbuti", "Mende"))

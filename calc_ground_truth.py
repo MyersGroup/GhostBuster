@@ -5,7 +5,7 @@ Includes: make_ground_truth()
 
 import numpy as np
 import pandas as pd
-
+import copy
 
 def make_ground_truth(
     ts_list, num_trees, mask_dodgy, path, sample=None, chrs=None, force_build=1
@@ -67,17 +67,77 @@ def make_ground_truth(
         return ground_truth_membership_one_hot
 
 
+def get_groundtruth_reference(ts_list, poplabels, num_trees, mask_dodgy, path, chrs, force_build=1):
+    ground_truth_ref = np.zeros((len(poplabels.GROUP), num_trees), dtype=int)
+    unique_groups = np.unique(poplabels.GROUP)    
+    num_groups = 0
+    ## Assign ground_truth_ref based on global ancestry
+    for sample_no, ind in enumerate(poplabels.index):
+        ground_truth_ref[sample_no] = -127
+    
+    group_id_new = {}
+    ## Add logic to use local ancestry to make more population categories
+    for sample_no, ind in enumerate(poplabels.index):
+        print(sample_no)
+        num_tree = 0
+        count_all_tree = 0
+        count = 0
+        for chr in chrs:
+            ground_truth = pd.read_csv(
+                path + str(chr) + "_" + str(ind) + ".csv",
+                names=["startpos", "endpos", "dest"],
+            )
+            tree = ts_list[count].first()
+            for tid in range(len(list(ts_list[count].trees()))):
+                if (
+                    tree.interval[1] // force_build - tree.interval[0] // force_build
+                    > 0
+                ):
+                    if mask_dodgy[count_all_tree]:
+                        if tree.num_sites > 0:
+                            for j in range(len(ground_truth)):
+                                for mut in tree.sites():
+                                    if (
+                                        mut.position > ground_truth["startpos"].loc[j]
+                                        and mut.position < ground_truth["endpos"].loc[j]
+                                    ):
+                                        try:
+                                            ground_truth_ref[sample_no, num_tree] = group_id_new[str(poplabels.GROUP.iloc[sample_no]) + "->" + str(ground_truth["dest"].loc[j])]
+                                        except:
+                                            group_id_new[str(poplabels.GROUP.iloc[sample_no]) + "->" + str(ground_truth["dest"].loc[j])] = copy.deepcopy(num_groups)
+                                            ground_truth_ref[sample_no, num_tree] = group_id_new[str(poplabels.GROUP.iloc[sample_no]) + "->" + str(ground_truth["dest"].loc[j])]
+                                            num_groups += 1
+                                        break
+                                    else:
+                                        break
+                        if ground_truth_ref[sample_no, num_tree] == -127:
+                            try:
+                                ground_truth_ref[sample_no, num_tree] = group_id_new[str(poplabels.GROUP.iloc[sample_no]) + "->" + str(poplabels.GROUP.iloc[sample_no])]
+                            except:
+                                group_id_new[str(poplabels.GROUP.iloc[sample_no]) + "->" + str(poplabels.GROUP.iloc[sample_no])] = copy.deepcopy(num_groups)
+                                ground_truth_ref[sample_no, num_tree] = group_id_new[str(poplabels.GROUP.iloc[sample_no]) + "->" + str(poplabels.GROUP.iloc[sample_no])]
+                                num_groups += 1
+                        num_tree += 1
+                    count_all_tree += 1
+                tree.next()
+            count += 1
+    
+    return ground_truth_ref, group_id_new
+
 if __name__ == "__main__":
     import tskit
     import pdb
 
-    ts_list = [tskit.load("example/relate_homsap_chr22.trees")]
-    gt = make_ground_truth(
-        ts_list,
-        ts_list[0].num_trees,
-        np.ones(ts_list[0].num_trees),
-        "example",
-        sample=[51],
-        chrs=[22],
-    )
+    # ts_list = [tskit.load("example/relate_homsap_chr22.trees")]
+    # gt = make_ground_truth(
+    #     ts_list,
+    #     ts_list[0].num_trees,
+    #     np.ones(ts_list[0].num_trees),
+    #     "example",
+    #     sample=[51],
+    #     chrs=[22],
+    # )
+    ts_list = [tskit.load("../sims/nea_const_recomb_0.2/relate_trees/relate_homsap_chr22.trees")]
+    poplabels = pd.read_csv('../sims/nea_const_recomb_0.2/relate_trees/poplabels.txt', sep="\s+")
+    gt_ref, unique_groups = get_groundtruth_reference(ts_list, poplabels, ts_list[0].num_trees, np.ones(ts_list[0].num_trees), "../sims/nea_const_recomb_0.2/local_ancestry/local_ancestry_chr", [22], force_build=1)
     pdb.set_trace()
