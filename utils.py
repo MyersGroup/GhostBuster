@@ -24,17 +24,17 @@ def boolean(v):
         raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
-def make_one_hot(X, max_X):
+def make_one_hot(X, max_X=None):
     X = np.array(X, dtype="int")
-    classes = np.arange(0, max_X, 1)
+    classes = np.arange(0, max_X, 1) if max_X is not None else np.unique(X)
     # Y = []
     if len(X.shape) == 2:
         Y = np.zeros((len(classes), X.shape[0], X.shape[1]))
     elif len(X.shape) == 1:
         Y = np.zeros((len(classes), X.shape[0]))
-    for c in classes:
+    for c in range(len(classes)):
         # Y.append(scipy.sparse.csr_matrix(np.array(X == c, dtype='int')))
-        Y[c] = np.array(X == c, dtype="int")
+        Y[c] = np.array(X == classes[c], dtype="int")
     return Y
 
 
@@ -503,5 +503,19 @@ def get_epochwise_likelihood(
         np.save(name, ll_per_tree)
     return ll_per_tree
 
-
+def neighbour_smoothing(post, dist, window=3, alpha=1e-6):
+    ## input: post - C x #Trees matrix containing posterior probabilities to smooth
+    ## input: dist - #Trees x 1 vector containing position in cM for each tree
+    ## input: alpha - smoothing hyperparameter
+    ## output: post_smooth - C x #Trees matrix containing smooth posterior probs
+    window = int(window)
+    post = np.pad(post, ((0, 0),(window,window)), 'constant', constant_values=0)
+    dist = np.pad(dist, (window,window), 'constant', constant_values=0)
+    post_smooth = copy.deepcopy(post)
+    for i in range(window,post.shape[1]-window):
+        post_smooth[:,i] = post[:,i]
+        for w in range(1,window):
+            post_smooth[:,i] += np.exp(-alpha*np.abs(dist[i]-dist[i-w]))*post[:,i-w] + np.exp(-alpha*np.abs(dist[i+w]-dist[i]))*post[:,i+w]
+    post_smooth /= np.sum(post_smooth, axis=0)
+    return post_smooth[:,window:-window]
 
