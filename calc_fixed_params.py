@@ -171,7 +171,7 @@ def fixed_parameters(
                                 ]
                                 tprev = max(
                                     epoch_intervals_pow[epoch],
-                                    poplabels.SAMPLING_TIME.iloc[target_seq_],
+                                    poplabels.SAMPLING_TIME.loc[target_seq_],
                                 )  ##only considering coalescene events after the sampling time of the target
 
                                 for (a, b, c, t) in coal_events_submatrix:
@@ -180,9 +180,9 @@ def fixed_parameters(
                                     b = int(b)
                                     c = int(c)
                                     prop_all = np.nan_to_num((lineage_content.T/np.sum(lineage_content, axis=1)).T, nan=0)
-                                    branch_length[:, :, epoch] += copy.deepcopy(max(t, poplabels.SAMPLING_TIME.iloc[target_seq_]) - tprev)*prop_all
+                                    branch_length[:, :, epoch] += copy.deepcopy(max(t, poplabels.SAMPLING_TIME.loc[target_seq_]) - tprev)*prop_all
                                     opportunity[:, epoch, count_mut_trees] += (
-                                        max(t, poplabels.SAMPLING_TIME.iloc[target_seq_])
+                                        max(t, poplabels.SAMPLING_TIME.loc[target_seq_])
                                         - tprev
                                     ) * (
                                         prev_branch_length
@@ -294,25 +294,25 @@ def fixed_parameters(
                                     lineage_content[a] = 0
                                     lineage_content[b] = 0
                                     tprev = max(
-                                        t, poplabels.SAMPLING_TIME.iloc[target_seq_]
+                                        t, poplabels.SAMPLING_TIME.loc[target_seq_]
                                     )
                                 if epoch < len(epoch_intervals_pow) - 2:
                                     opportunity[:, epoch, count_mut_trees] += (
                                         max(
                                             epoch_intervals_pow[epoch + 1],
-                                            poplabels.SAMPLING_TIME.iloc[target_seq_],
+                                            poplabels.SAMPLING_TIME.loc[target_seq_],
                                         )
                                         - max(
-                                            tprev, poplabels.SAMPLING_TIME.iloc[target_seq_]
+                                            tprev, poplabels.SAMPLING_TIME.loc[target_seq_]
                                         )
                                     ) * (prev_branch_length)
                                     prop_all = np.nan_to_num((lineage_content.T/np.sum(lineage_content, axis=1)).T, nan=0)
                                     branch_length[:, :, epoch] += (max(
                                             epoch_intervals_pow[epoch + 1],
-                                            poplabels.SAMPLING_TIME.iloc[target_seq_],
+                                            poplabels.SAMPLING_TIME.loc[target_seq_],
                                         )
                                         - max(
-                                            tprev, poplabels.SAMPLING_TIME.iloc[target_seq_]
+                                            tprev, poplabels.SAMPLING_TIME.loc[target_seq_]
                                         ))*prop_all
                                 if (event_count == num_samples - 1) and epoch <= len(
                                     epoch_intervals_pow
@@ -338,7 +338,7 @@ def fixed_parameters(
                 for epoch in range(len(epoch_intervals_pow) - 1):
                     if (
                         epoch_intervals_pow[epoch + 1]
-                        < poplabels.SAMPLING_TIME.iloc[target_seq_]
+                        < poplabels.SAMPLING_TIME.loc[target_seq_]
                     ):
                         continue
                     if (
@@ -351,13 +351,13 @@ def fixed_parameters(
                             count_mut_trees_prev + 1 : count_mut_trees + 1,
                         ] -= epoch_intervals_pow[epoch + 1] - max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.iloc[target_seq_],
+                            poplabels.SAMPLING_TIME.loc[target_seq_],
                         )
                     elif (
                         poplabels.SAMPLING_TIME.iloc[m]
                         > max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.iloc[target_seq_],
+                            poplabels.SAMPLING_TIME.loc[target_seq_],
                         )
                         and poplabels.SAMPLING_TIME.iloc[m]
                         < epoch_intervals_pow[epoch + 1]
@@ -368,7 +368,7 @@ def fixed_parameters(
                             count_mut_trees_prev + 1 : count_mut_trees + 1,
                         ] -= poplabels.SAMPLING_TIME.iloc[m] - max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.iloc[target_seq_],
+                            poplabels.SAMPLING_TIME.loc[target_seq_],
                         )
 
     return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all, branch_length_all

@@ -175,82 +175,67 @@ def get_likelood_per_coal_event(
     
     return log_num_em_j_i, log_denom_em_j
 
-def rand_key(p):
+def rand_key(p, prob):
     out = []
     for i in range(p):
-        temp = int(random.randint(0, 1))
+        temp = int(np.random.choice([0,1], p=prob))
         out.append(temp)
     return(out)
 
 def get_best_likelood_per_coal_event(
-    proportion_of_coalescing_in_tree_i,
-    epoch_index_in_tree_i,
-    denom_i,
+    proportion_of_coalescing_all,
+    epoch_index_all,
+    branch_length_all,
     gamma_arr,
+    tau,
     ignore_first_epoch,
     ignore_last_epoch,
-    n_epochs
+    n_epochs,
+    tid,
+    sample_id,
+    n_clusters,
+    gt_ref=None
     ):
 
     ## estimate number of Han individuals coalescing
-    num_admixed_inds = int(np.sum(proportion_of_coalescing_in_tree_i[0:50] != 0))
-    denom_i = np.vstack((denom_i[0:50][proportion_of_coalescing_in_tree_i[0:50] != 0] ,denom_i[50:]))
-    proportion_of_coalescing_in_tree_i = np.hstack((proportion_of_coalescing_in_tree_i[0:50][proportion_of_coalescing_in_tree_i[0:50] != 0],proportion_of_coalescing_in_tree_i[50:]))
-    all_configs_num, all_configs_denom = [], []
     best_ll = -np.inf
-    if num_admixed_inds > 13:
-        for c in range(10000):
-            binary_config = rand_key(num_admixed_inds)
-            binary_config += np.arange(2,len(gamma_arr)).tolist()
-            gamma_arr_config = gamma_arr[binary_config]
-            log_num_em_j_i, log_denom_em_j = get_likelood_per_coal_event(
-                proportion_of_coalescing_in_tree_i,
-                epoch_index_in_tree_i,
-                denom_i,
-                gamma_arr_config,
-                ignore_first_epoch,
-                ignore_last_epoch,
-                n_epochs
-                )
-            if log_num_em_j_i + log_denom_em_j > best_ll:
-                best_ll = log_num_em_j_i + log_denom_em_j
-                best_num = copy.deepcopy(log_num_em_j_i)
-                best_denom = copy.deepcopy(log_denom_em_j)
-    
-    elif num_admixed_inds > 0 and num_admixed_inds <= 13:
-        for c in range(2**num_admixed_inds):
-            binary_config = [int(d) for d in format(c,'0' + str(num_admixed_inds) + 'b')]
-            binary_config += np.arange(2,len(gamma_arr)).tolist()
-            gamma_arr_config = gamma_arr[binary_config]
-            log_num_em_j_i, log_denom_em_j = get_likelood_per_coal_event(
-                proportion_of_coalescing_in_tree_i,
-                epoch_index_in_tree_i,
-                denom_i,
-                gamma_arr_config,
-                ignore_first_epoch,
-                ignore_last_epoch,
-                n_epochs
-                )
-            if log_num_em_j_i + log_denom_em_j > best_ll:
-                best_ll = log_num_em_j_i + log_denom_em_j
-                best_num = copy.deepcopy(log_num_em_j_i)
-                best_denom = copy.deepcopy(log_denom_em_j)      
-
-    else:
-        binary_config = np.arange(2,len(gamma_arr)).tolist()
-        gamma_arr_config = gamma_arr[binary_config]
-        best_num, best_denom = get_likelood_per_coal_event(
-            proportion_of_coalescing_in_tree_i,
-            epoch_index_in_tree_i,
-            denom_i,
-            gamma_arr_config,
-            ignore_first_epoch,
-            ignore_last_epoch,
-            n_epochs
-            )
+    best_num, best_denom = -np.inf*np.ones(n_clusters), -np.inf*np.ones(n_clusters)
+    for c in range(2**10):
+        log_num_em_i_sample, log_denom_em_i_sample = np.zeros(n_clusters), np.zeros(n_clusters)
+        ll = 0
+        if gt_ref is None or c >= 0:
+            binary_config = [int(d) for d in format(c,'0' + str(10) + 'b')] #rand_key(10, tau)#
+        # elif c == 0:
+        #     binary_config = copy.deepcopy(gt_ref.tolist())
+        binary_config += copy.deepcopy(np.arange(2,gamma_arr.shape[1]).tolist())
+        gamma_arr_config = gamma_arr[:, binary_config]
+        for sample in range(len(proportion_of_coalescing_all)):
+            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[sample][tid]
+            epoch_index_in_tree = epoch_index_all[sample][tid]
+            branch_length_in_tree = branch_length_all[sample][tid]
+            for j in range(n_clusters):
+                if j == binary_config[sample]:
+                    ll += np.log(tau[j])
+                for prop_i, epoch_i, denom_i in zip(proportion_of_coalescing_in_tree, epoch_index_in_tree, branch_length_in_tree):
+                    log_num_em_j_i, log_denom_em_j_i = get_likelood_per_coal_event(
+                        prop_i[prop_i != 0],
+                        epoch_i,
+                        denom_i[prop_i != 0],
+                        gamma_arr_config[j][prop_i != 0],
+                        ignore_first_epoch,
+                        ignore_last_epoch,
+                        n_epochs
+                        )
+                    if j == binary_config[sample]:
+                        ll += log_num_em_j_i + log_denom_em_j_i
+                    if sample == 1:
+                        log_num_em_i_sample[j] += copy.deepcopy(log_num_em_j_i)
+                        log_denom_em_i_sample[j] += copy.deepcopy(log_denom_em_j_i)
+        if ll > best_ll:
+            best_ll = copy.deepcopy(ll)
+            best_num = copy.deepcopy(log_num_em_i_sample)
+            best_denom = copy.deepcopy(log_denom_em_i_sample)
     return best_num, best_denom
-
-
 
 def e_m_step(
     args,
@@ -264,42 +249,42 @@ def e_m_step(
     n_epochs,
     n_trees,
     epoch,
-    dist_vector
+    gt_ref=None
 ):
     masked_trees_index = np.arange(0, n_trees)
-    gamma_arr = np.zeros(
-        (len(own_membership), n_unique_groups, n_epochs - 1),
-        dtype="float64",
-    )
-    for j in range(len(own_membership)):
-        if epoch == 0:
-            n = compute_gamma_num(
-                own_membership[j],
-                None,
-                proportion_of_coalescing_all,
-                epoch_index_all,
-                n_unique_groups,
-                masked_trees_index,
-                n_epochs,
-            )
-        else:
-            n = compute_gamma_num(
-                own_membership[j],
-                prev_gamma[j],
-                proportion_of_coalescing_all,
-                epoch_index_all,
-                n_unique_groups,
-                masked_trees_index,
-                n_epochs,
-            )
-        for i in range(n_unique_groups):
-            d = compute_gamma_denom(own_membership[j], denom[i], n_epochs)
-            gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
+    # gamma_arr = np.zeros(
+    #     (len(own_membership), n_unique_groups, n_epochs - 1),
+    #     dtype="float64",
+    # )
+    # for j in range(len(own_membership)):
+    #     if epoch == 0:
+    #         n = compute_gamma_num(
+    #             own_membership[j],
+    #             None,
+    #             proportion_of_coalescing_all,
+    #             epoch_index_all,
+    #             n_unique_groups,
+    #             masked_trees_index,
+    #             n_epochs,
+    #         )
+    #     else:
+    #         n = compute_gamma_num(
+    #             own_membership[j],
+    #             prev_gamma[j],
+    #             proportion_of_coalescing_all,
+    #             epoch_index_all,
+    #             n_unique_groups,
+    #             masked_trees_index,
+    #             n_epochs,
+    #         )
+    #     for i in range(n_unique_groups):
+    #         d = compute_gamma_denom(own_membership[j], denom[i], n_epochs)
+    #         gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
-    tau = np.mean(own_membership, axis=1)
+    # tau = np.mean(own_membership, axis=1)
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
-        gamma_arr = np.load(args.load_gamma)[:,[1,2,0,3]]
+        gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
     
 
@@ -322,30 +307,9 @@ def e_m_step(
 
     for tid in masked_trees_index:
         print(tid)
-        proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-        epoch_index_in_tree = epoch_index_all[tid]
-        branch_length_in_tree = branch_length_all[tid]
-        for j in range(len(own_membership)):
-            log_num_em_j,log_denom_em_j=0,0
-            for prop_i, epoch_i, denom_i in zip(proportion_of_coalescing_in_tree, epoch_index_in_tree, branch_length_in_tree):
-                log_num_em_j_i, log_denom_em_j_i = get_best_likelood_per_coal_event(prop_i, epoch_i, denom_i, gamma_arr[j], args.ignore_first_epoch, args.ignore_last_epoch, n_epochs)
-                log_num_em_j += log_num_em_j_i
-                log_denom_em_j += log_denom_em_j_i
-            
-
-            # log_num_em_j, log_denom_em_j = update_membership(
-            #     proportion_of_coalescing_in_tree,
-            #     epoch_index_in_tree,
-            #     denom,
-            #     gamma_arr[j],
-            #     tid,
-            #     args.ignore_first_epoch,
-            #     args.ignore_last_epoch,
-            #     n_epochs,
-            # )
-            # np.abs(ll - (log_num_em_j + log_denom_em_j)) < 1e-6
-            log_num_em[j, count_masked_trees] = log_num_em_j
-            log_denom_em[j, count_masked_trees] = log_denom_em_j
+        log_num_em_, log_denom_em_ = get_best_likelood_per_coal_event(proportion_of_coalescing_all, epoch_index_all, branch_length_all, gamma_arr, tau, args.ignore_first_epoch, args.ignore_last_epoch, n_epochs, tid, args.sample_id, args.num_clusters, gt_ref[:, tid] if gt_ref is not None else None)
+        log_num_em[:, count_masked_trees] = log_num_em_
+        log_denom_em[:, count_masked_trees] = log_denom_em_
         count_masked_trees += 1
 
     log_num_em = 1*combine_local_ancestry(log_num_em, args.num_subtrees)
@@ -373,207 +337,6 @@ def e_m_step(
 
     own_membership = np.repeat(own_membership, args.num_subtrees, axis=1)
     return own_membership, gamma_arr, tau, log_likelihood
-
-def estimate_gt_ref(gamma_arr, tau, num, denom, proportion_of_coalescing_all, epoch_index_all, args, ts_list, poplabels, n_trees, n_epochs, mask_dodgy, epoch_intervals_pow, dist_vector):
-    poplabels = poplabels.reset_index()
-    ## random init gt_ref & unique_groups
-    gt_ref = np.zeros((len(poplabels.GROUP), n_trees), dtype=int)
-    
-    unique_groups, i = {}, 0
-    for group in np.unique(poplabels.GROUP):
-        if poplabels.GROUP.iloc[args.sample_id[0]] == group:
-            for c in range(args.num_clusters):
-                unique_groups[group+str(c+1)] = i
-                i+= 1
-        else:
-            unique_groups[group] = i
-            i+= 1
-
-    for sample_no in poplabels.index:
-        group = poplabels.GROUP.iloc[sample_no]
-        if poplabels.GROUP.iloc[args.sample_id[0]] == group:
-            gt_ref[sample_no] = np.random.choice([unique_groups[group+str(c+1)] for c in range(args.num_clusters)], n_trees) 
-        else:
-            gt_ref[sample_no] = unique_groups[group]
-
-    gt_ref = np.array(gt_ref, dtype='object')
-
-    chrs = list(map(int, args.chrs.split(",")))
-    gt_ref_orig, _ = get_groundtruth_reference(ts_list, poplabels, np.sum(mask_dodgy)//args.num_subtrees, mask_dodgy[::args.num_subtrees], args.ground_truth_path, chrs, args.force_build)
-    gt_ref[50:100] = copy.deepcopy(gt_ref_orig[50:100]-1)
-
-    ## Step 1
-    own_membership_sample = []
-    for sample_no, sample in enumerate(poplabels[(poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])].index): 
-        ## Calc fixed params
-        num1, denom1, proportion_of_coalescing_all1, epoch_index_all1 = num[sample_no], denom[sample_no], proportion_of_coalescing_all[sample_no], epoch_index_all[sample_no]
-        ## E-step to infer local ancestry
-        own_membership_trial = np.ones((args.num_clusters, n_trees), dtype="float64")
-        log_num_em = np.zeros((args.num_clusters, n_trees), dtype="float64")
-        log_denom_em = np.zeros((args.num_clusters, n_trees), dtype="float64")
-        count_masked_trees = 0
-        for tid in np.arange(0, n_trees):
-            proportion_of_coalescing_in_tree = proportion_of_coalescing_all1[tid]
-            epoch_index_in_tree = epoch_index_all1[tid]
-            for j in range(args.num_clusters):
-                log_num_em_j, log_denom_em_j = update_membership(
-                    proportion_of_coalescing_in_tree,
-                    epoch_index_in_tree,
-                    denom1,
-                    gamma_arr[j],
-                    tid,
-                    args.ignore_first_epoch,
-                    args.ignore_last_epoch,
-                    n_epochs,
-                )
-                log_num_em[j, count_masked_trees] = log_num_em_j
-                log_denom_em[j, count_masked_trees] = log_denom_em_j
-            count_masked_trees += 1
-        own_membership_trial = np.exp(
-            log_num_em
-            + log_denom_em
-            - np.repeat(
-                np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-                args.num_clusters,
-                axis=1,
-            ).T
-        )
-        own_membership_trial = np.nan_to_num(own_membership_trial, nan=1)
-        for j in range(args.num_clusters):
-            own_membership_trial[j] *= tau[j]
-
-        own_membership_trial = own_membership_trial / (
-            np.sum(own_membership_trial, axis=0)
-        )
-        if sample == args.sample_id[0]:
-            own_membership_sample = copy.deepcopy(own_membership_trial)
-
-        ## Sample from the posteriors
-        own_membership_thresh = np.zeros_like(own_membership_trial)
-        for c in range(args.num_clusters-1):
-            own_membership_thresh[c] = own_membership_trial[c] >= np.percentile(own_membership_trial[c], 100*(1-np.mean(own_membership_trial[c])))
-        own_membership_thresh[c+1] = own_membership_trial[c+1] > np.percentile(own_membership_trial[c], 100*(1-np.mean(own_membership_trial[c+1])))
-
-        for n_t in range(n_trees):
-            gt_ref[sample, n_t] = np.random.choice([unique_groups[poplabels.GROUP.iloc[sample]+str(c+1)] for c in range(args.num_clusters)], 1, p=own_membership_trial[:, n_t])[0]
-            # gt_ref[sample, n_t] = {poplabels.GROUP.iloc[sample]+str(c+1): own_membership_trial[c,n_t] for c in range(args.num_clusters)}
-            
-    # print("Step 1: " + str(np.corrcoef(np.array(own_membership_all)[:,0].flatten(), gt_ref_orig[50:100].flatten())))
-
-    # Step 2 (M-step on one)
-    n = np.zeros(
-        (len(own_membership_sample), len(unique_groups), n_epochs - 1),
-        dtype="float64",
-    )
-    d = np.zeros(
-        (len(own_membership_sample), len(unique_groups), n_epochs - 1),
-        dtype="float64",
-    )
-    (num1, denom1, proportion_of_coalescing_all1, epoch_index_all1) = fixed_parameters(
-                ts_list,
-                poplabels,
-                unique_groups,
-                n_trees,
-                mask_dodgy,
-                [sample],
-                epoch_intervals_pow,
-                args.force_build,
-                args.num_subtrees,
-                args.max_per_group,
-                gt_ref=gt_ref
-                )
-    for j in range(len(own_membership_sample)):
-        n[j] += compute_gamma_num(
-            own_membership_sample[j],
-            None,
-            proportion_of_coalescing_all1,
-            epoch_index_all1,
-            len(unique_groups),
-            np.arange(0, n_trees),
-            n_epochs,
-        )
-        for i in range(len(unique_groups)):
-            d[j,i] += compute_gamma_denom(own_membership_sample[j], denom1[i], n_epochs)
-
-    tau = np.mean(own_membership_sample, axis=1)
-    gamma_arr = n/d
-
-    ## Step 3 (Gibbs sampler)
-    # print("Starting the Gibbs sampler...")
-    # for _ in range(10):
-    #     own_membership_all = []
-    #     log_likelihood = 0
-    #     for sample in poplabels[(poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])].index: 
-    #         ## Calc fixed params
-    #         (num1, denom1, proportion_of_coalescing_all1, epoch_index_all1) = fixed_parameters(
-    #                     ts_list,
-    #                     poplabels,
-    #                     unique_groups,
-    #                     n_trees,
-    #                     mask_dodgy,
-    #                     [sample],
-    #                     epoch_intervals_pow,
-    #                     args.force_build,
-    #                     args.num_subtrees,
-    #                     args.max_per_group,
-    #                     gt_ref=gt_ref
-    #                 )
-    #         ## E-step to infer local ancestry
-    #         own_membership_trial = np.ones((args.num_clusters, n_trees), dtype="float64")
-    #         log_num_em = np.zeros((args.num_clusters, n_trees), dtype="float64")
-    #         log_denom_em = np.zeros((args.num_clusters, n_trees), dtype="float64")
-    #         count_masked_trees = 0
-    #         for tid in np.arange(0, n_trees):
-    #             proportion_of_coalescing_in_tree = proportion_of_coalescing_all1[tid]
-    #             epoch_index_in_tree = epoch_index_all1[tid]
-    #             for j in range(args.num_clusters):
-    #                 log_num_em_j, log_denom_em_j = update_membership(
-    #                     proportion_of_coalescing_in_tree,
-    #                     epoch_index_in_tree,
-    #                     denom1,
-    #                     gamma_arr[j],
-    #                     tid,
-    #                     args.ignore_first_epoch,
-    #                     args.ignore_last_epoch,
-    #                     n_epochs,
-    #                 )
-    #                 log_num_em[j, count_masked_trees] = log_num_em_j
-    #                 log_denom_em[j, count_masked_trees] = log_denom_em_j
-    #             count_masked_trees += 1
-    #         own_membership_trial = np.exp(
-    #             log_num_em
-    #             + log_denom_em
-    #             - np.repeat(
-    #                 np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-    #                 args.num_clusters,
-    #                 axis=1,
-    #             ).T
-    #         )
-    #         own_membership_trial = np.nan_to_num(own_membership_trial, nan=1)
-    #         for j in range(args.num_clusters):
-    #             own_membership_trial[j] *= tau[j]
-
-    #         log_likelihood += np.sum(
-    #             np.log(np.sum(own_membership_trial, axis=0))
-    #             + np.max(log_num_em + log_denom_em, axis=0)
-    #         )
-    #         own_membership_trial = own_membership_trial / (
-    #             np.sum(own_membership_trial, axis=0)
-    #         )
-    #         own_membership_all.append(own_membership_trial)
-    #         ## Sample from the posteriors
-    #         own_membership_thresh = np.zeros_like(own_membership_trial)
-    #         for c in range(args.num_clusters):
-    #             own_membership_thresh[c] = own_membership_trial[c] > np.percentile(own_membership_trial[c], 100*(1-np.mean(own_membership_trial[c])))
-    #         for n_t in range(n_trees):
-    #             # gt_ref[sample, n_t] = {poplabels.GROUP.iloc[sample]+str(c+1): own_membership_trial[c,n_t] for c in range(args.num_clusters)}
-    #             gt_ref[sample, n_t] = np.random.choice([unique_groups[poplabels.GROUP.iloc[sample]+str(c+1)] for c in range(args.num_clusters)], 1, p=own_membership_trial[:, n_t])[0]
-
-    #     print("Step 3: " + str(np.corrcoef(np.array(gt_ref, dtype='float')[50:100].flatten(), gt_ref_orig[50:100].flatten())))
-    #     print("LL = " + str(log_likelihood))
-        # print("Step 3: " + str(np.corrcoef(np.array(own_membership_all)[:,0].flatten(), gt_ref_orig[50:100].flatten())))
-
-    return gamma_arr, tau, gt_ref, unique_groups
 
 def random_sweep(
     args,
@@ -749,16 +512,6 @@ def write_membership_gamma(
 
 def main(args):
     ### Initialize some global variables
-    # epoch_intervals = np.array(
-    #     [-np.inf]
-    #     + np.linspace(
-    #         args.start_time - math.log(28, 10),
-    #         args.end_time - math.log(28, 10),
-    #         args.num_epochs - 1,
-    #     ).tolist()
-    #     + [np.inf],
-    #     dtype="float64",
-    # )
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     poplabels = pd.read_csv(args.poplabels, sep="\s+")
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
@@ -800,10 +553,6 @@ def main(args):
         mask_dodgy = filter_recomb_rate(
             args, ts_list, tree_left_bp, recomb_rates, frac_branches_with_snp_target, num_snps_on_lineage
         )
-        # mask_dodgy *= mask_for_dodgy_trees(
-        #     snps_not_mapping,
-        #     1 - args.masking_threshold,
-        # )
 
     if args.load_mask is not None:
         mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
@@ -811,33 +560,18 @@ def main(args):
 
     dist_vector = np.array(tree_left_bp)[mask_dodgy]
     mask_dodgy = np.repeat(mask_dodgy, args.num_subtrees)
-    ### Use ground-truth local ancestry for reference samples
     num_trees = np.sum(mask_dodgy)
 
     ### Initialize local ancestry
     if args.init_at_truth:
-        # chr_map_mask = np.array(chr_map)[mask_dodgy] 
-        # tree_pos_mask = np.array(tree_left_bp)[mask_dodgy] // args.force_build
-        # mask_true = pd.DataFrame(np.array([chr_map_mask, tree_pos_mask]).T, columns=["chr", "pos"])
-
-        # mask_relate = pd.read_csv(args.load_mask, sep='\t')
-        # mask_relate['post1'] = np.load('output/nea_ghost_relate2_overall_membership_51.npy')[0]
-        # mask_relate['post2'] = np.load('output/nea_ghost_relate2_overall_membership_51.npy')[1]
-        # own_membership = np.array([pd.merge(mask_relate, mask_true, on=['chr','pos']).post1, pd.merge(mask_relate, mask_true, on=['chr','pos']).post2])
-
         print("Calculating ground-truth ancestry of the reference...")
         gt_ref, unique_groups = get_groundtruth_reference(ts_list, poplabels, np.sum(mask_dodgy)//args.num_subtrees, mask_dodgy[::args.num_subtrees], args.ground_truth_path, chrs, args.force_build)
-        gt_ref_orig = copy.deepcopy(gt_ref)
-        print(gt_ref[50:100])
-        # mask = 2*np.random.binomial(n=1, p=0.9, size=gt_ref[50:100].shape) - 1
-        # gt_ref[50:100] = 0.5*((2*(gt_ref[50:100]-1.5)*mask)) +1.5
-        # gt_ref = np.array(gt_ref, dtype='int')
-        # print("Corr. in local ancestry = " + str(np.corrcoef((2*(gt_ref[50:100]-1.5 )).flatten(), (2*(gt_ref_orig[50:100]-1.5)).flatten())))
-        # print(gt_ref[50:100])
-        gt_ref = None
+        gt_ref[50:100] -= 1
+        gt_ref[0:50] += 2
+        unique_groups = {'Han1':0,'Han2':1, 'Mbuti':2, 'Neanderthal':3}
+        # gt_ref = None
 
         ## Load fixed params
-        # epoch_intervals_pow = np.power(10, epoch_intervals)
         (
             num,
             denom,
@@ -848,81 +582,73 @@ def main(args):
         ) = load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref, unique_groups)
         own_membership = ground_truth_membership
 
-        # n = np.zeros(
-        #     (args.num_clusters, len(unique_groups), len(epoch_intervals) - 1),
-        #     dtype="float64",
-        # )
-        # d = np.zeros(
-        #     (args.num_clusters, len(unique_groups), len(epoch_intervals) - 1),
-        #     dtype="float64",
-        # )
-        # for sample in poplabels[(poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])].index:
-        #     own_membership_sample = make_one_hot(gt_ref[sample])
-        #     (num1, denom1, proportion_of_coalescing_all1, epoch_index_all1) = fixed_parameters(
-        #                 ts_list,
-        #                 poplabels,
-        #                 unique_groups,
-        #                 num_trees,
-        #                 mask_dodgy,
-        #                 [sample],
-        #                 epoch_intervals_pow,
-        #                 args.force_build,
-        #                 args.num_subtrees,
-        #                 args.max_per_group,
-        #                 gt_ref=gt_ref
-        #                 )
-        #     for j in range(len(own_membership_sample)):
-        #         n[j] += compute_gamma_num(
-        #             own_membership_sample[j],
-        #             None,
-        #             proportion_of_coalescing_all1,
-        #             epoch_index_all1,
-        #             len(unique_groups),
-        #             np.arange(0, num_trees),
-        #             len(epoch_intervals),
-        #         )
-        #         for i in range(len(unique_groups)):
-        #             d[j,i] += compute_gamma_denom(own_membership_sample[j], denom1[i], len(epoch_intervals))
+        n = np.zeros(
+            (args.num_clusters, len(unique_groups), len(epoch_intervals) - 1),
+            dtype="float64",
+        )
+        d = np.zeros(
+            (args.num_clusters, len(unique_groups), len(epoch_intervals) - 1),
+            dtype="float64",
+        )
+        for sample in poplabels[(poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]]) & poplabels.INCLUDE == 1].index:
+            own_membership_sample = make_one_hot(gt_ref[sample])
+            (num1, denom1, proportion_of_coalescing_all1, epoch_index_all1, branch_length_all1) = fixed_parameters(
+                        ts_list,
+                        poplabels,
+                        unique_groups,
+                        num_trees,
+                        mask_dodgy,
+                        [sample],
+                        np.power(10, epoch_intervals),
+                        args.force_build,
+                        args.num_subtrees,
+                        args.max_per_group,
+                        gt_ref=gt_ref
+                        )
+            for j in range(len(own_membership_sample)):
+                n[j] += compute_gamma_num(
+                    own_membership_sample[j],
+                    None,
+                    proportion_of_coalescing_all1,
+                    epoch_index_all1,
+                    len(unique_groups),
+                    np.arange(0, num_trees),
+                    len(epoch_intervals),
+                )
+                for i in range(len(unique_groups)):
+                    d[j,i] += compute_gamma_denom(own_membership_sample[j], denom1[i], len(epoch_intervals))
 
-        # tau = np.mean(own_membership_sample, axis=1)
-        # gamma_arr = n/d
+        tau = np.mean(own_membership_sample, axis=1)
+        gamma_arr = n/d
 
 
-        # with open(
-        #     args.output + "_gamma_all.npy",
-        #     "wb",
-        # ) as f:
-        #     np.save(f, gamma_arr)
+        with open(
+            args.output + "_gamma_all.npy",
+            "wb",
+        ) as f:
+            np.save(f, gamma_arr)
 
-        # with open(
-        #     args.output + "_props_all.npy",
-        #     "wb",
-        # ) as f:
-        #     np.save(f, tau)
+        with open(
+            args.output + "_props_all.npy",
+            "wb",
+        ) as f:
+            np.save(f, tau)
         
-        # print(end)
-    else:
-        # own_membership, num, denom, proportion_of_coalescing_all, epoch_index_all, unique_groups, ground_truth_membership = random_sweep(
-        #     args,
-        #     args.num_clusters,
-        #     len(np.unique(poplabels.GROUP))+args.num_clusters-1,
-        #     len(epoch_intervals),
-        #     num_trees,
-        #     args.n_repeats,
-        #     ts_list,
-        #     poplabels,
-        #     mask_dodgy,
-        #     epoch_intervals,
-        #     dist_vector
-        # )
+        print(end)
 
+    else:
         own_membership = np.ones((args.num_clusters, num_trees), dtype="float64")
-        gt_ref=None
+        gt_ref_orig, unique_groups = get_groundtruth_reference(ts_list, poplabels, np.sum(mask_dodgy)//args.num_subtrees, mask_dodgy[::args.num_subtrees], args.ground_truth_path, chrs, args.force_build)
+        gt_ref_orig[50:100] -= 1
+        gt_ref_orig[0:50] += 2
+        
+        tgt_group = poplabels.GROUP.iloc[args.sample_id[0]]
+        poplabels = poplabels[poplabels.INCLUDE == 1]
         gt_ref = np.zeros((len(poplabels.GROUP), num_trees), dtype=int)
     
         unique_groups, i = {}, 0
         for group in np.unique(poplabels.GROUP):
-            if poplabels.GROUP.iloc[args.sample_id[0]] == group:
+            if group == tgt_group:
                 for c in poplabels[poplabels.GROUP == group].index:
                     unique_groups[group+str(c)] = i
                     i+= 1
@@ -930,10 +656,10 @@ def main(args):
                 unique_groups[group] = i
                 i+= 1
 
-        for sample_no in poplabels.index:
-            group = poplabels.GROUP.iloc[sample_no]
-            if poplabels.GROUP.iloc[args.sample_id[0]] == group:
-                gt_ref[sample_no] = unique_groups[group+str(sample_no)]
+        for sample_no, sample in enumerate(poplabels.index):
+            group = poplabels.GROUP.loc[sample]
+            if group == tgt_group:
+                gt_ref[sample_no] = unique_groups[group+str(sample)]
             else:
                 gt_ref[sample_no] = unique_groups[group]
         
@@ -944,10 +670,11 @@ def main(args):
             epoch_index_all,
             branch_length_all,
             ground_truth_membership,
-        ) = load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref, unique_groups)
+        ) = load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref, unique_groups,samples_inp=poplabels[(poplabels.GROUP == tgt_group)].index)
+
 
     if args.load_gamma:
-        gamma_arr = np.load(args.load_gamma)[:,[1,2,0,3]]
+        gamma_arr = np.load(args.load_gamma)
     else:
         gamma_arr = None
     if args.load_props:
@@ -985,7 +712,7 @@ def main(args):
                 len(epoch_intervals),
                 num_trees,
                 epoch,
-                dist_vector
+                gt_ref_orig[50:60]
             )
             print(tau)
 
