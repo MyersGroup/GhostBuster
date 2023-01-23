@@ -12,27 +12,29 @@ import math
 from calc_ground_truth import make_ground_truth
 from utils import get_epoch_interval
 import random
-import time
-import pdb
+
 
 def subsample_poplabels(poplabels, sample_list, max_per_group):
-    '''
+    """
     Takes a poplabels file and returns a poplabels file with few samples included
-    '''
+    """
     poplabels = copy.deepcopy(poplabels)
     for s in sample_list:
-        poplabels.loc[s,'INCLUDE'] = 0
+        poplabels.loc[s, "INCLUDE"] = 0
     for group in np.unique(poplabels[poplabels.INCLUDE == 1].GROUP):
-        idx = poplabels[(poplabels.INCLUDE == 1) & (poplabels.GROUP == group)].index.tolist()
+        idx = poplabels[
+            (poplabels.INCLUDE == 1) & (poplabels.GROUP == group)
+        ].index.tolist()
         if max_per_group >= 1:
             keep_idx = random.sample(idx, min(len(idx), max_per_group))
         else:
             keep_idx = idx
         for i in list(set(idx) - set(keep_idx)):
-            poplabels.loc[i,'INCLUDE'] = 0
+            poplabels.loc[i, "INCLUDE"] = 0
     for s in sample_list:
-        poplabels.loc[s,'INCLUDE'] = 1
+        poplabels.loc[s, "INCLUDE"] = 1
     return poplabels
+
 
 def fixed_parameters(
     ts_list,
@@ -45,10 +47,12 @@ def fixed_parameters(
     force_build=1,
     num_subtrees=1,
     max_per_group=-1,
-    gt_ref=None
+    gt_ref=None,
+    ignore_first_epoch=False,
 ):
     assert [
-        s in poplabels_orig[poplabels_orig.INCLUDE == 1].index.tolist() for s in sample_list
+        s in poplabels_orig[poplabels_orig.INCLUDE == 1].index.tolist()
+        for s in sample_list
     ] == [True] * len(sample_list)
     ### You have removed target samples from the poplabels file
     eps = 1e-20
@@ -70,7 +74,6 @@ def fixed_parameters(
         ),
         dtype="float64",
     )
-    branch_length_all = []
     proportion_of_coalescing_all = []
     epoch_index_all = []
     count_mut_trees = -1
@@ -83,7 +86,7 @@ def fixed_parameters(
         count_mut_trees_prev = copy.deepcopy(count_mut_trees)
         for chr_no, ts in enumerate(ts_list):
             tree = ts.first()
-            for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
+            for tid in tqdm(range(len(list(ts.trees())))):  # len(list(ts.trees()))
                 if (
                     tree.interval[1] // force_build - tree.interval[0] // force_build
                     > 0
@@ -122,9 +125,12 @@ def fixed_parameters(
                         ]  ## sorting based on coalescene times
                         for _ in range(num_subtrees):
                             count_mut_trees += 1
-                            poplabels = subsample_poplabels(poplabels_orig, sample_list, max_per_group)
+                            poplabels = subsample_poplabels(
+                                poplabels_orig, sample_list, max_per_group
+                            )
                             lineage_content = np.zeros(
-                                (2 * num_samples - 1, len(unique_groups)), dtype="float64"
+                                (2 * num_samples - 1, len(unique_groups)),
+                                dtype="float64",
                             )
                             target_seq = target_seq_
                             for m in range(len(poplabels)):
@@ -135,12 +141,29 @@ def fixed_parameters(
                                             m, group_id[poplabels.GROUP.iloc[m]]
                                         ] = 1
                                     else:
-                                        if type(gt_ref[m, count_mut_trees//num_subtrees]) == dict:
-                                            for k,v in gt_ref[m, count_mut_trees//num_subtrees].items():
-                                                lineage_content[m, int(unique_groups[k])] = v
+                                        if (
+                                            type(
+                                                gt_ref[
+                                                    m, count_mut_trees // num_subtrees
+                                                ]
+                                            )
+                                            == dict
+                                        ):
+                                            for k, v in gt_ref[
+                                                m, count_mut_trees // num_subtrees
+                                            ].items():
+                                                lineage_content[
+                                                    m, int(unique_groups[k])
+                                                ] = v
                                         else:
                                             lineage_content[
-                                                m, int(gt_ref[m, count_mut_trees//num_subtrees])
+                                                m,
+                                                int(
+                                                    gt_ref[
+                                                        m,
+                                                        count_mut_trees // num_subtrees,
+                                                    ]
+                                                ),
                                             ] = 1
 
                             for t in sample_list_tree:
@@ -150,20 +173,16 @@ def fixed_parameters(
                             prev_branch_length = np.sum(
                                 lineage_content, axis=0
                             )  # np.sum(lineage_content[:,1])
-
-                            branch_length = np.zeros((lineage_content.shape[0], lineage_content.shape[1], len(epoch_intervals_pow)-1))
-                            for m in range(len(poplabels)):
-                                if poplabels.INCLUDE.iloc[m]:
-                                    branch_length[m] = -poplabels.SAMPLING_TIME.iloc[m]
-
-                            branch_length_in_tree = []
                             proportion_of_coalescing_in_tree = []
                             coalescene_times_in_tree = []
                             epoch_index_in_tree = []
                             event_count = 0
                             for epoch in range(len(epoch_intervals_pow) - 1):
                                 coal_events_submatrix = coal_events_matrix[
-                                    (coal_events_matrix[:, 3] >= epoch_intervals_pow[epoch])
+                                    (
+                                        coal_events_matrix[:, 3]
+                                        >= epoch_intervals_pow[epoch]
+                                    )
                                     & (
                                         coal_events_matrix[:, 3]
                                         < epoch_intervals_pow[epoch + 1]
@@ -171,18 +190,24 @@ def fixed_parameters(
                                 ]
                                 tprev = max(
                                     epoch_intervals_pow[epoch],
-                                    poplabels.SAMPLING_TIME.loc[target_seq_],
+                                    poplabels.SAMPLING_TIME.iloc[target_seq_],
                                 )  ##only considering coalescene events after the sampling time of the target
+                                if epoch == 1 and ignore_first_epoch is True:
+                                    for i in range(len(lineage_content)):
+                                        if np.sum(lineage_content[i]) > 0:
+                                            lineage_content[i] /= np.sum(
+                                                lineage_content[i]
+                                            )
 
                                 for (a, b, c, t) in coal_events_submatrix:
                                     event_count += 1
                                     a = int(a)
                                     b = int(b)
                                     c = int(c)
-                                    prop_all = np.nan_to_num((lineage_content.T/np.sum(lineage_content, axis=1)).T, nan=0)
-                                    branch_length[:, :, epoch] += copy.deepcopy(max(t, poplabels.SAMPLING_TIME.loc[target_seq_]) - tprev)*prop_all
                                     opportunity[:, epoch, count_mut_trees] += (
-                                        max(t, poplabels.SAMPLING_TIME.loc[target_seq_])
+                                        max(
+                                            t, poplabels.SAMPLING_TIME.iloc[target_seq_]
+                                        )
                                         - tprev
                                     ) * (
                                         prev_branch_length
@@ -200,7 +225,9 @@ def fixed_parameters(
 
                                     elif (
                                         a == target_seq and sum(lineage_content[b]) == 0
-                                    ) or (b == target_seq and sum(lineage_content[a]) == 0):
+                                    ) or (
+                                        b == target_seq and sum(lineage_content[a]) == 0
+                                    ):
                                         ## This happens when target coalesces with a sample not included, in that case don't count that event
                                         target_seq = c
                                         lineage_content[c] = 0
@@ -209,7 +236,6 @@ def fixed_parameters(
                                         proportion_of_coalescing = copy.deepcopy(
                                             lineage_content[b]
                                         ) / (sum(lineage_content[b]))
-                                        branch_length_in_tree.append(copy.deepcopy(branch_length[b]))
                                         coal_count[
                                             :, epoch, count_mut_trees
                                         ] += proportion_of_coalescing
@@ -221,7 +247,8 @@ def fixed_parameters(
                                         epoch_index_in_tree.append(epoch)
                                         prev_branch_length = (
                                             prev_branch_length
-                                            - lineage_content[b] / (sum(lineage_content[b]))
+                                            - lineage_content[b]
+                                            / (sum(lineage_content[b]))
                                         )
                                     elif b == target_seq:
                                         proportion_of_coalescing = copy.deepcopy(
@@ -229,7 +256,6 @@ def fixed_parameters(
                                         ) / (
                                             sum(lineage_content[a])
                                         )  ## sum() faster than np.sum()
-                                        branch_length_in_tree.append(copy.deepcopy(branch_length[a]))
                                         coal_count[
                                             :, epoch, count_mut_trees
                                         ] += proportion_of_coalescing
@@ -241,14 +267,14 @@ def fixed_parameters(
                                         epoch_index_in_tree.append(epoch)
                                         prev_branch_length = (
                                             prev_branch_length
-                                            - lineage_content[a] / (sum(lineage_content[a]))
+                                            - lineage_content[a]
+                                            / (sum(lineage_content[a]))
                                         )
 
                                     else:  ## we don't count the branch lengths for the samples in sample_list_tree because they are the target sequences
                                         lineage_content[c] = (
                                             lineage_content[a] + lineage_content[b]
                                         )
-                                        branch_length[c, :, :] = copy.deepcopy(branch_length[a, :, :] + branch_length[b, :, :])
                                         if (
                                             sum(lineage_content[a]) == 0
                                             or sum(lineage_content[b]) == 0
@@ -294,38 +320,27 @@ def fixed_parameters(
                                     lineage_content[a] = 0
                                     lineage_content[b] = 0
                                     tprev = max(
-                                        t, poplabels.SAMPLING_TIME.loc[target_seq_]
+                                        t, poplabels.SAMPLING_TIME.iloc[target_seq_]
                                     )
                                 if epoch < len(epoch_intervals_pow) - 2:
                                     opportunity[:, epoch, count_mut_trees] += (
                                         max(
                                             epoch_intervals_pow[epoch + 1],
-                                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                                         )
                                         - max(
-                                            tprev, poplabels.SAMPLING_TIME.loc[target_seq_]
+                                            tprev,
+                                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                                         )
                                     ) * (prev_branch_length)
-                                    prop_all = np.nan_to_num((lineage_content.T/np.sum(lineage_content, axis=1)).T, nan=0)
-                                    branch_length[:, :, epoch] += (max(
-                                            epoch_intervals_pow[epoch + 1],
-                                            poplabels.SAMPLING_TIME.loc[target_seq_],
-                                        )
-                                        - max(
-                                            tprev, poplabels.SAMPLING_TIME.loc[target_seq_]
-                                        ))*prop_all
                                 if (event_count == num_samples - 1) and epoch <= len(
                                     epoch_intervals_pow
                                 ) - 2:
                                     opportunity[:, epoch + 1 :, count_mut_trees] = 0.0
                                     break
-                            
-                            assert np.max(np.sum(branch_length_in_tree, axis=0) - opportunity[:,:, count_mut_trees]) < 1e-6
-                            
                             proportion_of_coalescing_all.append(
                                 proportion_of_coalescing_in_tree
                             )
-                            branch_length_all.append(branch_length_in_tree)
                             epoch_index_all.append(epoch_index_in_tree)
                             sample_list_tree = copy.deepcopy(sample_list)
 
@@ -338,7 +353,7 @@ def fixed_parameters(
                 for epoch in range(len(epoch_intervals_pow) - 1):
                     if (
                         epoch_intervals_pow[epoch + 1]
-                        < poplabels.SAMPLING_TIME.loc[target_seq_]
+                        < poplabels.SAMPLING_TIME.iloc[target_seq_]
                     ):
                         continue
                     if (
@@ -351,13 +366,13 @@ def fixed_parameters(
                             count_mut_trees_prev + 1 : count_mut_trees + 1,
                         ] -= epoch_intervals_pow[epoch + 1] - max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )
                     elif (
                         poplabels.SAMPLING_TIME.iloc[m]
                         > max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )
                         and poplabels.SAMPLING_TIME.iloc[m]
                         < epoch_intervals_pow[epoch + 1]
@@ -368,30 +383,29 @@ def fixed_parameters(
                             count_mut_trees_prev + 1 : count_mut_trees + 1,
                         ] -= poplabels.SAMPLING_TIME.iloc[m] - max(
                             epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.loc[target_seq_],
+                            poplabels.SAMPLING_TIME.iloc[target_seq_],
                         )
 
-    return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all, branch_length_all
+    return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
 
 
-def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_groups_inp=None, samples_inp=None):
+def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
     chrs = list(map(int, args.chrs.split(",")))
-    if samples_inp is None: samples_inp = args.sample_id
-    sample_id_label = "_".join([str(e) for e in samples_inp])
+    sample_id_label = "_".join([str(e) for e in args.sample_id])
     num_trees = np.sum(mask_dodgy)
-    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP) if unique_groups_inp is None else unique_groups_inp
+    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
-    # epoch_intervals = np.array(
-    #     [-np.inf]
-    #     + np.linspace(
-    #         args.start_time - math.log(28, 10),
-    #         args.end_time - math.log(28, 10),
-    #         args.num_epochs - 1,
-    #     ).tolist()
-    #     + [np.inf],
-    #     dtype="float64",
-    # )
-    epoch_intervals = get_epoch_interval(args, ts_list)
+    epoch_intervals = np.array(
+        [-np.inf]
+        + np.linspace(
+            args.start_time - math.log(28, 10),
+            args.end_time - math.log(28, 10),
+            args.num_epochs - 1,
+        ).tolist()
+        + [np.inf],
+        dtype="float64",
+    )
+    # epoch_intervals = get_epoch_interval(args, ts_list)
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
     fixed_params_file_name = (
@@ -414,7 +428,6 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_
                 denom,
                 proportion_of_coalescing_all,
                 epoch_index_all,
-                branch_length_all,
                 ground_truth_membership,
             ) = pickle.load(f_pkl)
         else:
@@ -423,7 +436,6 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_
                 denom,
                 proportion_of_coalescing_all,
                 epoch_index_all,
-                branch_length_all
             ) = pickle.load(f_pkl)
             f_pkl.close()
             ground_truth_membership = None
@@ -434,41 +446,31 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_
         if args.mode == "sim":
             ground_truth_membership = make_ground_truth(
                 ts_list,
-                num_trees//args.num_subtrees,
-                mask_dodgy=mask_dodgy[::args.num_subtrees],
+                num_trees // args.num_subtrees,
+                mask_dodgy=mask_dodgy[:: args.num_subtrees],
                 path=args.ground_truth_path,
                 sample=args.sample_id,
                 chrs=chrs,
                 force_build=args.force_build,
             )
-            ground_truth_membership = np.repeat(ground_truth_membership, args.num_subtrees, axis=1)
+            ground_truth_membership = np.repeat(
+                ground_truth_membership, args.num_subtrees, axis=1
+            )
         else:
             ground_truth_membership = None
-        
-        num, denom, proportion_of_coalescing_all, epoch_index_all, branch_length_all = [],[],[],[],[]
-        for sample in samples_inp:
-            (num1, denom1, proportion_of_coalescing_all1, epoch_index_all1, branch_length_all1) = fixed_parameters(
-                ts_list,
-                poplabels,
-                unique_groups,
-                num_trees,
-                mask_dodgy,
-                [sample],
-                epoch_intervals_pow,
-                args.force_build,
-                args.num_subtrees,
-                args.max_per_group,
-                gt_ref=gt_ref
-            )
-            num.append(num1)
-            denom.append(denom1)
-            proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
-            epoch_index_all.append(epoch_index_all1)
-            branch_length_all.append(branch_length_all1)
-        
-        if len(samples_inp) == 1:
-            num, denom, proportion_of_coalescing_all, epoch_index_all, branch_length_all = num[0], denom[0], proportion_of_coalescing_all[0], epoch_index_all[0], branch_length_all[0]
-            
+        (num, denom, proportion_of_coalescing_all, epoch_index_all,) = fixed_parameters(
+            ts_list,
+            poplabels,
+            unique_groups,
+            num_trees,
+            mask_dodgy,
+            args.sample_id,
+            epoch_intervals_pow,
+            args.force_build,
+            args.num_subtrees,
+            args.max_per_group,
+            args.ignore_first_epoch,
+        )
         f_pkl = open(fixed_params_file_name, "wb")
         if args.mode == "sim":
             pickle.dump(
@@ -477,7 +479,6 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_
                     denom,
                     proportion_of_coalescing_all,
                     epoch_index_all,
-                    branch_length_all,
                     ground_truth_membership,
                 ],
                 f_pkl,
@@ -489,17 +490,16 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_
                     denom,
                     proportion_of_coalescing_all,
                     epoch_index_all,
-                    branch_length_all
                 ],
                 f_pkl,
             )
             f_pkl.close()
         print("Fixed parameters stored in: " + str(fixed_params_file_name))
 
-    # if (denom < -1e-8).any():
-    #     raise ValueError(
-    #         "The opportunity has negative values, check the sampling times in poplabels.txt"
-    #     )
+    if (denom < -1e-8).any():
+        raise ValueError(
+            "The opportunity has negative values, check the sampling times in poplabels.txt"
+        )
 
         ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
     denom = copy.deepcopy(np.maximum(denom, 0))
@@ -508,6 +508,5 @@ def load_fixed_params(args, ts_list, poplabels, mask_dodgy, gt_ref=None, unique_
         denom,
         proportion_of_coalescing_all,
         epoch_index_all,
-        branch_length_all,
         ground_truth_membership,
     )
