@@ -9,26 +9,19 @@ from tqdm import tqdm
 import random
 
 from calc_tree_stats import load_tree_stats
-from calc_fixed_params import fixed_parameters, load_fixed_params
+from calc_fixed_params import fixed_parameters
 from calc_ground_truth import get_groundtruth_reference, make_ground_truth
 from utils import (
     make_one_hot,
     filter_recomb_rate,
-    filter_opportunity,
-    filter_prior_likelihood,
     load_mask_csv,
     write_coal,
     write_calibration,
     calculate_accuracy,
     boolean,
-    mask_for_dodgy_trees,
-    get_epoch_interval,
     compute_gamma_num,
     compute_gamma_denom,
-    get_epochwise_likelihood,
-    neighbour_smoothing,
 )
-import pdb
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -57,10 +50,10 @@ def input_assertions(args):
         raise ValueError(
             "Supply the location of ground_truth file or run in mode = real"
         )
-    # if args.opportunity_filter and (args.mutden is None or args.allmuts is None):
-    #     raise ValueError(
-    #         "Supply the location for mutden and allmuts file to filter trees based on opportunity"
-    #     )
+    if args.opportunity_filter and (args.mutden is None or args.allmuts is None):
+        raise ValueError(
+            "Supply the location for mutden and allmuts file to filter trees based on opportunity"
+        )
 
 
 def load_trees(args, poplabels):
@@ -198,11 +191,7 @@ def e_m_step(
     # else:
     #     tau = [0.97, 0.03]
     # tau = np.array(tau)
-    # for i in range(n_unique_groups):
-    #     d = compute_gamma_denom(own_membership[j], np.sum(denom, axis=0), n_epochs)
-    #     gamma_arr[j][i] = copy.deepcopy(np.sum(n, axis=0) / d)  # n/d #
-    # get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees)
-    # assert (gamma_arr >= 0).all()
+
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
 
@@ -267,7 +256,6 @@ def estimate_gt_ref(
     n_epochs,
     mask_dodgy,
     epoch_intervals_pow,
-    dist,
 ):
     ## random init gt_ref & unique_groups
 
@@ -286,7 +274,6 @@ def estimate_gt_ref(
     for sample_no, sample in enumerate(poplabels.index):
         group = poplabels.GROUP.loc[sample]
         if group == poplabels.GROUP.loc[args.sample_id[0]]:
-            # gt_ref[sample_no] = np.random.choice([unique_groups[group+str(c+1)] for c in range(args.num_clusters)], n_trees)
             gt_ref[sample_no] = {
                 poplabels.GROUP.iloc[sample] + str(c + 1): tau[c]
                 for c in range(args.num_clusters)
@@ -295,20 +282,6 @@ def estimate_gt_ref(
             gt_ref[sample_no] = unique_groups[group]
 
     chrs = list(map(int, args.chrs.split(",")))
-    # gt_ref_orig, _ = get_groundtruth_reference(ts_list, poplabels_included, np.sum(mask_dodgy)//args.num_subtrees, mask_dodgy[::args.num_subtrees], args.ground_truth_path, chrs, str(poplabels_included.GROUP.loc[args.sample_id[0]]), args.force_build)
-
-    # Nea + Han
-    # gt_ref[50:100] = copy.deepcopy(gt_ref_orig)
-    # gt_ref[:50] = 2
-    # gt_ref[100:] = 3
-    # unique_groups = {'Han1':0,'Han2':1, 'Mbuti':2, 'Nea':3}
-
-    # Nea + Han + Sardinian
-    # gt_ref[100:150] = copy.deepcopy(gt_ref_orig)
-    # gt_ref[:50] = 2
-    # gt_ref[50:100] = 3
-    # gt_ref[150:] = 4
-    # unique_groups = {'Han1':0,'Han2':1, 'Mbuti':2, 'Sardinian': 3, 'Nea':4}
 
     gt_ref = np.array(gt_ref, dtype="object")
     gt_ref_update = np.zeros_like(gt_ref, dtype="object")
@@ -382,7 +355,6 @@ def estimate_gt_ref(
             own_membership_trial = own_membership_trial / (
                 np.sum(own_membership_trial, axis=0)
             )
-            # own_membership_trial = neighbour_smoothing(own_membership_trial, dist)
 
             # Sample from the posteriors
             for n_t in range(n_trees):
@@ -391,17 +363,6 @@ def estimate_gt_ref(
                     + str(c + 1): own_membership_trial[c, n_t]
                     for c in range(args.num_clusters)
                 }
-                # gibbs_random_sample = np.random.choice(np.arange(args.num_clusters),1,p=own_membership_trial[:, n_t])[0]
-                # sample_dict = {}
-                # for c in range(args.num_clusters):
-                #     if c != gibbs_random_sample:
-                #         sample_dict[poplabels.GROUP.iloc[sample]+str(c+1)] = 0
-                #     else:
-                #         sample_dict[poplabels.GROUP.iloc[sample]+str(c+1)] = 1
-                # gt_ref_update[sample, n_t] = sample_dict
-
-        #     r2 += np.corrcoef(gt_ref_orig[sample], own_membership_trial[1])
-        # print("mean R2 = " + str(r2/len(poplabels[(poplabels.GROUP == poplabels.GROUP.loc[args.sample_id[0]])].index)))
         for sample in tqdm(
             np.random.permutation(
                 poplabels[
@@ -425,7 +386,6 @@ def random_sweep(
     poplabels,
     mask_dodgy,
     epoch_intervals,
-    dist,
 ):
     print("Performing a random sweep for better initialization")
     masked_trees_index = np.arange(0, n_trees)
@@ -455,7 +415,6 @@ def random_sweep(
             n_epochs,
             mask_dodgy,
             epoch_intervals_pow,
-            dist,
         )
         # gt_ref, unique_groups = None, np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
@@ -522,8 +481,6 @@ def random_sweep(
                     log_denom_em[j, count_masked_trees] = log_denom_em_j
                 count_masked_trees += 1
 
-            # for n_t in range(n_trees):
-            #     gt_ref[sample, n_t] = {poplabels.GROUP.iloc[sample]+str(c+1): own_membership_trial[c,n_t] for c in range(args.num_clusters)}
         own_membership_trial = np.exp(
             log_num_em
             + log_denom_em
@@ -540,22 +497,6 @@ def random_sweep(
         own_membership_trial = own_membership_trial / (
             np.sum(own_membership_trial, axis=0)
         )
-        # for epoch in range(10):
-        #     own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
-        #         args,
-        #         own_membership_trial,
-        #         gamma_arr,
-        #         proportion_of_coalescing_all,
-        #         epoch_index_all,
-        #         denom,
-        #         n_unique_groups,
-        #         n_epochs,
-        #         n_trees,
-        #         n_samples,
-        #         epoch,
-        #     )
-        # if log_likelihood > best_loglikelihood:
-        # best_loglikelihood = log_likelihood
         own_membership = own_membership_trial
         (
             best_num,
@@ -641,9 +582,6 @@ def main(args):
         + [np.inf],
         dtype="float64",
     )
-    ## CAUTION !! ##
-    # epoch_intervals = np.log10(np.array([0, 2272, 3832, 27840, np.inf]))
-    # epoch_intervals = np.log10(np.array([0, 1964.29, 2253.42, 2607.14, 2836.89, 3571.43, 3928.57, 4496.16, 5660.33, 7125.94, 8971.03, 11293.9, 14218.1, 17899.5, 22534.2, 28368.9, np.inf]))
 
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     poplabels = pd.read_csv(args.poplabels, sep="\s+")
@@ -654,7 +592,6 @@ def main(args):
     ### Load all the trees in a list
     ts_list = load_trees(args, poplabels)
     if len(poplabels) == ts_list[0].num_samples // 2:
-        ## If the poplabels files is one entry per individual (not haplotype)
         poplabels = pd.DataFrame(
             np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
         )
@@ -662,13 +599,14 @@ def main(args):
         raise ValueError(
             "Number of samples in trees doesnt match number of samples in poplabels.txt"
         )
-    # epoch_intervals = get_epoch_interval(args, ts_list)
+
     num_samples = len(poplabels)
     for sample in args.sample_id:
         if sample >= num_samples or sample < 0:
             raise ValueError("The sample ids are out of range")
         else:
             print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
+
     ### Load tree stats
     (
         recomb_rates,
@@ -679,6 +617,7 @@ def main(args):
         mutrate_logpmf_target,
         num_snps_on_lineage,
     ) = load_tree_stats(args, ts_list, poplabels)
+
     ### Filter based on recombination rates
     if args.load_mask is None:
         mask_dodgy = filter_recomb_rate(
@@ -689,10 +628,6 @@ def main(args):
             frac_branches_with_snp_target,
             num_snps_on_lineage,
         )
-        # mask_dodgy *= mask_for_dodgy_trees(
-        #     snps_not_mapping,
-        #     1 - args.masking_threshold,
-        # )
 
     if args.load_mask is not None:
         mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
@@ -724,13 +659,6 @@ def main(args):
         gt_ref[:50] = 2
         gt_ref[100:] = 3
         unique_groups = {"Han1": 0, "Han2": 1, "Mbuti": 2, "Nea": 3}
-
-        ## Nea + Han + Sardinian
-        # gt_ref[100:150] = copy.deepcopy(gt_ref_orig)
-        # gt_ref[:50] = 2
-        # gt_ref[50:100] = 3
-        # gt_ref[150:] = 4
-        # unique_groups = {'Han1':0,'Han2':1, 'Mbuti':2, 'Sardinian': 3, 'Nea':4}
 
         n = np.zeros(
             (args.num_clusters, len(unique_groups), len(epoch_intervals) - 1),
@@ -855,10 +783,7 @@ def main(args):
             poplabels,
             mask_dodgy,
             epoch_intervals,
-            np.array(tree_left_bp)[mask_dodgy],
         )
-
-        # own_membership = np.ones((args.num_clusters, num_trees), dtype="float64")
 
     if args.load_gamma:
         gamma_arr = np.load(args.load_gamma)
@@ -1140,6 +1065,3 @@ if __name__ == "__main__":
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)
     main(args)
-
-## python ghost_buster.py --mode sim --trees example/stdpopsim_homsap_chr --poplabels example/poplabels.txt --ground_truth example/local_ancestry_chr  --rec example/genetic_map_GRCh37_chr --sample_id 51 --chr 22 --output example/stdpopsim_homsap --init_at_truth 1
-## python ghost_buster.py --mode sim --trees example/relate_homsap_chr --poplabels example/poplabels.txt --ground_truth example/local_ancestry_chr  --rec example/genetic_map_GRCh37_chr --mutden example/relate_homsap_chr --allmuts example/relate_homsap_chr --opportunity_filter 1 --sample_id 51 52 --chr 22 --output example/relate_homsap --init_at_truth 1
