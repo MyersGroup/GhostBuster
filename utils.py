@@ -179,7 +179,7 @@ def filter_recomb_rate(
     #    args.masking_threshold,
     # )
     mask_dodgy = np.array(mask_dodgy)
-    mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
+    # mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
     # if args.mode == "sim":
     #   #### Caution: manually downsampling HAN (1) !! 🌵
     #   print("Downsampling !! Caution !!")
@@ -198,7 +198,7 @@ def filter_recomb_rate(
         "Filtering based on recombination rate, trees remaining: "
         + str(sum(mask_dodgy))
         + " average recomb. rate: "
-        + str(np.mean(np.tile(np.array(recomb_rates), len(args.sample_id))[mask_dodgy]))
+        + str(np.mean(np.array(recomb_rates)[mask_dodgy]))
     )
     return mask_dodgy
 

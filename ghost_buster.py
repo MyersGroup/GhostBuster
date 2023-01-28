@@ -22,6 +22,7 @@ from utils import (
     compute_gamma_num,
     compute_gamma_denom,
 )
+import pdb
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -138,6 +139,7 @@ def e_m_step(
     n_samples,
     epoch,
 ):
+
     masked_trees_index = np.arange(0, n_trees)
     n = np.zeros(
         (args.num_clusters, n_unique_groups, n_epochs - 1),
@@ -402,29 +404,25 @@ def random_sweep(
         if args.load_gamma is not None and args.load_props is not None:
             gamma_arr = np.load(args.load_gamma)
             tau = np.load(args.load_props)
-        else:
-            gamma_arr = np.load("output/nea_relate_gamma_all.npy")
-            tau = np.load("output/stdpopsim_props.npy")
-        gt_ref, unique_groups = estimate_gt_ref(
-            gamma_arr,
-            tau,
-            args,
-            ts_list,
-            poplabels,
-            n_trees,
-            n_epochs,
-            mask_dodgy,
-            epoch_intervals_pow,
-        )
-        # gt_ref, unique_groups = None, np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
 
-        n_samples = len(
-            poplabels[
-                (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
-                & poplabels.INCLUDE
-                == 1
-            ].index
-        )
+        n_samples = len(args.sample_id)
+        if n_samples > 1 and args.joint_fit:
+            gt_ref, unique_groups = estimate_gt_ref(
+                gamma_arr,
+                tau,
+                args,
+                ts_list,
+                poplabels,
+                n_trees,
+                n_epochs,
+                mask_dodgy,
+                epoch_intervals_pow,
+            )
+
+        else:
+            gt_ref = None
+            unique_groups = poplabels[poplabels.INCLUDE == 1].GROUP.unique()
+
         own_membership_trial = np.ones(
             (n_clusters, n_trees * n_samples), dtype="float64"
         )
@@ -432,36 +430,32 @@ def random_sweep(
         log_denom_em = np.zeros((n_clusters, n_trees * n_samples), dtype="float64")
         count_masked_trees = 0
 
-        num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
-        for sample_no, sample in enumerate(
-            poplabels[
-                (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
-                & poplabels.INCLUDE
-                == 1
-            ].index
-        ):
-            (
-                num1,
-                denom1,
-                proportion_of_coalescing_all1,
-                epoch_index_all1,
-            ) = fixed_parameters(
-                ts_list,
-                poplabels,
-                unique_groups,
-                n_trees,
-                mask_dodgy,
-                [sample],
-                epoch_intervals_pow,
-                args.force_build,
-                args.num_subtrees,
-                args.max_per_group,
-                gt_ref=gt_ref,
-            )
-            num.append(num1)
-            denom.append(denom1)
-            proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
-            epoch_index_all.append(epoch_index_all1)
+        if args.joint_fit or n_iters == 0:
+            num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
+        for sample_no, sample in enumerate(args.sample_id):
+            if args.joint_fit or n_iters == 0:
+                (
+                    num1,
+                    denom1,
+                    proportion_of_coalescing_all1,
+                    epoch_index_all1,
+                ) = fixed_parameters(
+                    ts_list,
+                    poplabels,
+                    unique_groups,
+                    n_trees,
+                    mask_dodgy,
+                    [sample],
+                    epoch_intervals_pow,
+                    args.force_build,
+                    args.num_subtrees,
+                    args.max_per_group,
+                    gt_ref=gt_ref,
+                )
+                num.append(num1)
+                denom.append(denom1)
+                proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
+                epoch_index_all.append(epoch_index_all1)
 
             for tid in masked_trees_index:
                 proportion_of_coalescing_in_tree = proportion_of_coalescing_all1[tid]
@@ -497,13 +491,30 @@ def random_sweep(
         own_membership_trial = own_membership_trial / (
             np.sum(own_membership_trial, axis=0)
         )
-        own_membership = own_membership_trial
-        (
-            best_num,
-            best_denom,
-            best_proportion_of_coalescing_all,
-            best_epoch_index_all,
-        ) = (num, denom, proportion_of_coalescing_all, epoch_index_all)
+
+        for epoch in range(10):
+            own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
+                args,
+                own_membership_trial,
+                gamma_arr,
+                proportion_of_coalescing_all,
+                epoch_index_all,
+                denom,
+                n_unique_groups,
+                n_epochs,
+                n_trees,
+                n_samples,
+                epoch,
+            )
+        if log_likelihood > best_loglikelihood or n_iters == 0:
+            best_loglikelihood = log_likelihood
+            own_membership = own_membership_trial
+            (
+                best_num,
+                best_denom,
+                best_proportion_of_coalescing_all,
+                best_epoch_index_all,
+            ) = (num, denom, proportion_of_coalescing_all, epoch_index_all)
 
     return (
         own_membership,
@@ -639,11 +650,56 @@ def main(args):
     num_trees = np.sum(mask_dodgy)
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
 
+    ### Calculate ground truth local ancestry
+    if args.mode == "sim":
+        ground_truth_membership = []
+        for sample in args.sample_id:
+            ground_truth_membership_sample = make_ground_truth(
+                ts_list,
+                num_trees // args.num_subtrees,
+                mask_dodgy=mask_dodgy[:: args.num_subtrees],
+                path=args.ground_truth_path,
+                sample=[sample],
+                chrs=chrs,
+                force_build=args.force_build,
+            )
+            ground_truth_membership_sample = np.repeat(
+                ground_truth_membership_sample, args.num_subtrees, axis=1
+            )
+            ground_truth_membership.append(ground_truth_membership_sample)
+        ground_truth_membership = (
+            np.array(ground_truth_membership)
+            .transpose(1, 0, 2)
+            .reshape(ground_truth_membership_sample.shape[0], -1)
+        )
+
     ### Initialize local ancestry
-    if args.init_at_truth:
+    if args.init_at_truth and args.joint_fit:
+        unique_groups, i = {}, 0
+        for group in np.unique(poplabels.GROUP):
+            if poplabels.GROUP.iloc[args.sample_id[0]] == group:
+                for c in range(args.num_clusters):
+                    unique_groups[group + str(c + 1)] = i
+                    i += 1
+            else:
+                unique_groups[group] = i
+                i += 1
+
+        gt_ref = np.zeros((len(poplabels.GROUP), num_trees), dtype="object")
+        for sample_no, sample in enumerate(poplabels.index):
+            group = poplabels.GROUP.loc[sample]
+            if group == poplabels.GROUP.loc[args.sample_id[0]]:
+                gt_ref[sample_no] = {
+                    poplabels.GROUP.iloc[sample] + str(c + 1): 1
+                    for c in range(args.num_clusters)
+                }
+            else:
+                gt_ref[sample_no] = unique_groups[group]
+
+        gt_ref = np.array(gt_ref, dtype="object")
+
         print("Calculating ground-truth ancestry of the reference...")
-        gt_ref = np.zeros((len(poplabels_included.GROUP), num_trees), dtype="object")
-        gt_ref_orig, unique_groups = get_groundtruth_reference(
+        gt_ref_orig, _ = get_groundtruth_reference(
             ts_list,
             poplabels_included,
             np.sum(mask_dodgy) // args.num_subtrees,
@@ -653,12 +709,16 @@ def main(args):
             poplabels.GROUP.loc[args.sample_id[0]],
             args.force_build,
         )
-
-        ## Nea + Han only
-        gt_ref[50:100] = copy.deepcopy(gt_ref_orig)
-        gt_ref[:50] = 2
-        gt_ref[100:] = 3
-        unique_groups = {"Han1": 0, "Han2": 1, "Mbuti": 2, "Nea": 3}
+        for sample_no, sample in enumerate(
+            poplabels_included[
+                poplabels_included.GROUP == poplabels.GROUP.loc[args.sample_id[0]]
+            ].index
+        ):
+            for n_t in range(gt_ref.shape[1]):
+                gt_ref[sample, n_t] = unique_groups[
+                    poplabels.GROUP.iloc[args.sample_id[0]]
+                    + str(gt_ref_orig[sample_no, n_t] + 1)
+                ]
 
         n = np.zeros(
             (args.num_clusters, len(unique_groups), len(epoch_intervals) - 1),
@@ -669,11 +729,7 @@ def main(args):
             dtype="float64",
         )
         tau = np.zeros(args.num_clusters, dtype="float64")
-        for sample in poplabels[
-            (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
-            & poplabels.INCLUDE
-            == 1
-        ].index:
+        for sample in args.sample_id:
             own_membership_sample = make_one_hot(gt_ref[sample])
             (
                 num1,
@@ -712,13 +768,7 @@ def main(args):
 
             tau += np.mean(own_membership_sample, axis=1)
 
-        tau /= len(
-            poplabels[
-                (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
-                & poplabels.INCLUDE
-                == 1
-            ].index
-        )
+        tau /= len(args.sample_id)
         gamma_arr = n / d
 
         print(tau)
@@ -736,35 +786,35 @@ def main(args):
         ) as f:
             np.save(f, tau)
 
-        print(end)
-    else:
-        if args.mode == "sim":
-            ground_truth_membership = []
-            for sample in poplabels_included[
-                (
-                    poplabels_included.GROUP
-                    == poplabels_included.GROUP.loc[args.sample_id[0]]
-                )
-            ].index:
-                ground_truth_membership_sample = make_ground_truth(
-                    ts_list,
-                    num_trees // args.num_subtrees,
-                    mask_dodgy=mask_dodgy[:: args.num_subtrees],
-                    path=args.ground_truth_path,
-                    sample=[sample],
-                    chrs=chrs,
-                    force_build=args.force_build,
-                )
-                ground_truth_membership_sample = np.repeat(
-                    ground_truth_membership_sample, args.num_subtrees, axis=1
-                )
-                ground_truth_membership.append(ground_truth_membership_sample)
-            ground_truth_membership = (
-                np.array(ground_truth_membership)
-                .transpose(1, 0, 2)
-                .reshape(ground_truth_membership_sample.shape[0], -1)
-            )
+        return
 
+    elif args.init_at_truth and not args.joint_fit:
+        own_membership = ground_truth_membership
+        num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
+        for sample_no, sample in enumerate(args.sample_id):
+            (
+                num1,
+                denom1,
+                proportion_of_coalescing_all1,
+                epoch_index_all1,
+            ) = fixed_parameters(
+                ts_list,
+                poplabels,
+                unique_groups,
+                num_trees,
+                mask_dodgy,
+                [sample],
+                np.power(10, epoch_intervals),
+                args.force_build,
+                args.num_subtrees,
+                args.max_per_group,
+                gt_ref=None,
+            )
+            num.append(num1)
+            denom.append(denom1)
+            proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
+            epoch_index_all.append(epoch_index_all1)
+    else:
         (
             own_membership,
             num,
@@ -775,7 +825,9 @@ def main(args):
         ) = random_sweep(
             args,
             args.num_clusters,
-            4,  # len(np.unique(poplabels_included.GROUP))+args.num_clusters-1,
+            len(np.unique(poplabels.GROUP)) + args.num_clusters - 1
+            if args.joint_fit
+            else len(unique_groups),
             len(epoch_intervals),
             num_trees,
             args.n_repeats,
@@ -821,13 +873,7 @@ def main(args):
                 len(unique_groups),
                 len(epoch_intervals),
                 num_trees,
-                len(
-                    poplabels[
-                        (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
-                        & poplabels.INCLUDE
-                        == 1
-                    ].index
-                ),
+                len(args.sample_id),
                 epoch,
             )
             print(tau)
@@ -874,7 +920,7 @@ def main(args):
             sample_id_label,
         )
 
-    return 0
+    return
 
 
 if __name__ == "__main__":
@@ -1060,6 +1106,13 @@ if __name__ == "__main__":
         default=-1,
     )
     parser.add_argument("--seed", type=int, default=2)
+    parser.add_argument(
+        "--joint_fit",
+        action="store_const",
+        const=True,
+        default=False,
+        help="Joint fitting of multiple samples",
+    )
     args = parser.parse_args()
 
     np.random.seed(args.seed)  ## fix the random seed
