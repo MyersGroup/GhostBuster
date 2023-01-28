@@ -1,10 +1,11 @@
 from tqdm import tqdm
 import numpy as np
-import pandas as pd 
-import tskit 
+import pandas as pd
+import tskit
 from pathlib import Path
 import argparse
 import pdb
+
 
 def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
     if samples is None:
@@ -14,7 +15,7 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
         N += 1
     migrations = []
     for (m, migration) in enumerate(ts.migrations()):
-        if np.abs(migration.time-migr_time) < 1:
+        if np.abs(migration.time - migr_time) < 1:
             migrations.append(
                 {
                     "left": migration.left,
@@ -37,7 +38,7 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
                 )
             if tree.next() == False:
                 break
-    
+
     for j in samples:
         migrating_tracts_i = migration_array[j][1:]
         if migrating_tracts_i != []:
@@ -69,7 +70,8 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
                 delimiter=",",
             )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-sample_id",
@@ -99,6 +101,10 @@ if __name__ == '__main__':
         default=None,
     )
     args = parser.parse_args()
-    for chr in tqdm(args.chrs.split(',')):
-        ts = tskit.load(Path(args.path) / str("stdpopsim_homsap_chr" + str(chr) + ".trees"))
-        get_migrating_tracts_with_id(ts, Path(args.path), args.migr_time, args.sample_id)
+    for chr in tqdm(args.chrs.split(",")):
+        ts = tskit.load(
+            Path(args.path) / str("stdpopsim_homsap_chr" + str(chr) + ".trees")
+        )
+        get_migrating_tracts_with_id(
+            ts, Path(args.path), args.migr_time, args.sample_id
+        )

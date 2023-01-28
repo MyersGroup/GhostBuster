@@ -172,8 +172,8 @@ def compute_tree_stats(
                         )
                     )
                     num_branches_on_target.append(len(lineage_nodes(tree, sample_list)))
-                    snps_not_mapping.append(0) #(relate_mutgz_tree['is_not_mapping'])
-                    snps_flipped.append(0) #relate_mutgz_tree['is_flipped'])
+                    snps_not_mapping.append(0)  # (relate_mutgz_tree['is_not_mapping'])
+                    snps_flipped.append(0)  # relate_mutgz_tree['is_flipped'])
                     # mutrate_logpmf_target.append(
                     #     get_poisson_logpmf_bins(
                     #         mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
@@ -222,7 +222,7 @@ def compute_tree_stats(
         mutrate_opportunity_target,
         chr_map,
         snps_not_mapping,
-        snps_flipped
+        snps_flipped,
     )
 
 
@@ -282,7 +282,7 @@ def load_tree_stats(args, ts_list, poplabels):
             mutrate_opportunity_target,
             chr_map,
             snps_not_mapping,
-            snps_flipped
+            snps_flipped,
         ) = pickle.load(f_pkl)
         f_pkl.close()
         print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -305,7 +305,7 @@ def load_tree_stats(args, ts_list, poplabels):
             mutrate_opportunity_target,
             chr_map,
             snps_not_mapping,
-            snps_flipped
+            snps_flipped,
         ) = compute_tree_stats(
             ts_list,
             chrs,
@@ -334,7 +334,7 @@ def load_tree_stats(args, ts_list, poplabels):
                 mutrate_opportunity_target,
                 chr_map,
                 snps_not_mapping,
-                snps_flipped
+                snps_flipped,
             ],
             f_pkl,
         )
@@ -348,5 +348,5 @@ def load_tree_stats(args, ts_list, poplabels):
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
-        num_snps_on_lineage
+        num_snps_on_lineage,
     )

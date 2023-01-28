@@ -13,6 +13,7 @@ import math
 
 from calc_ground_truth import make_ground_truth
 
+
 def boolean(v):
     if isinstance(v, bool):
         return v
@@ -121,7 +122,15 @@ def write_calibration(args, own_membership, ground_truth_membership):
                     )
 
 
-def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates, frac_branches, num_snps_on_lineage,fine_map=False):
+def filter_recomb_rate(
+    args,
+    ts_list,
+    tree_left_bp,
+    recomb_rates,
+    frac_branches,
+    num_snps_on_lineage,
+    fine_map=False,
+):
     chrs = list(map(int, args.chrs.split(",")))
     num_trees = int(np.sum([ts.num_trees for ts in ts_list]))
     chr_list = []
@@ -135,7 +144,7 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates, frac_branches,
         recomb_rates,
         recomb_0_thresh,
     )
-    
+
     if fine_map is False:
         mask_dodgy *= mask_for_dodgy_trees(
             recomb_rates,
@@ -143,33 +152,35 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates, frac_branches,
         )
     else:
         print("Fine-mapping to get near independent trees")
-        coverage = copy.deepcopy(np.array(mask_dodgy, dtype='float'))
-        coverage[coverage==0] = np.inf
-        mask_dodgy = copy.deepcopy(np.zeros_like(coverage, dtype='bool'))
-        while np.sum(coverage != np.inf) > 0 and np.sum(mask_dodgy) <= (len(mask_dodgy)*(1-args.masking_threshold)):
+        coverage = copy.deepcopy(np.array(mask_dodgy, dtype="float"))
+        coverage[coverage == 0] = np.inf
+        mask_dodgy = copy.deepcopy(np.zeros_like(coverage, dtype="bool"))
+        while np.sum(coverage != np.inf) > 0 and np.sum(mask_dodgy) <= (
+            len(mask_dodgy) * (1 - args.masking_threshold)
+        ):
             ## choose the best tree
-            best_id = np.argmin(np.nan_to_num(recomb_rates*coverage, nan=np.inf))
+            best_id = np.argmin(np.nan_to_num(recomb_rates * coverage, nan=np.inf))
             print(np.sum(mask_dodgy))
             mask_dodgy[best_id] = True
 
             ## mask (remove) the near-ones
             recomb_rate = recomb_rates[best_id]
-            window = 0.001/recomb_rate ## 0.01 cM around the tree
+            window = 0.001 / recomb_rate  ## 0.01 cM around the tree
             for i in range(max(0, best_id - 10), min(best_id + 10, len(tree_left_bp))):
                 if (
                     tree_left_bp[i] < tree_left_bp[best_id] + window
                     and tree_left_bp[i] > tree_left_bp[best_id] - window
                 ):
                     coverage[i] = np.inf
-            
+
     ### Added frac_branch_target to filter trees aswell
-    #mask_dodgy *= ~mask_for_dodgy_trees(
+    # mask_dodgy *= ~mask_for_dodgy_trees(
     #    frac_branches,
     #    args.masking_threshold,
-    #)
+    # )
     mask_dodgy = np.array(mask_dodgy)
     mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
-    #if args.mode == "sim":
+    # if args.mode == "sim":
     #   #### Caution: manually downsampling HAN (1) !! 🌵
     #   print("Downsampling !! Caution !!")
     #   ground_truth_membership = make_ground_truth(
@@ -190,6 +201,7 @@ def filter_recomb_rate(args, ts_list, tree_left_bp, recomb_rates, frac_branches,
         + str(np.mean(np.tile(np.array(recomb_rates), len(args.sample_id))[mask_dodgy]))
     )
     return mask_dodgy
+
 
 def filter_prior_likelihood(
     args,
@@ -221,16 +233,43 @@ def filter_prior_likelihood(
             gamma_arr[j][i] = copy.deepcopy(n[i] / d)  # n/d #
 
     tau = np.mean(own_membership, axis=1)
-    
-    ll_k1 = get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees, 'likelihood_k1.npy')
+
+    ll_k1 = get_epochwise_likelihood(
+        args,
+        gamma_arr,
+        tau,
+        proportion_of_coalescing_all,
+        epoch_index_all,
+        denom,
+        n_unique_groups,
+        n_epochs,
+        n_trees,
+        "likelihood_k1.npy",
+    )
 
     for i in range(n_unique_groups):
         d = compute_gamma_denom(own_membership[j], np.sum(denom, axis=0), n_epochs)
         gamma_arr[j][i] = copy.deepcopy(np.sum(n, axis=0) / d)  # n/d #
-    ll_prior = get_epochwise_likelihood(args, gamma_arr, tau, proportion_of_coalescing_all, epoch_index_all, denom, n_unique_groups, n_epochs, n_trees, 'likelihood_prior.npy')
+    ll_prior = get_epochwise_likelihood(
+        args,
+        gamma_arr,
+        tau,
+        proportion_of_coalescing_all,
+        epoch_index_all,
+        denom,
+        n_unique_groups,
+        n_epochs,
+        n_trees,
+        "likelihood_prior.npy",
+    )
 
-    print("Filtered " + str(np.sum(np.sum(ll_k1,axis=1) < np.sum(ll_prior, axis=1)))  + " trees based on likelihood filter")
-    return np.sum(ll_k1,axis=1) > np.sum(ll_prior, axis=1)
+    print(
+        "Filtered "
+        + str(np.sum(np.sum(ll_k1, axis=1) < np.sum(ll_prior, axis=1)))
+        + " trees based on likelihood filter"
+    )
+    return np.sum(ll_k1, axis=1) > np.sum(ll_prior, axis=1)
+
 
 def filter_opportunity(
     args,
@@ -247,9 +286,9 @@ def filter_opportunity(
         num_of_trees_in_chr = [c + 1] * ts_list[c].num_trees
         chr_list.extend(num_of_trees_in_chr)
 
-    #mutrate_opportunity_target = np.tile(
+    # mutrate_opportunity_target = np.tile(
     #    np.array(mutrate_opportunity_target), (len(args.sample_id), 1)
-    #)
+    # )
     mutrate_opportunity_target_masked = np.array(mutrate_opportunity_target)[mask_dodgy]
     mutrate_opportunity_thresh = np.percentile(
         mutrate_opportunity_target_masked, args.masking_threshold * 100, axis=0
@@ -271,7 +310,7 @@ def filter_opportunity(
                     ],
                     args.masking_threshold * 100,
                 )
-            )    
+            )
 
     epoch_bin_mask = np.ones(
         (
@@ -283,8 +322,8 @@ def filter_opportunity(
     for epoch in range(epoch_bin_mask.shape[1]):
         epoch_bin_mask[:, epoch] = (
             mutrate_opportunity_target_masked[:, epoch]
-            >= mutrate_opportunity_thresh[epoch]) & (mutrate_logpmf_target_masked[:, epoch] >= mutrate_logpmf_thresh[epoch])
-        
+            >= mutrate_opportunity_thresh[epoch]
+        ) & (mutrate_logpmf_target_masked[:, epoch] >= mutrate_logpmf_thresh[epoch])
 
     for ref_gp in range(len(denom)):
         denom[ref_gp] = denom[ref_gp] * (epoch_bin_mask.T)
@@ -349,6 +388,7 @@ def load_mask_csv(args, sample_id_list, ts_list, mask_dodgy, chrs):
     print("Number of trees = " + str(np.sum(mask_dodgy)))
     return mask_dodgy
 
+
 def get_epoch_interval(args, ts_list):
     coal_times = []
     for ts in ts_list:
@@ -360,20 +400,22 @@ def get_epoch_interval(args, ts_list):
                     parent = tree.parent(parent)
                     coal_times.append(tree.time(parent))
             tree.next()
-    
+
     coal_times = np.array(coal_times)
     if args.ignore_first_epoch:
-        coal_times = coal_times[coal_times > math.pow(10, args.start_time)/28]
+        coal_times = coal_times[coal_times > math.pow(10, args.start_time) / 28]
     if args.ignore_last_epoch:
-        coal_times = coal_times[coal_times < math.pow(10, args.end_time)/28]
-    
+        coal_times = coal_times[coal_times < math.pow(10, args.end_time) / 28]
+
     def equalObs(x, nbin):
         nlen = len(x)
-        return np.interp(np.linspace(0, nlen, nbin + 1),
-                        np.arange(nlen),
-                        np.sort(x))
-    n, bins, patches = plt.hist(coal_times, equalObs(coal_times, args.num_epochs-2), edgecolor='black')
+        return np.interp(np.linspace(0, nlen, nbin + 1), np.arange(nlen), np.sort(x))
+
+    n, bins, patches = plt.hist(
+        coal_times, equalObs(coal_times, args.num_epochs - 2), edgecolor="black"
+    )
     return np.array([-np.inf] + np.log10(bins).tolist() + [np.inf], dtype="float64")
+
 
 def compute_gamma_num(
     own_membership,
@@ -421,6 +463,7 @@ def compute_gamma_denom(own_membership, denom, n_epochs):
         denom_1[epoch] = sum(denom[epoch] * own_membership)
     return denom_1 + eps
 
+
 def update_membership_epochwise(
     proportion_of_coalescing_in_tree,
     epoch_index_in_tree,
@@ -439,7 +482,7 @@ def update_membership_epochwise(
             and epoch_index_in_tree[i] >= 1
             and epoch_index_in_tree[i] < n_epochs - 2
         ):
-            log_num_em_j_i[epoch_index_in_tree[i]-1] += np.log(
+            log_num_em_j_i[epoch_index_in_tree[i] - 1] += np.log(
                 sum(
                     gamma_arr[:, epoch_index_in_tree[i]]
                     * proportion_of_coalescing_in_tree[i]
@@ -456,6 +499,7 @@ def update_membership_epochwise(
         log_denom_em_j = -sum(gamma_arr * denom[:, :, tid])
     return log_num_em_j_i, log_denom_em_j
 
+
 def get_epochwise_likelihood(
     args,
     gamma_arr,
@@ -466,14 +510,14 @@ def get_epochwise_likelihood(
     n_unique_groups,
     n_epochs,
     n_trees,
-    name=None
+    name=None,
 ):
     masked_trees_index = np.arange(0, n_trees)
     assert (gamma_arr >= 0).all()
     print(gamma_arr)
     own_membership_update = np.ones((1, n_trees), dtype="float64")
-    log_num_em = np.zeros((1, n_trees, n_epochs-3), dtype="float64")
-    log_denom_em = np.zeros((1, n_trees, n_epochs-3), dtype="float64")
+    log_num_em = np.zeros((1, n_trees, n_epochs - 3), dtype="float64")
+    log_denom_em = np.zeros((1, n_trees, n_epochs - 3), dtype="float64")
     count_masked_trees = 0
 
     for tid in masked_trees_index:
@@ -493,7 +537,7 @@ def get_epochwise_likelihood(
             log_num_em[j, count_masked_trees] = log_num_em_j
             log_denom_em[j, count_masked_trees] = log_denom_em_j
         count_masked_trees += 1
-    own_membership_update = np.exp(log_num_em+ log_denom_em)
+    own_membership_update = np.exp(log_num_em + log_denom_em)
 
     for j in range(1):
         own_membership_update[j] *= tau[j]
@@ -503,19 +547,22 @@ def get_epochwise_likelihood(
         np.save(name, ll_per_tree)
     return ll_per_tree
 
+
 def neighbour_smoothing(post, dist, window=3, alpha=1e-6):
     ## input: post - C x #Trees matrix containing posterior probabilities to smooth
     ## input: dist - #Trees x 1 vector containing position in cM for each tree
     ## input: alpha - smoothing hyperparameter
     ## output: post_smooth - C x #Trees matrix containing smooth posterior probs
     window = int(window)
-    post = np.pad(post, ((0, 0),(window,window)), 'constant', constant_values=0)
-    dist = np.pad(dist, (window,window), 'constant', constant_values=0)
+    post = np.pad(post, ((0, 0), (window, window)), "constant", constant_values=0)
+    dist = np.pad(dist, (window, window), "constant", constant_values=0)
     post_smooth = copy.deepcopy(post)
-    for i in range(window,post.shape[1]-window):
-        post_smooth[:,i] = post[:,i]
-        for w in range(1,window):
-            post_smooth[:,i] += np.exp(-alpha*np.abs(dist[i]-dist[i-w]))*post[:,i-w] + np.exp(-alpha*np.abs(dist[i+w]-dist[i]))*post[:,i+w]
+    for i in range(window, post.shape[1] - window):
+        post_smooth[:, i] = post[:, i]
+        for w in range(1, window):
+            post_smooth[:, i] += (
+                np.exp(-alpha * np.abs(dist[i] - dist[i - w])) * post[:, i - w]
+                + np.exp(-alpha * np.abs(dist[i + w] - dist[i])) * post[:, i + w]
+            )
     post_smooth /= np.sum(post_smooth, axis=0)
-    return post_smooth[:,window:-window]
-
+    return post_smooth[:, window:-window]
