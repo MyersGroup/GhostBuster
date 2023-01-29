@@ -86,7 +86,7 @@ def fixed_parameters(
         count_mut_trees_prev = copy.deepcopy(count_mut_trees)
         for chr_no, ts in enumerate(ts_list):
             tree = ts.first()
-            for tid in tqdm(range(len(list(ts.trees())))):  # len(list(ts.trees()))
+            for tid in range(len(list(ts.trees()))):  # len(list(ts.trees()))
                 if (
                     tree.interval[1] // force_build - tree.interval[0] // force_build
                     > 0
