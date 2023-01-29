@@ -14,18 +14,36 @@ Hrushikesh Loya, Leo Speidel, Simon Myers
 
 ## Examples
 * Getting true local ancestry from the simulation:
-`python get_local_anc.py --path example/ --migr_time 2272 --sample_id 51 --chrs 22`
+`python get_local_anc.py --path example/ --migr_time 2272 --sample_id 50-100 --chrs 22`
 
-* Running GhostBuster on true trees:
+* Running GhostBuster (single fitting):
 ```
-python ghost_buster.py 
-    --mode sim 
-    --trees example/stdpopsim_homsap_chr 
-    --poplabels example/poplabels.txt 
-    --ground_truth example/local_ancestry_chr  
-    --rec example/genetic_map_GRCh37_chr 
-    --sample_id 51 
-    --chr 22 
-    --output example/stdpopsim_homsap 
-    --init_at_truth 1
+python ghost_buster.py \
+    --mode sim \
+    --trees example/stdpopsim_homsap_chr \
+    --poplabels example/poplabels.txt \
+    --ground_truth example/local_ancestry_chr \ 
+    --rec example/genetic_map_GRCh37_chr \
+    --sample_id 51 \
+    --chr 22 \
+    --output example/stdpopsim_homsap \
+    --init_at_truth 0
+```
+
+* Running GhostBuster (joint fitting):
+```
+python ghost_buster.py \
+    --mode sim \
+    --trees example/stdpopsim_homsap_chr \
+    --poplabels example/poplabels.txt \
+    --ground_truth example/local_ancestry_chr \
+    --rec example/genetic_map_GRCh37_chr \
+    --sample_id 51 \
+    --chr 22 \
+    --output example/stdpopsim_homsap \
+    --init_at_truth 0 \
+    --n_repeats 1 \
+    --load_gamma example/best_guess_gamma.npy \
+    --load_props example/best_guess_props.npy \
+    --joint_fit
 ```
