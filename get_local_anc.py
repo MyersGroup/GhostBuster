@@ -78,7 +78,7 @@ if __name__ == "__main__":
         "--sample_id",
         help="Enter space seperated list of the indices of haplotype you wish local ancestry for",
         nargs="+",
-        type=int,
+        type=str,
         default=None,
     )
     parser.add_argument(
@@ -101,6 +101,19 @@ if __name__ == "__main__":
         default=None,
     )
     args = parser.parse_args()
+    sample_id = []
+    for i in range(len(args.sample_id)):
+        if "-" in args.sample_id[i]:
+            sample_id.extend(
+                np.arange(
+                    int(args.sample_id[i].split("-")[0]),
+                    int(args.sample_id[i].split("-")[1]),
+                ).tolist()
+            )
+        else:
+            sample_id.append(int(args.sample_id[i]))
+    args.sample_id = sample_id
+
     for chr in tqdm(args.chrs.split(",")):
         ts = tskit.load(
             Path(args.path) / str("stdpopsim_homsap_chr" + str(chr) + ".trees")

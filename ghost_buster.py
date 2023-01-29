@@ -263,8 +263,8 @@ def estimate_gt_ref(
 
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
     unique_groups, i = {}, 0
-    for group in np.unique(poplabels.GROUP):
-        if poplabels.GROUP.iloc[args.sample_id[0]] == group:
+    for group in np.unique(poplabels_included.GROUP):
+        if poplabels_included.GROUP.iloc[args.sample_id[0]] == group:
             for c in range(args.num_clusters):
                 unique_groups[group + str(c + 1)] = i
                 i += 1
@@ -281,7 +281,10 @@ def estimate_gt_ref(
                 for c in range(args.num_clusters)
             }
         else:
-            gt_ref[sample_no] = unique_groups[group]
+            try:
+                gt_ref[sample_no] = unique_groups[group]
+            except:
+                gt_ref[sample_no] = "NA"
 
     chrs = list(map(int, args.chrs.split(",")))
 
@@ -401,12 +404,12 @@ def random_sweep(
             ),
         )
         tau = np.random.uniform(0.01, 0.99, n_clusters)
-        if args.load_gamma is not None and args.load_props is not None:
+        if args.load_gamma is not None and args.load_props is not None and n_iters == 0:
             gamma_arr = np.load(args.load_gamma)
             tau = np.load(args.load_props)
 
         n_samples = len(args.sample_id)
-        if n_samples > 1 and args.joint_fit:
+        if args.joint_fit:
             gt_ref, unique_groups = estimate_gt_ref(
                 gamma_arr,
                 tau,
@@ -506,6 +509,7 @@ def random_sweep(
                 n_samples,
                 epoch,
             )
+        print("Iter: " + str(n_iters) + "Log_likelihood: " + str(log_likelihood))
         if log_likelihood > best_loglikelihood or n_iters == 0:
             best_loglikelihood = log_likelihood
             own_membership = own_membership_trial
@@ -594,6 +598,19 @@ def main(args):
         dtype="float64",
     )
 
+    sample_id = []
+    for i in range(len(args.sample_id)):
+        if "-" in args.sample_id[i]:
+            sample_id.extend(
+                np.arange(
+                    int(args.sample_id[i].split("-")[0]),
+                    int(args.sample_id[i].split("-")[1]),
+                ).tolist()
+            )
+        else:
+            sample_id.append(int(args.sample_id[i]))
+    args.sample_id = sample_id
+
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     poplabels = pd.read_csv(args.poplabels, sep="\s+")
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
@@ -676,8 +693,8 @@ def main(args):
     ### Initialize local ancestry
     if args.init_at_truth and args.joint_fit:
         unique_groups, i = {}, 0
-        for group in np.unique(poplabels.GROUP):
-            if poplabels.GROUP.iloc[args.sample_id[0]] == group:
+        for group in np.unique(poplabels_included.GROUP):
+            if poplabels_included.GROUP.iloc[args.sample_id[0]] == group:
                 for c in range(args.num_clusters):
                     unique_groups[group + str(c + 1)] = i
                     i += 1
@@ -694,7 +711,10 @@ def main(args):
                     for c in range(args.num_clusters)
                 }
             else:
-                gt_ref[sample_no] = unique_groups[group]
+                try:
+                    gt_ref[sample_no] = unique_groups[group]
+                except:
+                    gt_ref[sample_no] = "NA"
 
         gt_ref = np.array(gt_ref, dtype="object")
 
@@ -825,7 +845,7 @@ def main(args):
         ) = random_sweep(
             args,
             args.num_clusters,
-            len(np.unique(poplabels.GROUP)) + args.num_clusters - 1
+            len(np.unique(poplabels_included.GROUP)) + args.num_clusters - 1
             if args.joint_fit
             else len(unique_groups),
             len(epoch_intervals),
@@ -930,7 +950,7 @@ if __name__ == "__main__":
         "--sample_id",
         help="Enter space seperated list of the indices of haplotype you wish local ancestry for",
         nargs="+",
-        type=int,
+        type=str,
         default=None,
     )
     parser.add_argument(
