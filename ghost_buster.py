@@ -429,7 +429,7 @@ def random_sweep_iter(
 
     else:
         gt_ref = None
-        unique_groups = poplabels[poplabels.INCLUDE == 1].GROUP.unique()
+        unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
     own_membership_trial = np.ones((n_clusters, n_trees * n_samples), dtype="float64")
     log_num_em = np.zeros((n_clusters, n_trees * n_samples), dtype="float64")
     log_denom_em = np.zeros((n_clusters, n_trees * n_samples), dtype="float64")
@@ -495,7 +495,7 @@ def random_sweep_iter(
 
     own_membership_trial = own_membership_trial / (np.sum(own_membership_trial, axis=0))
 
-    for epoch in range(10):
+    for epoch in range(args.sweep_num_iters):
         own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
             args,
             own_membership_trial,
@@ -1222,6 +1222,12 @@ if __name__ == "__main__":
         help="Joint fitting of multiple samples",
     )
     parser.add_argument("--n_jobs", type=int, default=1, help="Number of threads")
+    parser.add_argument(
+        "--sweep_num_iters",
+        type=int,
+        default=10,
+        help="Number of iterations to run EM for in random sweep",
+    )
     args = parser.parse_args()
 
     np.random.seed(args.seed)  ## fix the random seed
