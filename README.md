@@ -38,7 +38,7 @@ python ghost_buster.py \
     --poplabels example/poplabels.txt \
     --ground_truth example/local_ancestry_chr \
     --rec example/genetic_map_GRCh37_chr \
-    --sample_id 51 \
+    --sample_id 50-100 \
     --chr 22 \
     --output example/stdpopsim_homsap \
     --init_at_truth 0 \
