@@ -24,6 +24,7 @@ def make_ground_truth(
             ground_truth = pd.read_csv(
                 path + str(chr) + "_" + str(ind) + ".csv",
                 names=["startpos", "endpos", "dest"],
+                float_precision="round_trip",
             )
             if ground_truth_membership_one_hot is None:
                 num_ref_groups = int(np.max(ground_truth["dest"]))
@@ -35,30 +36,15 @@ def make_ground_truth(
                     > 0
                 ):
                     if mask_dodgy[count_all_tree]:
-                        if tree.num_sites > 0:
-                            for j in range(len(ground_truth)):
-                                for mut in tree.sites():
-                                    if (
-                                        mut.position >= ground_truth["startpos"].loc[j]
-                                        and mut.position < ground_truth["endpos"].loc[j]
-                                    ):
-                                        ground_truth_membership_one_hot[
-                                            int(ground_truth["dest"].loc[j]) - 1,
-                                            num_tree,
-                                        ] = 1
-                                        break
-                                    else:
-                                        break
-                        else:
-                            for j in range(len(ground_truth)):
-                                if (
-                                    tree.interval[0] >= ground_truth["startpos"].loc[j]
-                                    and tree.interval[0] < ground_truth["endpos"].loc[j]
-                                ):
-                                    ground_truth_membership_one_hot[
-                                        int(ground_truth["dest"].loc[j]) - 1,
-                                        num_tree,
-                                    ] = 1
+                        for j in range(len(ground_truth)):
+                            if (
+                                tree.interval[0] >= ground_truth["startpos"].loc[j]
+                                and tree.interval[0] < ground_truth["endpos"].loc[j]
+                            ):
+                                ground_truth_membership_one_hot[
+                                    int(ground_truth["dest"].loc[j]) - 1,
+                                    num_tree,
+                                ] = 1
                         num_tree += 1
                     count_all_tree += 1
                 tree.next()
@@ -104,6 +90,7 @@ def get_groundtruth_reference(
             ground_truth = pd.read_csv(
                 path + str(chr) + "_" + str(ind) + ".csv",
                 names=["startpos", "endpos", "dest"],
+                float_precision="round_trip",
             )
             tree = ts_list[count].first()
             for tid in range(len(list(ts_list[count].trees()))):
@@ -112,66 +99,33 @@ def get_groundtruth_reference(
                     > 0
                 ):
                     if mask_dodgy[count_all_tree]:
-                        if tree.num_sites > 0:
-                            for j in range(len(ground_truth)):
-                                for mut in tree.sites():
-                                    if (
-                                        mut.position >= ground_truth["startpos"].loc[j]
-                                        and mut.position < ground_truth["endpos"].loc[j]
-                                    ):
-                                        try:
-                                            ground_truth_ref[
-                                                sample_no, num_tree
-                                            ] = group_id_new[
-                                                str(poplabels.GROUP.iloc[sample_no])
-                                                + "->"
-                                                + str(ground_truth["dest"].loc[j])
-                                            ]
-                                        except:
-                                            group_id_new[
-                                                str(poplabels.GROUP.iloc[sample_no])
-                                                + "->"
-                                                + str(ground_truth["dest"].loc[j])
-                                            ] = copy.deepcopy(num_groups)
-                                            ground_truth_ref[
-                                                sample_no, num_tree
-                                            ] = group_id_new[
-                                                str(poplabels.GROUP.iloc[sample_no])
-                                                + "->"
-                                                + str(ground_truth["dest"].loc[j])
-                                            ]
-                                            num_groups += 1
-                                        break
-                                    else:
-                                        break
-                        else:
-                            for j in range(len(ground_truth)):
-                                if (
-                                    tree.interval[0] >= ground_truth["startpos"].loc[j]
-                                    and tree.interval[0] < ground_truth["endpos"].loc[j]
-                                ):
-                                    try:
-                                        ground_truth_ref[
-                                            sample_no, num_tree
-                                        ] = group_id_new[
-                                            str(poplabels.GROUP.iloc[sample_no])
-                                            + "->"
-                                            + str(ground_truth["dest"].loc[j])
-                                        ]
-                                    except:
-                                        group_id_new[
-                                            str(poplabels.GROUP.iloc[sample_no])
-                                            + "->"
-                                            + str(ground_truth["dest"].loc[j])
-                                        ] = copy.deepcopy(num_groups)
-                                        ground_truth_ref[
-                                            sample_no, num_tree
-                                        ] = group_id_new[
-                                            str(poplabels.GROUP.iloc[sample_no])
-                                            + "->"
-                                            + str(ground_truth["dest"].loc[j])
-                                        ]
-                                        num_groups += 1
+                        for j in range(len(ground_truth)):
+                            if (
+                                tree.interval[0] >= ground_truth["startpos"].loc[j]
+                                and tree.interval[0] < ground_truth["endpos"].loc[j]
+                            ):
+                                try:
+                                    ground_truth_ref[
+                                        sample_no, num_tree
+                                    ] = group_id_new[
+                                        str(poplabels.GROUP.iloc[sample_no])
+                                        + "->"
+                                        + str(ground_truth["dest"].loc[j])
+                                    ]
+                                except:
+                                    group_id_new[
+                                        str(poplabels.GROUP.iloc[sample_no])
+                                        + "->"
+                                        + str(ground_truth["dest"].loc[j])
+                                    ] = copy.deepcopy(num_groups)
+                                    ground_truth_ref[
+                                        sample_no, num_tree
+                                    ] = group_id_new[
+                                        str(poplabels.GROUP.iloc[sample_no])
+                                        + "->"
+                                        + str(ground_truth["dest"].loc[j])
+                                    ]
+                                    num_groups += 1
 
                         if ground_truth_ref[sample_no, num_tree] == -127:
                             try:

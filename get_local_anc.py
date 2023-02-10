@@ -29,15 +29,16 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
     migration_array = [[[]] for _ in range(N)]
     tree = ts.first()
     for (m, migration) in enumerate(sorted_migrations):
-        tree = ts.at(migration["left"])
-        while migration["right"] >= tree.interval[0]:
-            parent_node = migration["node"]
-            for i in tree.get_leaves(parent_node):
+        print(m)
+        for tree in ts.trees(leaf_lists=True):
+            if migration["left"] > tree.get_interval()[0]:
+                continue
+            if migration["right"] <= tree.get_interval()[0]:
+                break
+            for i in tree.leaves(migration["node"]):
                 migration_array[i].append(
                     [tree.interval[0], tree.interval[1], migration["dest"]]
                 )
-            if tree.next() == False:
-                break
 
     for j in samples:
         migrating_tracts_i = migration_array[j][1:]
