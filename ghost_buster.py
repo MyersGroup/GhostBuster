@@ -26,6 +26,7 @@ from utils import (
 )
 import pdb
 import warnings
+from hmm_decode import Decode
 
 warnings.filterwarnings("ignore")
 
@@ -140,6 +141,7 @@ def e_m_step(
     n_trees,
     n_samples,
     epoch,
+    tree_left_bp_gen,
 ):
 
     masked_trees_index = np.arange(0, n_trees)
@@ -191,9 +193,9 @@ def e_m_step(
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
 
     # if tau[0] < tau[1]:
-    #     tau = [0.03, 0.97]  ## CAUTION: Fixing tau!!!
+    #     tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
     # else:
-    #     tau = [0.97, 0.03]
+    #     tau = [0.95, 0.05]
     # tau = np.array(tau)
 
     gamma_arr = np.maximum(gamma_arr, 0)
@@ -227,6 +229,7 @@ def e_m_step(
     log_num_em = 1 * combine_local_ancestry(log_num_em, args.num_subtrees)
     log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
 
+    loglikelihood_per_comp = log_num_em + log_denom_em
     own_membership_update = np.exp(
         log_num_em
         + log_denom_em
@@ -246,8 +249,32 @@ def e_m_step(
     )
     own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
-    own_membership = np.repeat(own_membership, args.num_subtrees, axis=1)
-    return own_membership, gamma_arr, tau, log_likelihood
+    ### HMM smoothing
+    own_membership_hmm, log_likelihood_hmm = Decode(
+        tree_left_bp_gen,
+        1800,
+        loglikelihood_per_comp.copy(),
+        tau,
+    )
+    ## correcting the posterior for calibration
+    for rep in range(1):
+        for comp_id in range(own_membership_hmm.shape[0]):
+            for bin in np.arange(0, 1, 0.005):
+                lower = np.percentile(own_membership_hmm[comp_id], 100 * bin)
+                upper = np.percentile(own_membership_hmm[comp_id], 100 * (bin + 0.005))
+                mask = (own_membership_hmm[comp_id] >= lower) & (
+                    own_membership_hmm[comp_id] < upper
+                )
+                mean_hmm_post = own_membership_hmm[comp_id, mask].mean()
+                mean_indep_post = own_membership[comp_id, mask].mean()
+                if mean_indep_post is not np.nan and mean_hmm_post is not np.nan:
+                    own_membership_hmm[comp_id, mask] *= mean_indep_post / mean_hmm_post
+
+        own_membership_hmm = own_membership_hmm / own_membership_hmm.sum(axis=0)
+
+    print((log_likelihood, log_likelihood_hmm))
+    own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
+    return own_membership_hmm, gamma_arr, tau, log_likelihood_hmm
 
 
 def estimate_gt_ref(
@@ -397,6 +424,7 @@ def random_sweep_iter(
     denom,
     proportion_of_coalescing_all,
     epoch_index_all,
+    tree_left_bp_gen,
 ):
     gamma_arr = np.power(
         np.e,
@@ -508,6 +536,7 @@ def random_sweep_iter(
             n_trees,
             n_samples,
             epoch,
+            tree_left_bp_gen,
         )
     return (
         log_likelihood,
@@ -531,6 +560,7 @@ def random_sweep(
     poplabels,
     mask_dodgy,
     epoch_intervals,
+    tree_left_bp_gen,
 ):
     print("Performing a random sweep for better initialization")
     masked_trees_index = np.arange(0, n_trees)
@@ -540,6 +570,10 @@ def random_sweep(
     if not args.joint_fit:
         num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
         for sample_no, sample in enumerate(args.sample_id):
+            # poplabels_only_mbuti = copy.deepcopy(poplabels)
+            # poplabels_only_mbuti.loc[
+            #     (poplabels.GROUP == "Han") & (poplabels.ID != sample + 1), "INCLUDE"
+            # ] = 0
             (
                 num1,
                 denom1,
@@ -586,6 +620,7 @@ def random_sweep(
             denom,
             proportion_of_coalescing_all,
             epoch_index_all,
+            tree_left_bp_gen,
         )
         for n_iters in range(n_repeats)
     )
@@ -728,6 +763,7 @@ def main(args):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_left_bp_gen,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
@@ -754,7 +790,9 @@ def main(args):
     ### Use ground-truth local ancestry for reference samples
     num_trees = np.sum(mask_dodgy)
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
-
+    tree_left_bp_gen = np.array(
+        np.array(tree_left_bp_gen)[mask_dodgy].tolist() * len(args.sample_id)
+    )
     ### Calculate ground truth local ancestry
     if args.mode == "sim":
         ground_truth_membership = []
@@ -943,6 +981,7 @@ def main(args):
             poplabels,
             mask_dodgy,
             epoch_intervals,
+            tree_left_bp_gen,
         )
 
     if args.load_gamma:
@@ -983,6 +1022,7 @@ def main(args):
                 num_trees,
                 len(args.sample_id),
                 epoch,
+                tree_left_bp_gen,
             )
             print(tau)
 

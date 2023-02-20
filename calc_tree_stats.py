@@ -10,6 +10,7 @@ import scipy.stats as stats
 import pandas as pd
 from tqdm import tqdm
 import pickle
+import msprime
 
 
 def lineage_nodes(tree, sample_ids):
@@ -66,6 +67,7 @@ def compute_tree_stats(
 ):
     tree_size = []
     tree_left_bp = []
+    tree_left_bp_gen = []
     no_of_mutations = []
     tmrca = []
     recomb_window_size = 50000  ## window size for measure recombination rates
@@ -93,6 +95,8 @@ def compute_tree_stats(
         recomb_map["Start Position(bp)"] = np.array(
             [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
         )
+        recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt")
+        tree_left_bp_chr = []
         if allmuts is not None:
             relate_allmuts_file = pd.read_csv(
                 allmuts + str(chr) + ".allmuts",
@@ -119,7 +123,7 @@ def compute_tree_stats(
         for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
             if tree.interval[1] // force_build - tree.interval[0] // force_build > 0:
                 tree_size.append(tree.interval[1] - tree.interval[0])
-                tree_left_bp.append(tree.interval[0])
+                tree_left_bp_chr.append(tree.interval[0])
                 no_of_mutations.append(tree.num_mutations)
                 tmrca.append(tree.time(tree.root))
                 chr_map.append(chr)
@@ -197,6 +201,10 @@ def compute_tree_stats(
 
         del tree
         del ts
+        tree_left_bp_gen.extend(
+            recomb_map_msprime.get_cumulative_mass(tree_left_bp_chr).tolist()
+        )
+        tree_left_bp.extend(tree_left_bp_chr)
 
     if mutden is not None:
         mutrate_logpmf_target, mutrate_opportunity_target = compute_mutden(
@@ -209,6 +217,7 @@ def compute_tree_stats(
     return (
         tree_size,
         tree_left_bp,
+        tree_left_bp_gen,
         no_of_mutations,
         tmrca,
         recomb_rates,
@@ -269,6 +278,7 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_left_bp_gen,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -292,6 +302,7 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_left_bp_gen,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -321,6 +332,7 @@ def load_tree_stats(args, ts_list, poplabels):
             [
                 tree_size,
                 tree_left_bp,
+                tree_left_bp_gen,
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
@@ -345,6 +357,7 @@ def load_tree_stats(args, ts_list, poplabels):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_left_bp_gen,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
