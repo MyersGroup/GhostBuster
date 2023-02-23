@@ -192,11 +192,11 @@ def e_m_step(
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
 
-    # if tau[0] < tau[1]:
-    #     tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
-    # else:
-    #     tau = [0.95, 0.05]
-    # tau = np.array(tau)
+    if tau[0] < tau[1]:
+        tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
+    else:
+        tau = [0.95, 0.05]
+    tau = np.array(tau)
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -250,31 +250,15 @@ def e_m_step(
     own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
     ### HMM smoothing
-    own_membership_hmm, log_likelihood_hmm = Decode(
-        tree_left_bp_gen,
-        1800,
-        loglikelihood_per_comp.copy(),
-        tau,
-    )
-    ## correcting the posterior for calibration
-    for rep in range(1):
-        for comp_id in range(own_membership_hmm.shape[0]):
-            for bin in np.arange(0, 1, 0.005):
-                lower = np.percentile(own_membership_hmm[comp_id], 100 * bin)
-                upper = np.percentile(own_membership_hmm[comp_id], 100 * (bin + 0.005))
-                mask = (own_membership_hmm[comp_id] >= lower) & (
-                    own_membership_hmm[comp_id] < upper
-                )
-                mean_hmm_post = own_membership_hmm[comp_id, mask].mean()
-                mean_indep_post = own_membership[comp_id, mask].mean()
-                if mean_indep_post is not np.nan and mean_hmm_post is not np.nan:
-                    own_membership_hmm[comp_id, mask] *= mean_indep_post / mean_hmm_post
-
-        own_membership_hmm = own_membership_hmm / own_membership_hmm.sum(axis=0)
-
-    print((log_likelihood, log_likelihood_hmm))
-    own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
-    return own_membership_hmm, gamma_arr, tau, log_likelihood_hmm
+    # own_membership_hmm, log_likelihood_hmm = Decode(
+    #     tree_left_bp_gen,
+    #     1800,
+    #     loglikelihood_per_comp.copy(),
+    #     tau,
+    # )
+    # print((log_likelihood, log_likelihood_hmm))
+    # own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
+    return own_membership, gamma_arr, tau, log_likelihood
 
 
 def estimate_gt_ref(
@@ -653,6 +637,27 @@ def random_sweep(
     )
 
 
+def write_membership_grid(
+    own_membership,
+    tree_left_bp,
+    tree_right_bp,
+    sample_id_label,
+    output,
+    window_size=1e3,
+):
+    assert len(own_membership[0]) == len(tree_left_bp)
+    assert len(tree_left_bp) == len(tree_right_bp)
+    res = []
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        for j in range(int(l / window_size), int(r / window_size)):
+            res.append([j * window_size] + list(own_membership[:, i]))
+    pd.DataFrame(data=np.array(res), columns=["start", "gt_0", "gt_1"]).to_csv(
+        output + "_overall_membership_" + sample_id_label + ".csv",
+        index=False,
+        sep="\t",
+    )
+
+
 def write_membership_gamma(
     args,
     own_membership,
@@ -661,6 +666,7 @@ def write_membership_gamma(
     mask_dodgy,
     chr_map,
     tree_left_bp,
+    tree_right_bp,
     epoch_intervals,
     unique_groups,
     sample_id_label,
@@ -672,6 +678,15 @@ def write_membership_gamma(
     filename = args.output + "_" + filename
     with open(filename, "wb") as f:
         np.save(f, own_membership)
+
+    write_membership_grid(
+        own_membership,
+        tree_left_bp,
+        tree_right_bp,
+        sample_id_label,
+        args.output,
+        args.force_build,
+    )
 
     write_coal(
         gamma_arr,
@@ -763,15 +778,18 @@ def main(args):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_right_bp,
         tree_left_bp_gen,
+        tree_right_bp_gen,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
         num_snps_on_lineage,
+        target_branch_length,
     ) = load_tree_stats(args, ts_list, poplabels)
 
     ### Filter based on recombination rates
-    if args.load_mask is None:
+    if args.load_mask is None and args.masking_threshold > 0:
         mask_dodgy = filter_recomb_rate(
             args,
             ts_list,
@@ -780,8 +798,11 @@ def main(args):
             frac_branches_with_snp_target,
             num_snps_on_lineage,
         )
+    elif args.load_mask is None and args.masking_threshold == 0:
+        print("Running GB on all trees")
+        mask_dodgy = np.ones(len(recomb_rates), dtype="bool")
 
-    if args.load_mask is not None:
+    else:
         mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
         mask_dodgy = load_mask_csv(args, args.sample_id, ts_list, mask_dodgy, chrs)
 
@@ -1063,6 +1084,7 @@ def main(args):
             mask_dodgy,
             chr_map,
             tree_left_bp,
+            tree_right_bp,
             epoch_intervals,
             unique_groups,
             sample_id_label,
