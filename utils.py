@@ -464,6 +464,17 @@ def compute_gamma_denom(own_membership, denom, n_epochs):
     return denom_1 + eps
 
 
+def compute_gamma_denom_eventwise(own_membership, denom, j, n_epochs):
+    eps = 1e-200
+    denom_1 = np.zeros(n_epochs - 1, dtype="float64")
+    for tree in range(len(denom)):
+        denom_in_tree = denom[tree]
+        for denom_coal in denom_in_tree:
+            for epoch in range(n_epochs - 1):
+                denom_1[epoch] += denom_coal[j][epoch] * own_membership[tree]
+    return denom_1 + eps
+
+
 def update_membership_epochwise(
     proportion_of_coalescing_in_tree,
     epoch_index_in_tree,

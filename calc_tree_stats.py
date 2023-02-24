@@ -11,6 +11,8 @@ import pandas as pd
 from tqdm import tqdm
 import pickle
 import msprime
+import copy
+import pdb
 
 
 def lineage_nodes(tree, sample_ids):
@@ -62,12 +64,86 @@ def get_poisson_logpmf_bins(mutrates, num_epochs, mut_rate):
     return logpmf
 
 
+def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample_list):
+    """
+    Calculates the branch length of the target population
+    """
+    target_branch_length = []
+    count = 0
+    for sample in sample_list:
+        target_branch_length_sample = []
+        for chr_no, chr in enumerate(chrs):
+            ts = ts_list[chr_no]
+            ts_edges = ts.edges()
+            tree = ts.first()
+            for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
+                if (
+                    tree.interval[1] // force_build - tree.interval[0] // force_build
+                    > 0
+                ):
+                    number_window_list = []
+                    coal_time = []
+                    parent = copy.deepcopy(sample)
+                    while parent != tree.root:
+                        edge_id = tree.edge(parent)
+                        edge = ts_edges[edge_id]
+                        parent = tree.parent(parent)
+                        coal_time.append(tree.time(parent))
+                        if (
+                            (
+                                tree.time(parent)
+                                >= (np.power(10, args.start_time) / 28)
+                                or not args.ignore_first_epoch
+                            )
+                            and (
+                                tree.time(parent) < (np.power(10, args.end_time) / 28)
+                                or not args.ignore_last_epoch
+                            )
+                            and (
+                                np.intersect1d(
+                                    list(tree.leaves(tree.children(parent)[0])),
+                                    poplabels[poplabels.INCLUDE == 1].index.values,
+                                ).size
+                                > 0
+                            )
+                            and (
+                                np.intersect1d(
+                                    list(tree.leaves(tree.children(parent)[1])),
+                                    poplabels[poplabels.INCLUDE == 1].index.values,
+                                ).size
+                                > 0
+                            )
+                        ):
+                            number_window_list.append(
+                                edge.right // force_build - edge.left // force_build
+                            )
+                    # if count == 1:
+                    #     pdb.set_trace()
+                    # count += 1
+
+                    target_branch_length_sample.append(number_window_list)
+                tree.next()
+        target_branch_length.append(target_branch_length_sample)
+
+    return target_branch_length  ## num_samples x num_trees x num_branches
+
+
 def compute_tree_stats(
-    ts_list, chrs, allmuts, mutden, rec, sample_list=None, force_build=1
+    args,
+    poplabels,
+    ts_list,
+    chrs,
+    allmuts,
+    mutden,
+    rec,
+    sample_list=None,
+    force_build=1,
 ):
     tree_size = []
     tree_left_bp = []
+    tree_right_bp = []
     tree_left_bp_gen = []
+    tree_right_bp_gen = []
     no_of_mutations = []
     tmrca = []
     recomb_window_size = 50000  ## window size for measure recombination rates
@@ -86,6 +162,11 @@ def compute_tree_stats(
     count = 0
     num_nodes = len(list(ts_list[0].first().nodes()))
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
+
+    target_branch_length = get_target_branch_length(
+        args, poplabels, ts_list, chrs, force_build, sample_list
+    )
+
     for chr_no, chr in enumerate(chrs):
         recomb_map = pd.read_csv(
             rec + str(chr) + ".txt",
@@ -96,7 +177,7 @@ def compute_tree_stats(
             [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
         )
         recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt")
-        tree_left_bp_chr = []
+        tree_left_bp_chr, tree_right_bp_chr = [], []
         if allmuts is not None:
             relate_allmuts_file = pd.read_csv(
                 allmuts + str(chr) + ".allmuts",
@@ -124,6 +205,7 @@ def compute_tree_stats(
             if tree.interval[1] // force_build - tree.interval[0] // force_build > 0:
                 tree_size.append(tree.interval[1] - tree.interval[0])
                 tree_left_bp_chr.append(tree.interval[0])
+                tree_right_bp_chr.append(tree.interval[1])
                 no_of_mutations.append(tree.num_mutations)
                 tmrca.append(tree.time(tree.root))
                 chr_map.append(chr)
@@ -204,7 +286,11 @@ def compute_tree_stats(
         tree_left_bp_gen.extend(
             recomb_map_msprime.get_cumulative_mass(tree_left_bp_chr).tolist()
         )
+        tree_right_bp_gen.extend(
+            recomb_map_msprime.get_cumulative_mass(tree_right_bp_chr).tolist()
+        )
         tree_left_bp.extend(tree_left_bp_chr)
+        tree_right_bp.extend(tree_right_bp_chr)
 
     if mutden is not None:
         mutrate_logpmf_target, mutrate_opportunity_target = compute_mutden(
@@ -217,7 +303,9 @@ def compute_tree_stats(
     return (
         tree_size,
         tree_left_bp,
+        tree_right_bp,
         tree_left_bp_gen,
+        tree_right_bp_gen,
         no_of_mutations,
         tmrca,
         recomb_rates,
@@ -232,6 +320,7 @@ def compute_tree_stats(
         chr_map,
         snps_not_mapping,
         snps_flipped,
+        target_branch_length,
     )
 
 
@@ -278,7 +367,9 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_right_bp,
             tree_left_bp_gen,
+            tree_right_bp_gen,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -293,6 +384,7 @@ def load_tree_stats(args, ts_list, poplabels):
             chr_map,
             snps_not_mapping,
             snps_flipped,
+            target_branch_length,
         ) = pickle.load(f_pkl)
         f_pkl.close()
         print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -302,7 +394,9 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_right_bp,
             tree_left_bp_gen,
+            tree_right_bp_gen,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -317,7 +411,10 @@ def load_tree_stats(args, ts_list, poplabels):
             chr_map,
             snps_not_mapping,
             snps_flipped,
+            target_branch_length,
         ) = compute_tree_stats(
+            args,
+            poplabels,
             ts_list,
             chrs,
             args.allmuts,
@@ -332,7 +429,9 @@ def load_tree_stats(args, ts_list, poplabels):
             [
                 tree_size,
                 tree_left_bp,
+                tree_right_bp,
                 tree_left_bp_gen,
+                tree_right_bp_gen,
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
@@ -347,6 +446,7 @@ def load_tree_stats(args, ts_list, poplabels):
                 chr_map,
                 snps_not_mapping,
                 snps_flipped,
+                target_branch_length,
             ],
             f_pkl,
         )
@@ -357,9 +457,12 @@ def load_tree_stats(args, ts_list, poplabels):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_right_bp,
         tree_left_bp_gen,
+        tree_right_bp_gen,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
         num_snps_on_lineage,
+        target_branch_length,
     )

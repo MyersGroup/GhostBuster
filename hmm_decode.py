@@ -8,6 +8,7 @@ from numba import jit
 from numba.typed import List
 import pdb
 import pickle
+import pandas as pd
 
 
 @jit
@@ -49,6 +50,47 @@ def log_with_inf_array3d(matrix):
             for col2 in range(len(matrix[0][0])):
                 res[rows, col, col2] = log_with_inf(matrix[rows, col, col2])
     return res
+
+
+def trees_to_bp(
+    probability,
+    tree_left_bp,
+    tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
+    target_branch_length,
+    window_size=1e3,
+):
+    assert len(probability[0]) == len(tree_left_bp)
+    assert len(tree_left_bp) == len(tree_right_bp)
+    res = []
+    gen_grid = []
+    bp_grid = []
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        for j in range(int(l / window_size), int(r / window_size)):
+            number_of_windows = target_branch_length[i]
+            # number_of_windows = 3*(int(r/window_size) - int(l/window_size))
+            res.append(probability[:, i] / number_of_windows)
+            recomb_rate = (tree_right_bp_gen[i] - tree_left_bp_gen[i]) / (
+                tree_right_bp[i] - tree_left_bp[i]
+            )
+            gen_grid.append(tree_left_bp_gen[i] + recomb_rate * (j * window_size - l))
+            bp_grid.append(j * window_size)
+    return np.array(res).T, np.array(gen_grid), np.array(bp_grid)
+
+
+def bp_to_trees(probability, tree_left_bp, tree_right_bp, window_size=1e3):
+    assert len(tree_left_bp) == len(tree_right_bp)
+    res = np.zeros((len(probability), len(tree_left_bp)))
+    count = 0
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        count_i = 0
+        for j in range(int(l / window_size), int(r / window_size)):
+            res[:, i] += probability[:, count]
+            count += 1
+            count_i += 1
+        res[:, i] /= count_i
+    return np.array(res)
 
 
 def make_hmm_from_file(markov_param):
@@ -98,7 +140,6 @@ def make_transition_matrix(tree_left_bp_gen, t_admix, props):
     transition_arr[:, 0, 0] = 1 - transition_arr[:, 0, 1]
     transition_arr[:, 1, 1] = 1 - transition_arr[:, 1, 0]
     transition_arr = log_with_inf_array3d(transition_arr)
-    print(np.exp(np.median(transition_arr, axis=0)))
     return transition_arr
 
 
@@ -349,6 +390,114 @@ def Decode(tree_left_bp_gen, t_admix_guess, probabilities, tau):
     return post_seq, forward_prob
 
 
+def Decode_grid(
+    tree_left_bp,
+    tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
+    target_branch_length,
+    t_admix_guess,
+    probabilities,
+    tau,
+    window_size=1000,
+):
+    """
+    Use this for GB fitting
+    """
+    # infered proportions
+    starting_probabilities = np.log(tau)
+
+    # transitions = make_hmm_from_file(model)
+    if starting_probabilities[0] > starting_probabilities[0]:
+        a = [0.95, 0.05]
+    else:
+        a = [0.05, 0.95]
+
+    ## transfor probabilities to per-kb + scaling
+    print(np.unique(probabilities[1]).shape)
+    probabilities, gen_grid, bp_grid = trees_to_bp(
+        probabilities,
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+        target_branch_length,
+        window_size=window_size,
+    )
+
+    ## change tree_left_bp_gen to a bp grid of 1kb interval
+    transition_arr = make_transition_matrix(
+        gen_grid,
+        t_admix_guess,
+        a,
+    )
+
+    # Posterior decode the file
+    post_seq, forward_prob = Forward_backward(
+        starting_probabilities, transition_arr, probabilities
+    )
+    post_seq /= np.sum(post_seq, axis=0)
+
+    ## transform post_seq back to per-tree
+    post_seq = bp_to_trees(
+        post_seq, tree_left_bp, tree_right_bp, window_size=window_size
+    )
+
+    return post_seq, forward_prob
+
+
+def Decode_save_output(
+    tree_left_bp,
+    tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
+    target_branch_length,
+    t_admix_guess,
+    probabilities,
+    tau,
+    output,
+    window_size=1000,
+):
+
+    # infered proportions
+    starting_probabilities = np.log(tau)
+
+    # transitions = make_hmm_from_file(model)
+    if starting_probabilities[0] > starting_probabilities[0]:
+        a = [0.95, 0.05]
+    else:
+        a = [0.05, 0.95]
+
+    ## transfor probabilities to per-kb + scaling
+    probabilities, gen_grid, bp_grid = trees_to_bp(
+        probabilities,
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+        target_branch_length,
+        window_size=window_size,
+    )
+
+    ## change tree_left_bp_gen to a bp grid of 1kb interval
+    transition_arr = make_transition_matrix(
+        gen_grid,
+        t_admix_guess,
+        a,
+    )
+
+    # Posterior decode the file
+    post_seq, forward_prob = Forward_backward(
+        starting_probabilities, transition_arr, probabilities
+    )
+    post_seq /= np.sum(post_seq, axis=0)
+
+    ## combine post_seq with bp_grd and save as csv
+    pd.DataFrame(
+        data=np.vstack((bp_grid, post_seq)).T, columns=["start", "prob_0", "prob_1"]
+    ).to_csv(output + "_posterior.csv", index=False, sep="\t")
+
+
 if __name__ == "__main__":
     prefix = "../output/deni_relate_ghost_all"
     post = np.load(prefix + "_overall_membership_50.npy")
@@ -363,10 +512,39 @@ if __name__ == "__main__":
     f_pkl = open(prefix + "_tree_stats_1.pkl", "rb")
     tree_stats = pickle.load(f_pkl)
     f_pkl.close()
-    tree_left_bp_gen = np.array(tree_stats[2])[mask]
+    tree_left_bp = np.array(tree_stats[1])[mask]
+    tree_right_bp = np.array(tree_stats[2])[mask]
+    tree_left_bp_gen = np.array(tree_stats[3])[mask]
+    tree_right_bp_gen = np.array(tree_stats[4])[mask]
+    target_branch_length = np.array(tree_stats[19])[mask]
 
-    post_seq, forward_prob = Decode(tree_left_bp_gen, 1850, gb_likelihood, tau)
-    print(np.corrcoef(post_seq[0], gt))
-    print(np.mean(post_seq[0]))
+    # post_seq, forward_prob = Decode(tree_left_bp_gen, 1850, gb_likelihood, tau)
+    # print(np.corrcoef(post_seq[0], gt))
+    # print(np.mean(post_seq[0]))
 
-    np.save("../output/deni_relate_ghost_hmm_all_posterior_membership_50.npy", post_seq)
+    # post_seq, forward_prob = Decode_grid(
+    #     tree_left_bp,
+    #     tree_right_bp,
+    #     tree_left_bp_gen,
+    #     tree_right_bp_gen,
+    #     target_branch_length,
+    #     1850,
+    #     gb_likelihood,
+    #     tau,
+    # )
+    # mask = ~np.isnan(post_seq[0])
+    # print(np.corrcoef(post_seq[0][mask], gt[mask]))
+    # print(np.mean(post_seq[0][mask]))
+    # np.save("../output/deni_relate_ghost_hmm_all_posterior_membership_50.npy", post_seq)
+
+    Decode_save_output(
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+        target_branch_length,
+        1850,
+        gb_likelihood,
+        tau,
+        output="../output/deni_relate_ghost_hmm_all",
+    )

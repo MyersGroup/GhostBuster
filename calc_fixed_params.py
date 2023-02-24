@@ -76,6 +76,7 @@ def fixed_parameters(
     )
     proportion_of_coalescing_all = []
     epoch_index_all = []
+    denom_all = []
     count_mut_trees = -1
     count_all_tree = 0
     group_id = {}
@@ -176,6 +177,7 @@ def fixed_parameters(
                             proportion_of_coalescing_in_tree = []
                             coalescene_times_in_tree = []
                             epoch_index_in_tree = []
+                            denom_in_tree = []
                             event_count = 0
                             for epoch in range(len(epoch_intervals_pow) - 1):
                                 coal_events_submatrix = coal_events_matrix[
@@ -245,6 +247,12 @@ def fixed_parameters(
                                             proportion_of_coalescing
                                         )
                                         epoch_index_in_tree.append(epoch)
+                                        denom_in_tree.append(
+                                            copy.deepcopy(
+                                                opportunity[:, :, count_mut_trees]
+                                            )
+                                        )
+                                        opportunity[:, :, count_mut_trees] = 0
                                         prev_branch_length = (
                                             prev_branch_length
                                             - lineage_content[b]
@@ -265,6 +273,12 @@ def fixed_parameters(
                                             proportion_of_coalescing
                                         )
                                         epoch_index_in_tree.append(epoch)
+                                        denom_in_tree.append(
+                                            copy.deepcopy(
+                                                opportunity[:, :, count_mut_trees]
+                                            )
+                                        )
+                                        opportunity[:, :, count_mut_trees] = 0
                                         prev_branch_length = (
                                             prev_branch_length
                                             - lineage_content[a]
@@ -342,6 +356,7 @@ def fixed_parameters(
                                 proportion_of_coalescing_in_tree
                             )
                             epoch_index_all.append(epoch_index_in_tree)
+                            denom_all.append(denom_in_tree)
                             sample_list_tree = copy.deepcopy(sample_list)
 
                     count_all_tree += num_subtrees
@@ -356,37 +371,42 @@ def fixed_parameters(
                         < poplabels.SAMPLING_TIME.iloc[target_seq_]
                     ):
                         continue
-                    if (
-                        poplabels.SAMPLING_TIME.iloc[m]
-                        >= epoch_intervals_pow[epoch + 1]
-                    ):
-                        opportunity[
-                            group_id[poplabels.GROUP.iloc[m]],
-                            epoch,
-                            count_mut_trees_prev + 1 : count_mut_trees + 1,
-                        ] -= epoch_intervals_pow[epoch + 1] - max(
-                            epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.iloc[target_seq_],
-                        )
-                    elif (
-                        poplabels.SAMPLING_TIME.iloc[m]
-                        > max(
-                            epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.iloc[target_seq_],
-                        )
-                        and poplabels.SAMPLING_TIME.iloc[m]
-                        < epoch_intervals_pow[epoch + 1]
-                    ):
-                        opportunity[
-                            group_id[poplabels.GROUP.iloc[m]],
-                            epoch,
-                            count_mut_trees_prev + 1 : count_mut_trees + 1,
-                        ] -= poplabels.SAMPLING_TIME.iloc[m] - max(
-                            epoch_intervals_pow[epoch],
-                            poplabels.SAMPLING_TIME.iloc[target_seq_],
-                        )
+                    if poplabels.SAMPLING_TIME.iloc[m] > epoch_intervals_pow[epoch]:
+                        for tid, denom_tree in enumerate(denom_all):
+                            for denom_coal in denom_tree:
+                                if (
+                                    denom_coal[
+                                        group_id[poplabels.GROUP.iloc[m]],
+                                        epoch,
+                                    ]
+                                    > min(
+                                        poplabels.SAMPLING_TIME.iloc[m],
+                                        epoch_intervals_pow[epoch + 1],
+                                    )
+                                    - epoch_intervals_pow[epoch]
+                                ):
+                                    denom_coal[
+                                        group_id[poplabels.GROUP.iloc[m]],
+                                        epoch,
+                                    ] -= (
+                                        min(
+                                            poplabels.SAMPLING_TIME.iloc[m],
+                                            epoch_intervals_pow[epoch + 1],
+                                        )
+                                        - epoch_intervals_pow[epoch]
+                                    )
+                                else:
+                                    denom_coal[
+                                        group_id[poplabels.GROUP.iloc[m]],
+                                        epoch,
+                                    ] = 0
 
-    return coal_count, opportunity, proportion_of_coalescing_all, epoch_index_all
+    return (
+        coal_count,
+        denom_all,
+        proportion_of_coalescing_all,
+        epoch_index_all,
+    )
 
 
 def load_fixed_params(args, ts_list, poplabels, mask_dodgy):
