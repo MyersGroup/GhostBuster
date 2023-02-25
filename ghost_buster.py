@@ -258,11 +258,11 @@ def e_m_step(
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
 
-    if tau[0] < tau[1]:
-        tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
-    else:
-        tau = [0.95, 0.05]
-    tau = np.array(tau)
+    # if tau[0] < tau[1]:
+    #     tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
+    # else:
+    #     tau = [0.95, 0.05]
+    # tau = np.array(tau)
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -330,6 +330,7 @@ def e_m_step(
     # )
     # print((log_likelihood, log_likelihood_hmm))
     # own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
+    # return own_membership_hmm, gamma_arr, tau, log_likelihood
     return own_membership, gamma_arr, tau, log_likelihood
 
 
@@ -924,7 +925,7 @@ def main(args):
         np.array(tree_right_bp_gen)[mask_dodgy].tolist() * len(args.sample_id)
     )
 
-    target_branch_length_masked = [[] * len(args.sample_id)]
+    target_branch_length_masked = [[] for _ in range(len(args.sample_id))]
     for sample in range(len(target_branch_length)):
         for tid in range(len(target_branch_length[sample])):
             if mask_dodgy[tid]:

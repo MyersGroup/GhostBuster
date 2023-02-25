@@ -413,6 +413,7 @@ def Decode_grid(
     else:
         a = [0.05, 0.95]
 
+    starting_probabilities = np.log(a)
     ## transfor probabilities to per-kb + scaling
     print(np.unique(probabilities[1]).shape)
     probabilities, gen_grid, bp_grid = trees_to_bp(
@@ -468,6 +469,7 @@ def Decode_save_output(
     else:
         a = [0.05, 0.95]
 
+    starting_probabilities = np.log(a)
     ## transfor probabilities to per-kb + scaling
     probabilities, gen_grid, bp_grid = trees_to_bp(
         probabilities,
