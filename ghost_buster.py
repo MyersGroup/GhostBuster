@@ -190,11 +190,11 @@ def e_m_step(
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
 
-    # if tau[0] < tau[1]:
-    #     tau = [0.03, 0.97]  ## CAUTION: Fixing tau!!!
-    # else:
-    #     tau = [0.97, 0.03]
-    # tau = np.array(tau)
+    if tau[0] < tau[1]:
+        tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
+    else:
+        tau = [0.95, 0.05]
+    tau = np.array(tau)
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -618,6 +618,31 @@ def random_sweep(
     )
 
 
+def write_membership_grid(
+    own_membership,
+    tree_left_bp,
+    tree_right_bp,
+    n_clusters,
+    sample_id_label,
+    output,
+    window_size=1e3,
+):
+    assert len(own_membership[0]) == len(tree_left_bp)
+    assert len(tree_left_bp) == len(tree_right_bp)
+    res = []
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        for j in range(int(l / window_size), int(r / window_size)):
+            res.append([j * window_size] + list(own_membership[:, i]))
+    pd.DataFrame(
+        data=np.array(res),
+        columns=["start"] + ["prob_" + str(i) for i in range(n_clusters)],
+    ).to_csv(
+        output + "_overall_membership_" + sample_id_label + ".csv",
+        index=False,
+        sep="\t",
+    )
+
+
 def write_membership_gamma(
     args,
     own_membership,
@@ -626,6 +651,7 @@ def write_membership_gamma(
     mask_dodgy,
     chr_map,
     tree_left_bp,
+    tree_right_bp,
     epoch_intervals,
     unique_groups,
     sample_id_label,
@@ -637,6 +663,16 @@ def write_membership_gamma(
     filename = args.output + "_" + filename
     with open(filename, "wb") as f:
         np.save(f, own_membership)
+
+    write_membership_grid(
+        own_membership,
+        tree_left_bp,
+        tree_right_bp,
+        args.num_clusters,
+        sample_id_label,
+        args.output,
+        args.force_build,
+    )
 
     write_coal(
         gamma_arr,
@@ -659,10 +695,10 @@ def write_membership_gamma(
         np.save(f, tau)
 
     tree_position = []
-    mask_dodgy = mask_dodgy[:: args.num_subtrees]
-    for tid in range(len(mask_dodgy) // len(args.sample_id)):
-        if mask_dodgy[tid]:
-            tree_position.append([chr_map[tid], tree_left_bp[tid] // args.force_build])
+    for tid in range(len(tree_left_bp) // len(args.sample_id)):
+        tree_position.append(
+            [np.array(chr_map)[mask_dodgy][tid], tree_left_bp[tid] // args.force_build]
+        )
     filename = (
         "mask_" + sample_id_label + ".csv"
     )  ## this saves membership for all the trees (without the filtering)
@@ -728,6 +764,7 @@ def main(args):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_right_bp,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
@@ -754,7 +791,12 @@ def main(args):
     ### Use ground-truth local ancestry for reference samples
     num_trees = np.sum(mask_dodgy)
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
-
+    tree_left_bp = np.array(
+        np.array(tree_left_bp)[mask_dodgy].tolist() * len(args.sample_id)
+    )
+    tree_right_bp = np.array(
+        np.array(tree_right_bp)[mask_dodgy].tolist() * len(args.sample_id)
+    )
     ### Calculate ground truth local ancestry
     if args.mode == "sim":
         ground_truth_membership = []
@@ -1023,6 +1065,7 @@ def main(args):
             mask_dodgy,
             chr_map,
             tree_left_bp,
+            tree_right_bp,
             epoch_intervals,
             unique_groups,
             sample_id_label,

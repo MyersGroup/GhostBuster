@@ -66,6 +66,7 @@ def compute_tree_stats(
 ):
     tree_size = []
     tree_left_bp = []
+    tree_right_bp = []
     no_of_mutations = []
     tmrca = []
     recomb_window_size = 50000  ## window size for measure recombination rates
@@ -120,6 +121,7 @@ def compute_tree_stats(
             if tree.interval[1] // force_build - tree.interval[0] // force_build > 0:
                 tree_size.append(tree.interval[1] - tree.interval[0])
                 tree_left_bp.append(tree.interval[0])
+                tree_right_bp.append(tree.interval[1])
                 no_of_mutations.append(tree.num_mutations)
                 tmrca.append(tree.time(tree.root))
                 chr_map.append(chr)
@@ -209,6 +211,7 @@ def compute_tree_stats(
     return (
         tree_size,
         tree_left_bp,
+        tree_right_bp,
         no_of_mutations,
         tmrca,
         recomb_rates,
@@ -269,6 +272,7 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_right_bp,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -292,6 +296,7 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_right_bp,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -321,6 +326,7 @@ def load_tree_stats(args, ts_list, poplabels):
             [
                 tree_size,
                 tree_left_bp,
+                tree_right_bp,
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
@@ -345,6 +351,7 @@ def load_tree_stats(args, ts_list, poplabels):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_right_bp,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
