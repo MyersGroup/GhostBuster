@@ -9,6 +9,7 @@ from numba.typed import List
 import pdb
 import pickle
 import pandas as pd
+from scipy.stats import hmean, gmean
 
 
 @jit
@@ -400,6 +401,7 @@ def Decode_grid(
     probabilities,
     tau,
     window_size=1000,
+    per_tree_output=False,
 ):
     """
     Use this for GB fitting
@@ -408,7 +410,7 @@ def Decode_grid(
     starting_probabilities = np.log(tau)
 
     # transitions = make_hmm_from_file(model)
-    if starting_probabilities[0] > starting_probabilities[0]:
+    if starting_probabilities[0] > starting_probabilities[1]:
         a = [0.95, 0.05]
     else:
         a = [0.05, 0.95]
@@ -440,9 +442,10 @@ def Decode_grid(
     post_seq /= np.sum(post_seq, axis=0)
 
     ## transform post_seq back to per-tree
-    post_seq = bp_to_trees(
-        post_seq, tree_left_bp, tree_right_bp, window_size=window_size
-    )
+    if per_tree_output:
+        post_seq = bp_to_trees(
+            post_seq, tree_left_bp, tree_right_bp, window_size=window_size
+        )
 
     return post_seq, forward_prob
 
@@ -501,7 +504,7 @@ def Decode_save_output(
 
 
 if __name__ == "__main__":
-    prefix = "../output/deni_relate_ghost_all"
+    prefix = "../output/deni_relate_ghost_hmm_all"
     post = np.load(prefix + "_overall_membership_50.npy")
     tau = np.load(prefix + "_props_50.npy")
     gb_likelihood = (post.T / tau.T).T
@@ -518,8 +521,15 @@ if __name__ == "__main__":
     tree_right_bp = np.array(tree_stats[2])[mask]
     tree_left_bp_gen = np.array(tree_stats[3])[mask]
     tree_right_bp_gen = np.array(tree_stats[4])[mask]
-    target_branch_length = np.array(tree_stats[19])[mask]
-
+    target_branch_length = []
+    for tid in range(len(tree_stats[19][0])):
+        if mask[tid]:
+            target_branch_length.append(
+                np.mean(
+                    tree_stats[19][0][tid]
+                    + [tree_stats[2][tid] // 1000 - tree_stats[1][tid] // 1000]
+                )
+            )
     # post_seq, forward_prob = Decode(tree_left_bp_gen, 1850, gb_likelihood, tau)
     # print(np.corrcoef(post_seq[0], gt))
     # print(np.mean(post_seq[0]))
@@ -548,5 +558,5 @@ if __name__ == "__main__":
         1850,
         gb_likelihood,
         tau,
-        output="../output/deni_relate_ghost_hmm_all",
+        output="../output/hmm_am",
     )
