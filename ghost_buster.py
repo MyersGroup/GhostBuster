@@ -175,10 +175,10 @@ def update_membership_eventwise(
             else:
                 log_denom_em_j_i = -sum(sum(gamma_arr * denom_in_tree[i]))
             log_denom_em_j.append(log_denom_em_j_i)
-    # if target_branch_length is not None:
-    #     return np.sum(np.array(log_num_em_j) / np.array(target_branch_length)), np.sum(
-    #         np.array(log_denom_em_j) / np.array(target_branch_length)
-    #     )
+    if target_branch_length is not None:
+        return np.sum(np.array(log_num_em_j) / np.array(target_branch_length)), np.sum(
+            np.array(log_denom_em_j) / np.array(target_branch_length)
+        )
     return np.sum(log_num_em_j), np.sum(log_denom_em_j)
 
 
@@ -193,7 +193,7 @@ def combine_local_ancestry(arr, n):
 
 def e_m_step(
     args,
-    own_membership,
+    own_membership,  ##now is n_clusters x n_sites
     prev_gamma,
     proportion_of_coalescing_all,
     epoch_index_all,
@@ -209,7 +209,6 @@ def e_m_step(
     tree_left_bp_gen,
     tree_right_bp_gen,
 ):
-
     masked_trees_index = np.arange(0, n_trees)
     n = np.zeros(
         (args.num_clusters, n_unique_groups, n_epochs - 1),
@@ -220,9 +219,10 @@ def e_m_step(
         dtype="float64",
     )
     tau = np.zeros(args.num_clusters, dtype="float64")
+    n_sites = own_membership.shape[1] // n_samples
     for sample_no in range(n_samples):
         own_membership_sample = own_membership[
-            :, sample_no * n_trees : (sample_no + 1) * n_trees
+            :, sample_no * n_sites : (sample_no + 1) * n_sites
         ]
         for j in range(len(own_membership_sample)):
             if epoch == 0:
@@ -234,6 +234,12 @@ def e_m_step(
                     n_unique_groups,
                     masked_trees_index,
                     n_epochs,
+                    target_branch_length_masked[sample_no],
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                    tree_left_bp,
+                    tree_right_bp,
+                    args.force_build,
                 )
             else:
                 n[j] += compute_gamma_num(
@@ -244,10 +250,26 @@ def e_m_step(
                     n_unique_groups,
                     masked_trees_index,
                     n_epochs,
+                    target_branch_length_masked[sample_no],
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                    tree_left_bp,
+                    tree_right_bp,
+                    args.force_build,
                 )
             for i in range(n_unique_groups):
                 d[j, i] += compute_gamma_denom_eventwise(
-                    own_membership_sample[j], denom[sample_no], i, n_epochs
+                    own_membership_sample[j],
+                    denom[sample_no],
+                    epoch_index_all[sample_no],
+                    i,
+                    n_epochs,
+                    target_branch_length_masked[sample_no],
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                    tree_left_bp,
+                    tree_right_bp,
+                    args.force_build,
                 )
 
         tau += np.mean(own_membership_sample, axis=1) / n_samples
@@ -318,19 +340,20 @@ def e_m_step(
     own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
     ### HMM smoothing
-    # own_membership_hmm, log_likelihood_hmm = Decode_grid(
-    #     tree_left_bp,
-    #     tree_right_bp,
-    #     tree_left_bp_gen,
-    #     tree_right_bp_gen,
-    #     np.ones(len(tree_left_bp_gen)),
-    #     1850,
-    #     loglikelihood_per_comp,
-    #     tau,
-    # )
-    # print((log_likelihood, log_likelihood_hmm))
-    # own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
-    # return own_membership_hmm, gamma_arr, tau, log_likelihood
+    own_membership_hmm, log_likelihood_hmm = Decode_grid(
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+        np.ones(len(tree_left_bp_gen)),
+        1850,
+        loglikelihood_per_comp,
+        tau,
+        window_size=args.force_build,
+    )
+    print((log_likelihood, log_likelihood_hmm))
+    own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
+    return own_membership_hmm, gamma_arr, tau, log_likelihood_hmm
     return own_membership, gamma_arr, tau, log_likelihood
 
 
@@ -345,6 +368,10 @@ def estimate_gt_ref(
     mask_dodgy,
     epoch_intervals_pow,
     target_branch_length_masked,
+    tree_left_bp,
+    tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
 ):
     ## random init gt_ref & unique_groups
 
@@ -380,13 +407,11 @@ def estimate_gt_ref(
     for outer_iter in range(1):
         r2 = 0.0
         for sample_no, sample in enumerate(
-            np.random.permutation(
-                poplabels[
-                    (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
-                    & poplabels.INCLUDE
-                    == 1
-                ].index
-            )
+            poplabels[
+                (poplabels.GROUP == poplabels.GROUP.iloc[args.sample_id[0]])
+                & poplabels.INCLUDE
+                == 1
+            ].index
         ):
             ## Calc fixed params
             (
@@ -394,7 +419,6 @@ def estimate_gt_ref(
                 denom1,
                 proportion_of_coalescing_all1,
                 epoch_index_all1,
-                denom_all1,
             ) = fixed_parameters(
                 ts_list,
                 poplabels,
@@ -433,6 +457,8 @@ def estimate_gt_ref(
                     log_num_em[j, count_masked_trees] = log_num_em_j
                     log_denom_em[j, count_masked_trees] = log_denom_em_j
                 count_masked_trees += 1
+
+            loglikelihood_per_comp = log_num_em + log_denom_em
             own_membership_trial = np.exp(
                 log_num_em
                 + log_denom_em
@@ -448,6 +474,20 @@ def estimate_gt_ref(
 
             own_membership_trial = own_membership_trial / (
                 np.sum(own_membership_trial, axis=0)
+            )
+
+            ## pass through HMM
+            own_membership_trial, _ = Decode_grid(
+                tree_left_bp,
+                tree_right_bp,
+                tree_left_bp_gen,
+                tree_right_bp_gen,
+                np.ones(len(tree_left_bp_gen)),
+                1850,
+                loglikelihood_per_comp,
+                tau,
+                window_size=args.force_build,
+                per_tree_output=True,
             )
 
             # Sample from the posteriors
@@ -518,6 +558,10 @@ def random_sweep_iter(
             mask_dodgy,
             epoch_intervals_pow,
             target_branch_length_masked,
+            tree_left_bp,
+            tree_right_bp,
+            tree_left_bp_gen,
+            tree_right_bp_gen,
         )
 
     else:
@@ -535,7 +579,6 @@ def random_sweep_iter(
                 denom1,
                 proportion_of_coalescing_all1,
                 epoch_index_all1,
-                denom_all1,
             ) = fixed_parameters(
                 ts_list,
                 poplabels,
@@ -576,6 +619,7 @@ def random_sweep_iter(
                 log_denom_em[j, count_masked_trees] = log_denom_em_j
             count_masked_trees += 1
 
+    loglikelihood_per_comp = log_num_em + log_denom_em
     own_membership_trial = np.exp(
         log_num_em
         + log_denom_em
@@ -590,6 +634,19 @@ def random_sweep_iter(
         own_membership_trial[j] *= tau[j]
 
     own_membership_trial = own_membership_trial / (np.sum(own_membership_trial, axis=0))
+
+    own_membership_trial, _ = Decode_grid(
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+        np.ones(len(tree_left_bp_gen)),
+        1850,
+        loglikelihood_per_comp,
+        tau,
+        window_size=args.force_build,
+    )
+    own_membership_trial = np.repeat(own_membership_trial, args.num_subtrees, axis=1)
 
     for epoch in range(args.sweep_num_iters):
         own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
@@ -742,12 +799,13 @@ def write_membership_grid(
     output,
     window_size=1e3,
 ):
-    assert len(own_membership[0]) == len(tree_left_bp)
     assert len(tree_left_bp) == len(tree_right_bp)
     res = []
+    count_i = 0
     for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
         for j in range(int(l / window_size), int(r / window_size)):
-            res.append([j * window_size] + list(own_membership[:, i]))
+            res.append([j * window_size] + list(own_membership[:, count_i]))
+            count_i += 1
     pd.DataFrame(
         data=np.array(res),
         columns=["start"] + ["prob_" + str(i) for i in range(n_clusters)],
@@ -925,7 +983,7 @@ def main(args):
         np.array(tree_right_bp_gen)[mask_dodgy].tolist() * len(args.sample_id)
     )
 
-    target_branch_length_masked = [[] for _ in range(len(args.sample_id))]
+    target_branch_length_masked = [[] for _ in range(50)]
     for sample in range(len(target_branch_length)):
         for tid in range(len(target_branch_length[sample])):
             if mask_dodgy[tid]:
@@ -939,12 +997,13 @@ def main(args):
         for sample in args.sample_id:
             ground_truth_membership_sample = make_ground_truth(
                 ts_list,
-                num_trees // args.num_subtrees,
                 mask_dodgy=mask_dodgy[:: args.num_subtrees],
                 path=args.ground_truth_path,
                 sample=[sample],
                 chrs=chrs,
                 force_build=args.force_build,
+                tree_left_bp=tree_left_bp,
+                tree_right_bp=tree_right_bp,
             )
             ground_truth_membership_sample = np.repeat(
                 ground_truth_membership_sample, args.num_subtrees, axis=1
@@ -1015,7 +1074,7 @@ def main(args):
             dtype="float64",
         )
         tau = np.zeros(args.num_clusters, dtype="float64")
-        for sample in args.sample_id:
+        for sample_no, sample in enumerate(args.sample_id):
             own_membership_sample = make_one_hot(gt_ref[sample])
             (
                 num1,
@@ -1044,10 +1103,26 @@ def main(args):
                     len(unique_groups),
                     np.arange(0, num_trees),
                     len(epoch_intervals),
+                    target_branch_length_masked[sample_no],
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                    tree_left_bp,
+                    tree_right_bp,
+                    args.force_build,
                 )
                 for i in range(len(unique_groups)):
                     d[j, i] += compute_gamma_denom_eventwise(
-                        own_membership_sample[j], denom1, i, len(epoch_intervals)
+                        own_membership_sample[j],
+                        denom1,
+                        epoch_index_all1,
+                        i,
+                        len(epoch_intervals),
+                        target_branch_length_masked[sample_no],
+                        args.ignore_first_epoch,
+                        args.ignore_last_epoch,
+                        tree_left_bp,
+                        tree_right_bp,
+                        args.force_build,
                     )
 
             print(np.mean(own_membership_sample, axis=1))

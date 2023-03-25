@@ -10,8 +10,7 @@ import pandas as pd
 import copy
 from matplotlib import pyplot as plt
 import math
-
-from calc_ground_truth import make_ground_truth
+import pdb
 
 
 def boolean(v):
@@ -27,7 +26,7 @@ def boolean(v):
 
 def make_one_hot(X, max_X=None):
     X = np.array(X, dtype="int")
-    classes = np.arange(0, max_X, 1) if max_X is not None else np.unique(X)
+    classes = np.arange(0, max_X, 1) if max_X is not None else np.sort(np.unique(X))
     # Y = []
     if len(X.shape) == 2:
         Y = np.zeros((len(classes), X.shape[0], X.shape[1]))
@@ -425,34 +424,98 @@ def compute_gamma_num(
     num_ref_groups,
     masked_trees_index,
     n_epochs,
+    target_branch_length,
+    ignore_first_epoch,
+    ignore_last_epoch,
+    tree_left_bp,
+    tree_right_bp,
+    window_size,
 ):
     num_full_tree = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
-    count_masked_trees = 0
+    count_site = 0
     if not (isinstance(prev_gamma, np.ndarray)):
         for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
-            for i in range(len(proportion_of_coalescing_in_tree)):
-                epoch = epoch_index_in_tree[i]
-                num = proportion_of_coalescing_in_tree[i]
-                num = num / sum(num)
-                num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
-            count_masked_trees += 1
+            for _ in range(
+                int(tree_left_bp[tid] / window_size),
+                int(tree_right_bp[tid] / window_size),
+            ):
+                count_i = 0
+                for i in range(len(proportion_of_coalescing_in_tree)):
+                    if (
+                        (
+                            ignore_first_epoch
+                            and not ignore_last_epoch
+                            and epoch_index_in_tree[i] >= 1
+                        )
+                        or (
+                            ignore_last_epoch
+                            and not ignore_first_epoch
+                            and epoch_index_in_tree[i] < n_epochs - 2
+                        )
+                        or (
+                            ignore_first_epoch
+                            and ignore_last_epoch
+                            and epoch_index_in_tree[i] >= 1
+                            and epoch_index_in_tree[i] < n_epochs - 2
+                        )
+                        or (not ignore_first_epoch and not ignore_last_epoch)
+                    ):
+                        epoch = epoch_index_in_tree[i]
+                        num = proportion_of_coalescing_in_tree[i]
+                        num = num / sum(num)
+                        num_full_tree[:, epoch] += (
+                            own_membership[count_site]
+                            * num
+                            / target_branch_length[tid][count_i]
+                        )
+                        count_i += 1
+                count_site += 1
     else:
         for tid in masked_trees_index:
             proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
             epoch_index_in_tree = epoch_index_all[tid]
-            for i in range(len(proportion_of_coalescing_in_tree)):
-                epoch = epoch_index_in_tree[i]
-                prev_gamma_e = prev_gamma[:, epoch]
-                num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
-                sum_of_num = sum(num)
-                if (
-                    sum_of_num != 0
-                ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
-                    num = num / sum_of_num
-                num_full_tree[:, epoch] += own_membership[count_masked_trees] * num
-            count_masked_trees += 1
+            for _ in range(
+                int(tree_left_bp[tid] / window_size),
+                int(tree_right_bp[tid] / window_size),
+            ):
+                count_i = 0
+                for i in range(len(proportion_of_coalescing_in_tree)):
+                    if (
+                        (
+                            ignore_first_epoch
+                            and not ignore_last_epoch
+                            and epoch_index_in_tree[i] >= 1
+                        )
+                        or (
+                            ignore_last_epoch
+                            and not ignore_first_epoch
+                            and epoch_index_in_tree[i] < n_epochs - 2
+                        )
+                        or (
+                            ignore_first_epoch
+                            and ignore_last_epoch
+                            and epoch_index_in_tree[i] >= 1
+                            and epoch_index_in_tree[i] < n_epochs - 2
+                        )
+                        or (not ignore_first_epoch and not ignore_last_epoch)
+                    ):
+                        epoch = epoch_index_in_tree[i]
+                        prev_gamma_e = prev_gamma[:, epoch]
+                        num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
+                        sum_of_num = sum(num)
+                        if (
+                            sum_of_num != 0
+                        ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
+                            num = num / sum_of_num
+                        num_full_tree[:, epoch] += (
+                            own_membership[count_site]
+                            * num
+                            / target_branch_length[tid][count_i]
+                        )
+                        count_i += 1
+                count_site += 1
     return num_full_tree
 
 
@@ -464,14 +527,60 @@ def compute_gamma_denom(own_membership, denom, n_epochs):
     return denom_1 + eps
 
 
-def compute_gamma_denom_eventwise(own_membership, denom, j, n_epochs):
+def compute_gamma_denom_eventwise(
+    own_membership,
+    denom,
+    epoch_index_all,
+    j,
+    n_epochs,
+    target_branch_length,
+    ignore_first_epoch,
+    ignore_last_epoch,
+    tree_left_bp,
+    tree_right_bp,
+    window_size,
+):
     eps = 1e-200
     denom_1 = np.zeros(n_epochs - 1, dtype="float64")
+    count_site = 0
     for tree in range(len(denom)):
+        epoch_index_in_tree = epoch_index_all[tree]
         denom_in_tree = denom[tree]
-        for denom_coal in denom_in_tree:
-            for epoch in range(n_epochs - 1):
-                denom_1[epoch] += denom_coal[j][epoch] * own_membership[tree]
+        for _ in range(
+            int(tree_left_bp[tree] / window_size),
+            int(tree_right_bp[tree] / window_size),
+        ):
+            count_i = 0
+            for i, denom_coal in enumerate(denom_in_tree):
+                if (
+                    (
+                        ignore_first_epoch
+                        and not ignore_last_epoch
+                        and epoch_index_in_tree[i] >= 1
+                    )
+                    or (
+                        ignore_last_epoch
+                        and not ignore_first_epoch
+                        and epoch_index_in_tree[i] < n_epochs - 2
+                    )
+                    or (
+                        ignore_first_epoch
+                        and ignore_last_epoch
+                        and epoch_index_in_tree[i] >= 1
+                        and epoch_index_in_tree[i] < n_epochs - 2
+                    )
+                    or (not ignore_first_epoch and not ignore_last_epoch)
+                ):
+
+                    for epoch in range(n_epochs - 1):
+                        denom_1[epoch] += (
+                            denom_coal[j][epoch]
+                            * own_membership[count_site]
+                            / target_branch_length[tree][count_i]
+                        )
+                    count_i += 1
+            count_site += 1
+
     return denom_1 + eps
 
 
