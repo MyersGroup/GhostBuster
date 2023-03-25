@@ -70,6 +70,10 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
     """
     target_branch_length = []
     count = 0
+    # for sample in poplabels[
+    #     (poplabels.GROUP == poplabels.GROUP.iloc[sample_list[0]]) & poplabels.INCLUDE
+    #     == 1
+    # ].index:
     for sample in sample_list:
         target_branch_length_sample = []
         for chr_no, chr in enumerate(chrs):
