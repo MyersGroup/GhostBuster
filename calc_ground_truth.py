@@ -7,15 +7,15 @@ import numpy as np
 import pandas as pd
 import copy
 import pdb
+from utils import make_one_hot
 
 
 def make_ground_truth(
-    ts_list, num_trees, mask_dodgy, path, sample=None, chrs=None, force_build=1
+    ts_list, mask_dodgy, path, sample, chrs, force_build, tree_left_bp, tree_right_bp
 ):
     ## Extracts the ground truth membership from the simulations
     print("Calculating the ground truth local ancestry..")
-    ground_truth_membership_one_hot = None
-
+    ground_truth_membership = []
     num_tree = 0
     count_all_tree = 0
     for sample_no, ind in enumerate(sample):
@@ -26,9 +26,6 @@ def make_ground_truth(
                 names=["startpos", "endpos", "dest"],
                 float_precision="round_trip",
             )
-            if ground_truth_membership_one_hot is None:
-                num_ref_groups = int(np.max(ground_truth["dest"]))
-                ground_truth_membership_one_hot = np.zeros((num_ref_groups, num_trees))
             tree = ts_list[count].first()
             for tid in range(len(list(ts_list[count].trees()))):
                 if (
@@ -36,20 +33,30 @@ def make_ground_truth(
                     > 0
                 ):
                     if mask_dodgy[count_all_tree]:
-                        for j in range(len(ground_truth)):
-                            if (
-                                tree.interval[0] >= ground_truth["startpos"].loc[j]
-                                and tree.interval[0] < ground_truth["endpos"].loc[j]
-                            ):
-                                ground_truth_membership_one_hot[
-                                    int(ground_truth["dest"].loc[j]) - 1,
-                                    num_tree,
-                                ] = 1
+                        for loc_in_window in range(
+                            int(tree_left_bp[num_tree] / force_build),
+                            int(tree_right_bp[num_tree] / force_build),
+                        ):
+                            loc_in_bp = loc_in_window * force_build
+                            flag = False
+                            for j in range(len(ground_truth)):
+                                if (
+                                    loc_in_bp >= ground_truth["startpos"].loc[j]
+                                    and loc_in_bp < ground_truth["endpos"].loc[j]
+                                ):
+                                    ground_truth_membership.append(
+                                        int(ground_truth["dest"].loc[j]) - 1
+                                    )
+                                    flag = True
+                                    break
+                            if not flag:
+                                ground_truth_membership.append(0)
                         num_tree += 1
                     count_all_tree += 1
                 tree.next()
             count += 1
     ## only return ground truth of groups which actually contribute
+    return make_one_hot(np.array(ground_truth_membership))
     ground_truth_membership_one_hot = ground_truth_membership_one_hot[
         np.sum(ground_truth_membership_one_hot, axis=1) != 0
     ]
