@@ -25,6 +25,8 @@ from utils import (
     compute_gamma_num,
     compute_gamma_denom,
     compute_gamma_denom_eventwise,
+    load_gamma,
+    load_props,
 )
 import pdb
 import warnings
@@ -236,7 +238,7 @@ def e_m_step(
     proportion_of_coalescing_all,
     epoch_index_all,
     denom,
-    n_unique_groups,
+    unique_groups,
     n_epochs,
     n_trees,
     n_samples,
@@ -248,6 +250,7 @@ def e_m_step(
     tree_right_bp_gen,
 ):
     masked_trees_index = np.arange(0, n_trees)
+    n_unique_groups = len(unique_groups)
     n = np.zeros(
         (args.num_clusters, n_unique_groups, n_epochs - 1),
         dtype="float64",
@@ -335,8 +338,10 @@ def e_m_step(
     gamma_arr = n / d
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
-        gamma_arr = np.load(args.load_gamma)
-        tau = np.load(args.load_props)  ### load taus only works for not(props_per_chrs)
+        gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
+        tau = load_props(
+            args.load_props
+        )  ### load taus only works for not(props_per_chrs)
 
     # if tau[0] < tau[1]:
     #     tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
@@ -409,6 +414,7 @@ def e_m_step(
         window_size=args.force_build,
     )
     own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
+
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
     return own_membership, gamma_arr, tau, log_likelihood
 
@@ -567,7 +573,7 @@ def estimate_gt_ref(
 def random_sweep_iter(
     args,
     n_clusters,
-    n_unique_groups,
+    unique_groups,
     n_epochs,
     n_trees,
     n_iters,
@@ -585,9 +591,10 @@ def random_sweep_iter(
     tree_left_bp_gen,
     tree_right_bp_gen,
 ):
+    n_unique_groups = len(unique_groups)
     if args.load_gamma is not None and args.load_props is not None and n_iters == 0:
-        gamma_arr = np.load(args.load_gamma)
-        tau = np.load(args.load_props)
+        gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
+        tau = load_props(args.load_props)
 
     else:
         gamma_arr = np.power(
@@ -719,7 +726,7 @@ def random_sweep_iter(
             proportion_of_coalescing_all,
             epoch_index_all,
             denom,
-            n_unique_groups,
+            unique_groups,
             n_epochs,
             n_trees,
             n_samples,
@@ -745,7 +752,7 @@ def random_sweep_iter(
 def random_sweep(
     args,
     n_clusters,
-    n_unique_groups,
+    unique_groups,
     n_epochs,
     n_trees,
     n_repeats,
@@ -805,7 +812,7 @@ def random_sweep(
         delayed(random_sweep_iter)(
             args,
             n_clusters,
-            n_unique_groups,
+            unique_groups,
             n_epochs,
             n_trees,
             n_iters,
@@ -961,6 +968,15 @@ def main(args):
         + [np.inf],
         dtype="float64",
     )
+    if args.load_gamma is not None:
+        if ".coal" in args.load_gamma:
+            second_line = (
+                open(args.load_gamma).readlines()[1].strip("\n").split(" ")[:-1]
+            ) + [np.inf]
+            epoch_intervals = np.log10(np.array(second_line, dtype="float64"))
+            args.start_time = epoch_intervals[1] + math.log(28, 10)
+            args.end_time = epoch_intervals[-2] + math.log(28, 10)
+            args.num_epochs = len(epoch_intervals) - 1
 
     sample_id = []
     for i in range(len(args.sample_id)):
@@ -1267,9 +1283,7 @@ def main(args):
         ) = random_sweep(
             args,
             args.num_clusters,
-            len(np.unique(poplabels_included.GROUP)) + args.num_clusters - 1
-            if args.joint_fit
-            else len(unique_groups),
+            unique_groups,
             len(epoch_intervals),
             num_trees,
             args.n_repeats,
@@ -1285,11 +1299,11 @@ def main(args):
         )
 
     if args.load_gamma:
-        gamma_arr = np.load(args.load_gamma)
+        gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
     else:
         gamma_arr = None
     if args.load_props:
-        tau = np.load(args.load_props)
+        tau = load_props(args.load_props)
 
     ### EM
     if args.evaluate_gamma:
@@ -1318,7 +1332,7 @@ def main(args):
                 proportion_of_coalescing_all,
                 epoch_index_all,
                 denom,
-                len(unique_groups),
+                unique_groups,
                 len(epoch_intervals),
                 num_trees,
                 len(args.sample_id),
@@ -1446,7 +1460,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-load_props",
         "--load_props",
-        help="Starting taU values written in a file",
+        help="Starting taU values written in a file or space seperated list",
         type=str,
         default=None,
     )
@@ -1578,6 +1592,13 @@ if __name__ == "__main__":
         type=int,
         default=10,
         help="Number of iterations to run EM for in random sweep",
+    )
+    parser.add_argument(
+        "--groups",
+        type=str,
+        default=None,
+        nargs="+",
+        help="space seperated list of source group, example Nea CHB where Nea and CHB are population names in poplabels file",
     )
     args = parser.parse_args()
 

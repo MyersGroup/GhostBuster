@@ -709,3 +709,46 @@ def neighbour_smoothing(post, dist, window=3, alpha=1e-6):
             )
     post_smooth /= np.sum(post_smooth, axis=0)
     return post_smooth[:, window:-window]
+
+
+def load_gamma(path, groups, ref_groups):
+    if ".npy" in path:
+        return np.load(path)
+    elif ".coal" in path:
+        with open(path) as f:
+            header = f.readline().strip("\n").split(" ")
+        header = np.array(header)
+        if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
+            print(
+                "Groups in header do not match groups in input, groups in header are: "
+                + str(header)
+            )
+            raise ValueError
+        groups_to_index = [np.where(header == g)[0][0] for g in groups]
+        ref_groups_to_index = [np.where(header == g)[0][0] for g in ref_groups]
+        df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
+        gamma_arr = np.zeros((len(groups), len(ref_groups), df.shape[1] - 2))
+        for i, gid1 in enumerate(groups_to_index):
+            for j, gid2 in enumerate(ref_groups_to_index):
+                gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+        print(np.nan_to_num(gamma_arr, nan=0))
+        return np.nan_to_num(gamma_arr, nan=0)
+    else:
+        print("Unsupported file format for gamma files")
+
+
+def load_props(path):
+    if ".npy" in path:
+        return np.load(path)
+    elif ".txt" in path:
+        return np.loadtxt(path)
+    else:
+        return np.array(path.split(" "), dtype="float")
+
+
+if __name__ == "__main__":
+    load_gamma(
+        "../real_apr23/1000G_sub_aDNA_Mar2023/result/1000G_sub_Nea_pp_v2_chr1.coal",
+        ["Vindija", "CHB"],
+        ["Vindija", "CHB", "YRI"],
+    )
