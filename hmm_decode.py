@@ -59,7 +59,6 @@ def trees_to_bp(
     tree_right_bp,
     tree_left_bp_gen,
     tree_right_bp_gen,
-    target_branch_length,
     window_size=1e3,
 ):
     assert len(probability[0]) == len(tree_left_bp)
@@ -248,7 +247,6 @@ def Decode_grid(
     tree_right_bp,
     tree_left_bp_gen,
     tree_right_bp_gen,
-    target_branch_length,
     transition_arr,
     probabilities,
     tau,
@@ -270,14 +268,12 @@ def Decode_grid(
 
     starting_probabilities = np.log(a)
     ## transfor probabilities to per-kb + scaling
-    print(np.unique(probabilities[1]).shape)
     probabilities, gen_grid, bp_grid = trees_to_bp(
         probabilities,
         tree_left_bp,
         tree_right_bp,
         tree_left_bp_gen,
         tree_right_bp_gen,
-        target_branch_length,
         window_size=window_size,
     )
 
