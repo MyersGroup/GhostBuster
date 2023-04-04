@@ -94,18 +94,6 @@ def bp_to_trees(probability, tree_left_bp, tree_right_bp, window_size=1e3):
     return np.array(res)
 
 
-def make_transition_matrix(tree_left_bp_gen, t_admix, props):
-    tree_location = t_admix * np.abs(np.diff(tree_left_bp_gen, prepend=-1))
-    tree_location = np.minimum(tree_location, 1)
-    transition_arr = np.zeros((len(tree_location), 2, 2))
-    transition_arr[:, 0, 1] = tree_location * props[1]
-    transition_arr[:, 1, 0] = tree_location * props[0]
-    transition_arr[:, 0, 0] = 1 - transition_arr[:, 0, 1]
-    transition_arr[:, 1, 1] = 1 - transition_arr[:, 1, 0]
-    transition_arr = log_with_inf_array3d(transition_arr)
-    return transition_arr
-
-
 @jit(nopython=True)
 def Forward_prob(
     init_start, transitions, probabilities, state_nums, number_observations, forwards_in
@@ -171,6 +159,31 @@ def Backward_prob(
     return (final, backwards)
 
 
+@jit(nopython=True)
+def makeprobability_of_transition_matrix(
+    state_nums,
+    number_observations,
+    forwards,
+    transitions,
+    probabilities,
+    backwards,
+    forward_prob,
+):
+
+    pot = np.zeros((len(state_nums), len(state_nums), number_observations - 1))
+    for state1 in state_nums:
+        for t in range(number_observations - 1):
+            pot[state1, :, t] = (
+                forwards[state1, t]
+                + transitions[t, state1, :]
+                + probabilities[:, t + 1]
+                + backwards[:, t + 1]
+                - forward_prob
+            )
+
+    return pot
+
+
 def Forward_backward(init_start, transition_arr, probabilities, gen_grid):
     """
     Posterior decoding, using the forward-backward algorithm.
@@ -227,129 +240,7 @@ def Forward_backward(init_start, transition_arr, probabilities, gen_grid):
                     )
                     - state_prob
                 )
-    trans = np.array([[np.nan, 1450 * 0.05], [1450 * 0.95, np.nan]])
     return results, trans, forward_prob
-
-
-@jit(nopython=True)
-def makeprobability_of_transition_matrix(
-    state_nums,
-    number_observations,
-    forwards,
-    transitions,
-    probabilities,
-    backwards,
-    forward_prob,
-):
-
-    pot = np.zeros((len(state_nums), len(state_nums), number_observations - 1))
-    for state1 in state_nums:
-        for t in range(number_observations - 1):
-            pot[state1, :, t] = (
-                forwards[state1, t]
-                + transitions[t, state1, :]
-                + probabilities[:, t + 1]
-                + backwards[:, t + 1]
-                - forward_prob
-            )
-
-    return pot
-
-
-def TrainBaumWelsch(init_start, transitions, probabilities):
-    """
-    Trains the model once, using the forward-backward algorithm.
-    """
-
-    number_observations = len(probabilities[0])
-    state_nums = np.arange(len(init_start))
-
-    # Make and initialise forwards matrix
-    forwards_in = np.zeros((len(init_start), number_observations))
-    forwards_in[:, 0] = init_start + probabilities[:, 0]
-    backwards_in = np.zeros((len(init_start), number_observations))
-
-    forward_prob, forwards = Forward_prob(
-        init_start,
-        transitions,
-        probabilities,
-        state_nums,
-        number_observations,
-        forwards_in,
-    )
-
-    reversedlist = List()
-    [reversedlist.append(x) for x in range(number_observations - 1, 0, -1)]
-    backward_prob, backwards = Backward_prob(
-        init_start, transitions, probabilities, state_nums, backwards_in, reversedlist
-    )
-
-    posat = forwards + backwards - forward_prob
-    pot = makeprobability_of_transition_matrix(
-        state_nums,
-        number_observations,
-        forwards,
-        transitions,
-        probabilities,
-        backwards,
-        forward_prob,
-    )
-
-    # Initial starting probabilities
-    normalize = np.exp(posat).sum()
-    start_prob = np.zeros(len(state_nums))
-
-    # Transition probs
-    trans = np.zeros((len(init_start), len(init_start)))
-
-    for state in state_nums:
-        state_prob = np.logaddexp.reduce(posat[state])
-        start_prob[state] = np.exp(state_prob) / normalize
-
-        for oth in state_nums:
-            trans[state, oth] = np.exp(
-                np.logaddexp.reduce(pot[state, oth]) - state_prob
-            )
-
-    for i, row in enumerate(trans):
-        old_sum = row.sum()
-
-        for j, col in enumerate(row):
-            if old_sum == 0:
-                trans[i][j] = 0
-            else:
-                trans[i][j] = col / old_sum
-
-    return (start_prob, trans, forward_prob)
-
-
-def TrainModel(model, probabilities, starting_probabilities):
-
-    # Parameters (path to observations file, output file, model, weights file)
-
-    # Load data
-    transitions = make_hmm_from_file(model)
-    print(np.exp(transitions))
-    # Train model
-    epsilon = 0.0001
-    starting_probabilities, transitions, old_prob = TrainBaumWelsch(
-        starting_probabilities, transitions, probabilities
-    )
-    print(transitions)
-    for i in range(1000):
-        transitions = log_with_inf_array(transitions)
-        starting_probabilities = np.log(starting_probabilities)
-        starting_probabilities, transitions, new_prob = TrainBaumWelsch(
-            starting_probabilities, transitions, probabilities
-        )
-        print(transitions)
-
-        if new_prob - old_prob < epsilon:
-            break
-
-        old_prob = new_prob
-
-    return (np.log(starting_probabilities), log_with_inf_array(transitions))
 
 
 def Decode_grid(
@@ -361,7 +252,7 @@ def Decode_grid(
     transition_arr,
     probabilities,
     tau,
-    window_size=1000,
+    window_size,
     per_tree_output=False,
 ):
 
@@ -390,18 +281,10 @@ def Decode_grid(
         window_size=window_size,
     )
 
-    # caution!!
-    # trans = np.array([[np.nan, 1450 * 0.05], [1450 * 0.95, np.nan]])
-    # post_seq = np.exp(probabilities) * tau
-    # log_likelihood = np.sum(np.log(np.sum(post_seq, axis=0)))
-    # post_seq /= np.sum(post_seq, axis=0)
-    # return post_seq, trans, log_likelihood
-
     # Posterior decode the file
     post_seq, trans, forward_prob = Forward_backward(
         starting_probabilities, transition_arr, probabilities, gen_grid
     )
-    print(trans)
     post_seq /= np.sum(post_seq, axis=0)
 
     ## transform post_seq back to per-tree
@@ -411,59 +294,6 @@ def Decode_grid(
         )
 
     return post_seq, trans, forward_prob
-
-
-def Decode_save_output(
-    tree_left_bp,
-    tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
-    target_branch_length,
-    t_admix_guess,
-    probabilities,
-    tau,
-    output,
-    window_size=1000,
-):
-
-    # infered proportions
-    starting_probabilities = np.log(tau)
-
-    # transitions = make_hmm_from_file(model)
-    if starting_probabilities[0] > starting_probabilities[0]:
-        a = [0.95, 0.05]
-    else:
-        a = [0.05, 0.95]
-
-    starting_probabilities = np.log(a)
-    ## transfor probabilities to per-kb + scaling
-    probabilities, gen_grid, bp_grid = trees_to_bp(
-        probabilities,
-        tree_left_bp,
-        tree_right_bp,
-        tree_left_bp_gen,
-        tree_right_bp_gen,
-        target_branch_length,
-        window_size=window_size,
-    )
-
-    ## change tree_left_bp_gen to a bp grid of 1kb interval
-    transition_arr = make_transition_matrix(
-        gen_grid,
-        t_admix_guess,
-        a,
-    )
-
-    # Posterior decode the file
-    post_seq, forward_prob = Forward_backward(
-        starting_probabilities, transition_arr, probabilities
-    )
-    post_seq /= np.sum(post_seq, axis=0)
-
-    ## combine post_seq with bp_grd and save as csv
-    pd.DataFrame(
-        data=np.vstack((bp_grid, post_seq)).T, columns=["start", "prob_0", "prob_1"]
-    ).to_csv(output + "_posterior.csv", index=False, sep="\t")
 
 
 if __name__ == "__main__":
@@ -493,33 +323,3 @@ if __name__ == "__main__":
                     + [tree_stats[2][tid] // 1000 - tree_stats[1][tid] // 1000]
                 )
             )
-    # post_seq, forward_prob = Decode(tree_left_bp_gen, 1450, gb_likelihood, tau)
-    # print(np.corrcoef(post_seq[0], gt))
-    # print(np.mean(post_seq[0]))
-
-    # post_seq, forward_prob = Decode_grid(
-    #     tree_left_bp,
-    #     tree_right_bp,
-    #     tree_left_bp_gen,
-    #     tree_right_bp_gen,
-    #     target_branch_length,
-    #     1450,
-    #     gb_likelihood,
-    #     tau,
-    # )
-    # mask = ~np.isnan(post_seq[0])
-    # print(np.corrcoef(post_seq[0][mask], gt[mask]))
-    # print(np.mean(post_seq[0][mask]))
-    # np.save("../output/deni_relate_ghost_hmm_all_posterior_membership_50.npy", post_seq)
-
-    Decode_save_output(
-        tree_left_bp,
-        tree_right_bp,
-        tree_left_bp_gen,
-        tree_right_bp_gen,
-        target_branch_length,
-        1450,
-        gb_likelihood,
-        tau,
-        output="../output/hmm_am",
-    )
