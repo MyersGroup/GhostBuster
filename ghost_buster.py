@@ -8,6 +8,7 @@ import copy
 from tqdm import tqdm
 import random
 from functools import partial
+from scipy.stats import hmean
 from joblib import Parallel, delayed
 
 from calc_tree_stats import load_tree_stats
@@ -27,7 +28,7 @@ from utils import (
 )
 import pdb
 import warnings
-from hmm_decode import Decode, Decode_grid
+from hmm_decode import Decode_grid
 
 warnings.filterwarnings("ignore")
 
@@ -158,7 +159,8 @@ def update_membership_eventwise(
                     sum(
                         gamma_arr[:, epoch_index_in_tree[i]]
                         * proportion_of_coalescing_in_tree[i]
-                    ),
+                    )
+                    / sum(proportion_of_coalescing_in_tree[i]),
                 )
             )
 
@@ -191,9 +193,45 @@ def combine_local_ancestry(arr, n):
     return out / n
 
 
+def get_transition_arr(
+    args,
+    trans_prop,
+    tau,
+    tree_left_bp,
+    tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
+):
+    gen_grid = []
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        for j in range(int(l / args.force_build), int(r / args.force_build)):
+            recomb_rate = (tree_right_bp_gen[i] - tree_left_bp_gen[i]) / (
+                tree_right_bp[i] - tree_left_bp[i]
+            )
+            gen_grid.append(
+                tree_left_bp_gen[i] + recomb_rate * (j * args.force_build - l)
+            )
+    gen_grid_diff = np.abs(np.diff(gen_grid, prepend=-1))
+    transition_arr = np.zeros((len(gen_grid_diff), 2, 2))
+    for i in range(len(gen_grid_diff)):
+        for state1 in range(len(tau)):
+            for state2 in range(len(tau)):
+                transition_arr[i, state1, state2] = np.minimum(
+                    trans_prop[state1, state2] * gen_grid_diff[i], tau[state2]
+                )
+
+    for state in range(trans_prop.shape[0]):
+        transition_arr[:, state, state] = 1 - np.nansum(
+            transition_arr[:, state], axis=1
+        )
+    transition_arr = np.log(transition_arr)
+    return transition_arr
+
+
 def e_m_step(
     args,
     own_membership,  ##now is n_clusters x n_sites
+    trans_prop,
     prev_gamma,
     proportion_of_coalescing_all,
     epoch_index_all,
@@ -258,22 +296,42 @@ def e_m_step(
                     args.force_build,
                 )
             for i in range(n_unique_groups):
-                d[j, i] += compute_gamma_denom_eventwise(
-                    own_membership_sample[j],
-                    denom[sample_no],
-                    epoch_index_all[sample_no],
-                    i,
-                    n_epochs,
-                    target_branch_length_masked[sample_no],
-                    args.ignore_first_epoch,
-                    args.ignore_last_epoch,
-                    tree_left_bp,
-                    tree_right_bp,
-                    args.force_build,
-                )
+                if epoch == 0:
+                    d[j, i] += compute_gamma_denom_eventwise(
+                        own_membership_sample[j],
+                        None,
+                        proportion_of_coalescing_all[sample_no],
+                        denom[sample_no],
+                        epoch_index_all[sample_no],
+                        i,
+                        n_epochs,
+                        target_branch_length_masked[sample_no],
+                        args.ignore_first_epoch,
+                        args.ignore_last_epoch,
+                        tree_left_bp,
+                        tree_right_bp,
+                        args.force_build,
+                    )
+                else:
+                    d[j, i] += compute_gamma_denom_eventwise(
+                        own_membership_sample[j],
+                        prev_gamma[j],
+                        proportion_of_coalescing_all[sample_no],
+                        denom[sample_no],
+                        epoch_index_all[sample_no],
+                        i,
+                        n_epochs,
+                        target_branch_length_masked[sample_no],
+                        args.ignore_first_epoch,
+                        args.ignore_last_epoch,
+                        tree_left_bp,
+                        tree_right_bp,
+                        args.force_build,
+                    )
 
-        tau += np.mean(own_membership_sample, axis=1) / n_samples
+        tau += np.sum(own_membership_sample, axis=1)
 
+    tau = tau / np.sum(tau)
     gamma_arr = n / d
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
@@ -285,6 +343,24 @@ def e_m_step(
     # else:
     #     tau = [0.95, 0.05]
     # tau = np.array(tau)
+
+    ### Comment this block if you wish to update the transition matrix automatically
+    if args.t_admix_guess is not None:
+        trans_prop = np.ones((args.num_clusters, args.num_clusters))
+        for i in range(args.num_clusters):
+            trans_prop[:, i] = args.t_admix_guess * tau[i]
+            trans_prop[i, i] = np.nan
+
+    # print(trans_prop)
+    transition_arr = get_transition_arr(
+        args,
+        trans_prop,
+        tau,
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+    )
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -320,40 +396,20 @@ def e_m_step(
     log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
 
     loglikelihood_per_comp = log_num_em + log_denom_em
-    own_membership_update = np.exp(
-        log_num_em
-        + log_denom_em
-        - np.repeat(
-            np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-            len(own_membership),
-            axis=1,
-        ).T
-    )
-    own_membership_update = np.nan_to_num(own_membership_update, nan=1)
-    for j in range(len(own_membership)):
-        own_membership_update[j] *= tau[j]
-
-    log_likelihood = np.sum(
-        np.log(np.sum(own_membership_update, axis=0))
-        + np.max(log_num_em + log_denom_em, axis=0)
-    )
-    own_membership = own_membership_update / (np.sum(own_membership_update, axis=0))
 
     ### HMM smoothing
-    own_membership_hmm, log_likelihood_hmm = Decode_grid(
+    own_membership_hmm, trans_prop, log_likelihood_hmm = Decode_grid(
         tree_left_bp,
         tree_right_bp,
         tree_left_bp_gen,
         tree_right_bp_gen,
-        np.ones(len(tree_left_bp_gen)),
-        1850,
+        transition_arr,
         loglikelihood_per_comp,
         tau,
         window_size=args.force_build,
     )
-    print((log_likelihood, log_likelihood_hmm))
     own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
-    return own_membership_hmm, gamma_arr, tau, log_likelihood_hmm
+    return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
     return own_membership, gamma_arr, tau, log_likelihood
 
 
@@ -477,13 +533,12 @@ def estimate_gt_ref(
             )
 
             ## pass through HMM
-            own_membership_trial, _ = Decode_grid(
+            own_membership_trial, trans_prop, _ = Decode_grid(
                 tree_left_bp,
                 tree_right_bp,
                 tree_left_bp_gen,
                 tree_right_bp_gen,
-                np.ones(len(tree_left_bp_gen)),
-                1850,
+                transition_arr,
                 loglikelihood_per_comp,
                 tau,
                 window_size=args.force_build,
@@ -530,19 +585,42 @@ def random_sweep_iter(
     tree_left_bp_gen,
     tree_right_bp_gen,
 ):
-    gamma_arr = np.power(
-        np.e,
-        np.random.uniform(-16.11, -5.3, (n_clusters, n_unique_groups, n_epochs - 1)),
-    )
-    tau = np.random.uniform(0.01, 0.99, n_clusters)
-    for c in range(n_clusters):
-        not_c = np.delete(np.arange(n_clusters), c)
-        gamma_arr[c, c] = np.power(
-            np.e, np.log(gamma_arr[c, c]) + np.log(np.max(gamma_arr[c, not_c], axis=0))
-        )
     if args.load_gamma is not None and args.load_props is not None and n_iters == 0:
         gamma_arr = np.load(args.load_gamma)
         tau = np.load(args.load_props)
+
+    else:
+        gamma_arr = np.power(
+            np.e,
+            np.random.uniform(
+                -16.11, -5.3, (n_clusters, n_unique_groups, n_epochs - 1)
+            ),
+        )
+        tau = np.random.uniform(0.01, 0.99, n_clusters)
+
+    if args.t_admix_guess is not None:
+        trans_prop = np.ones((args.num_clusters, args.num_clusters))
+        for i in range(args.num_clusters):
+            trans_prop[:, i] = args.t_admix_guess * tau[i]
+            trans_prop[i, i] = np.nan
+
+    else:
+        trans_prop = np.ones((len(tau), len(tau))) * np.nan
+        random_dates = np.random.uniform(200, 2000, n_clusters)
+        for state1 in range(n_clusters):
+            for state2 in range(n_clusters):
+                if state1 != state2:
+                    trans_prop[state1, state2] = random_dates[state1] * tau[state2]
+
+    transition_arr = get_transition_arr(
+        args,
+        trans_prop,
+        tau,
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+    )
 
     masked_trees_index = np.arange(0, n_trees)
     n_samples = len(args.sample_id)
@@ -620,28 +698,12 @@ def random_sweep_iter(
             count_masked_trees += 1
 
     loglikelihood_per_comp = log_num_em + log_denom_em
-    own_membership_trial = np.exp(
-        log_num_em
-        + log_denom_em
-        - np.repeat(
-            np.max(log_num_em + log_denom_em, axis=0).reshape(-1, 1),
-            n_clusters,
-            axis=1,
-        ).T
-    )
-    own_membership_trial = np.nan_to_num(own_membership_trial, nan=1)
-    for j in range(n_clusters):
-        own_membership_trial[j] *= tau[j]
-
-    own_membership_trial = own_membership_trial / (np.sum(own_membership_trial, axis=0))
-
-    own_membership_trial, _ = Decode_grid(
+    own_membership_trial, trans_prop, log_likelihood = Decode_grid(
         tree_left_bp,
         tree_right_bp,
         tree_left_bp_gen,
         tree_right_bp_gen,
-        np.ones(len(tree_left_bp_gen)),
-        1850,
+        transition_arr,
         loglikelihood_per_comp,
         tau,
         window_size=args.force_build,
@@ -649,9 +711,10 @@ def random_sweep_iter(
     own_membership_trial = np.repeat(own_membership_trial, args.num_subtrees, axis=1)
 
     for epoch in range(args.sweep_num_iters):
-        own_membership_trial, gamma_arr, tau, log_likelihood = e_m_step(
+        own_membership_trial, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
             args,
             own_membership_trial,
+            trans_prop,
             gamma_arr,
             proportion_of_coalescing_all,
             epoch_index_all,
@@ -670,6 +733,7 @@ def random_sweep_iter(
     return (
         log_likelihood,
         own_membership_trial,
+        trans_prop,
         num,
         denom,
         proportion_of_coalescing_all,
@@ -765,6 +829,7 @@ def random_sweep(
         (
             log_likelihood,
             own_membership_trial,
+            trans_prop_trial,
             num,
             denom,
             proportion_of_coalescing_all,
@@ -774,6 +839,7 @@ def random_sweep(
         if log_likelihood > best_loglikelihood or i == 0:
             best_loglikelihood = log_likelihood
             own_membership = own_membership_trial
+            trans_prop = trans_prop_trial
             (
                 best_num,
                 best_denom,
@@ -782,6 +848,7 @@ def random_sweep(
             ) = (num, denom, proportion_of_coalescing_all, epoch_index_all)
     return (
         own_membership,
+        trans_prop,
         best_num,
         best_denom,
         best_proportion_of_coalescing_all,
@@ -983,7 +1050,7 @@ def main(args):
         np.array(tree_right_bp_gen)[mask_dodgy].tolist() * len(args.sample_id)
     )
 
-    target_branch_length_masked = [[] for _ in range(50)]
+    target_branch_length_masked = [[] for _ in range(len(args.sample_id))]
     for sample in range(len(target_branch_length)):
         for tid in range(len(target_branch_length[sample])):
             if mask_dodgy[tid]:
@@ -1175,9 +1242,23 @@ def main(args):
             denom.append(denom1)
             proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
             epoch_index_all.append(epoch_index_all1)
+        ### initial guess for trans_prop (this is = t_admix * prop_admix)
+        tau_calc = np.mean(own_membership, axis=1)
+        date_guess = (
+            np.random.uniform(200, 2000)
+            if args.t_admix_guess is None
+            else args.t_admix_guess
+        )
+        print("Admixture time guess = ", date_guess)
+        trans_prop = np.ones((args.num_clusters, args.num_clusters))
+        for i in range(args.num_clusters):
+            trans_prop[:, i] = date_guess * tau_calc[i]
+            trans_prop[i, i] = np.nan
+
     else:
         (
             own_membership,
+            trans_prop,
             num,
             denom,
             proportion_of_coalescing_all,
@@ -1229,9 +1310,10 @@ def main(args):
         f_tau = open(filename_tau, "w")
 
         for epoch in range(args.num_iters):
-            own_membership, gamma_arr, tau, log_likelihood = e_m_step(
+            own_membership, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
                 args,
                 own_membership,
+                trans_prop,
                 gamma_arr,
                 proportion_of_coalescing_all,
                 epoch_index_all,
@@ -1368,7 +1450,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
     )
-
+    parser.add_argument(
+        "--t_admix_guess",
+        help="Guess for the time of admixture",
+        type=float,
+        default=None,
+    )
     parser.add_argument(
         "-trees",
         "--trees",
