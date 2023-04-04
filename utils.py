@@ -100,6 +100,10 @@ def calculate_accuracy(own_membership, ground_truth_membership):
             )
             acc_arr[i][j] = acc
     print("Confusion matrix = " + str(acc_arr))
+    print(
+        "R2 = "
+        + str(np.abs(np.corrcoef(own_membership[i], ground_truth_membership[i])[0, 1]))
+    )
 
 
 def write_calibration(args, own_membership, ground_truth_membership):
@@ -463,8 +467,13 @@ def compute_gamma_num(
                         or (not ignore_first_epoch and not ignore_last_epoch)
                     ):
                         epoch = epoch_index_in_tree[i]
-                        num = proportion_of_coalescing_in_tree[i]
-                        num = num / sum(num)
+                        prev_gamma_e = 1
+                        num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
+                        sum_of_num = sum(num)
+                        num = num / sum_of_num  # prev_gamma_e / sum_of_num
+                        num = np.power(num, 1 / target_branch_length[tid][count_i])
+                        # num = proportion_of_coalescing_in_tree[i] * num
+
                         num_full_tree[:, epoch] += (
                             own_membership[count_site]
                             * num
@@ -505,10 +514,9 @@ def compute_gamma_num(
                         prev_gamma_e = prev_gamma[:, epoch]
                         num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
                         sum_of_num = sum(num)
-                        if (
-                            sum_of_num != 0
-                        ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
-                            num = num / sum_of_num
+                        num = num / sum_of_num  # prev_gamma_e / sum_of_num
+                        num = np.power(num, 1 / target_branch_length[tid][count_i])
+                        # num = proportion_of_coalescing_in_tree[i] * num
                         num_full_tree[:, epoch] += (
                             own_membership[count_site]
                             * num
@@ -529,6 +537,8 @@ def compute_gamma_denom(own_membership, denom, n_epochs):
 
 def compute_gamma_denom_eventwise(
     own_membership,
+    prev_gamma,
+    proportion_of_coalescing_all,
     denom,
     epoch_index_all,
     j,
@@ -545,6 +555,7 @@ def compute_gamma_denom_eventwise(
     count_site = 0
     for tree in range(len(denom)):
         epoch_index_in_tree = epoch_index_all[tree]
+        proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tree]
         denom_in_tree = denom[tree]
         for _ in range(
             int(tree_left_bp[tree] / window_size),
@@ -572,10 +583,22 @@ def compute_gamma_denom_eventwise(
                     or (not ignore_first_epoch and not ignore_last_epoch)
                 ):
 
+                    if not (isinstance(prev_gamma, np.ndarray)):
+                        prev_gamma_e = 1
+                    else:
+                        prev_gamma_e = prev_gamma[:, epoch_index_in_tree[i]]
+
+                    num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
+                    sum_of_num = sum(num)
+                    num = num / sum_of_num  # prev_gamma_e / sum_of_num
+                    num = np.power(num, 1 / target_branch_length[tree][count_i])
+                    # num = proportion_of_coalescing_in_tree[i] * num
+                    num = sum(num)
                     for epoch in range(n_epochs - 1):
                         denom_1[epoch] += (
                             denom_coal[j][epoch]
                             * own_membership[count_site]
+                            * num
                             / target_branch_length[tree][count_i]
                         )
                     count_i += 1
