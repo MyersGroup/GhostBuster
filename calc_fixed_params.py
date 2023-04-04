@@ -237,7 +237,7 @@ def fixed_parameters(
                                     elif a == target_seq:
                                         proportion_of_coalescing = copy.deepcopy(
                                             lineage_content[b]
-                                        ) / (sum(lineage_content[b]))
+                                        )  # / (sum(lineage_content[b]))
                                         coal_count[
                                             :, epoch, count_mut_trees
                                         ] += proportion_of_coalescing
@@ -261,9 +261,8 @@ def fixed_parameters(
                                     elif b == target_seq:
                                         proportion_of_coalescing = copy.deepcopy(
                                             lineage_content[a]
-                                        ) / (
-                                            sum(lineage_content[a])
-                                        )  ## sum() faster than np.sum()
+                                        )  # / (sum(lineage_content[a]))
+                                        ## sum() faster than np.sum()
                                         coal_count[
                                             :, epoch, count_mut_trees
                                         ] += proportion_of_coalescing
