@@ -119,8 +119,10 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                             )
                         ):
                             number_window_list.append(
-                                edge.right // force_build - edge.left // force_build
+                                1.5
+                                * (edge.right // force_build - edge.left // force_build)
                             )
+                            # number_window_list.append(1)
                     # if count == 1:
                     #     pdb.set_trace()
                     # count += 1

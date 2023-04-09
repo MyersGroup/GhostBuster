@@ -467,13 +467,9 @@ def compute_gamma_num(
                         or (not ignore_first_epoch and not ignore_last_epoch)
                     ):
                         epoch = epoch_index_in_tree[i]
-                        prev_gamma_e = 1
-                        num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
+                        num = proportion_of_coalescing_in_tree[i]
                         sum_of_num = sum(num)
-                        num = num / sum_of_num  # prev_gamma_e / sum_of_num
-                        num = np.power(num, 1 / target_branch_length[tid][count_i])
-                        # num = proportion_of_coalescing_in_tree[i] * num
-
+                        num = num / sum_of_num
                         num_full_tree[:, epoch] += (
                             own_membership[count_site]
                             * num
@@ -514,9 +510,10 @@ def compute_gamma_num(
                         prev_gamma_e = prev_gamma[:, epoch]
                         num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
                         sum_of_num = sum(num)
-                        num = num / sum_of_num  # prev_gamma_e / sum_of_num
-                        num = np.power(num, 1 / target_branch_length[tid][count_i])
-                        # num = proportion_of_coalescing_in_tree[i] * num
+                        if (
+                            sum_of_num != 0
+                        ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
+                            num = num / sum_of_num
                         num_full_tree[:, epoch] += (
                             own_membership[count_site]
                             * num
@@ -582,23 +579,10 @@ def compute_gamma_denom_eventwise(
                     )
                     or (not ignore_first_epoch and not ignore_last_epoch)
                 ):
-
-                    if not (isinstance(prev_gamma, np.ndarray)):
-                        prev_gamma_e = 1
-                    else:
-                        prev_gamma_e = prev_gamma[:, epoch_index_in_tree[i]]
-
-                    num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
-                    sum_of_num = sum(num)
-                    num = num / sum_of_num  # prev_gamma_e / sum_of_num
-                    num = np.power(num, 1 / target_branch_length[tree][count_i])
-                    # num = proportion_of_coalescing_in_tree[i] * num
-                    num = sum(num)
                     for epoch in range(n_epochs - 1):
                         denom_1[epoch] += (
                             denom_coal[j][epoch]
                             * own_membership[count_site]
-                            * num
                             / target_branch_length[tree][count_i]
                         )
                     count_i += 1

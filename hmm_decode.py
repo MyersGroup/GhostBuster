@@ -260,13 +260,12 @@ def Decode_grid(
     # infered proportions
     starting_probabilities = np.log(tau)
 
-    # transitions = make_hmm_from_file(model)
-    if starting_probabilities[0] > starting_probabilities[1]:
-        a = [0.95, 0.05]
-    else:
-        a = [0.05, 0.95]
+    # if starting_probabilities[0] > starting_probabilities[1]:
+    #     a = [0.95, 0.05]
+    # else:
+    #     a = [0.05, 0.95]
+    # starting_probabilities = np.log(a)
 
-    starting_probabilities = np.log(a)
     ## transfor probabilities to per-kb + scaling
     probabilities, gen_grid, bp_grid = trees_to_bp(
         probabilities,
