@@ -239,6 +239,8 @@ def Forward_backward(init_start, transition_arr, probabilities, gen_grid):
                     )
                     - state_prob
                 )
+    print(trans[0, 1] + trans[1, 0])
+    trans = trans[0, 1] + trans[1, 0]  ### approximate updates, set temporarily
     return results, trans, forward_prob
 
 

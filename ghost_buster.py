@@ -214,18 +214,19 @@ def get_transition_arr(
                 tree_left_bp_gen[i] + recomb_rate * (j * args.force_build - l)
             )
     gen_grid_diff = np.abs(np.diff(gen_grid, prepend=-1))
-    transition_arr = np.zeros((len(gen_grid_diff), 2, 2))
+    transition_arr = np.zeros((len(gen_grid_diff), len(tau), len(tau)))
     for i in range(len(gen_grid_diff)):
+        scaling = 1 - math.exp(-gen_grid_diff[i] * trans_prop)
         for state1 in range(len(tau)):
             for state2 in range(len(tau)):
-                transition_arr[i, state1, state2] = np.minimum(
-                    trans_prop[state1, state2] * gen_grid_diff[i], tau[state2]
-                )
+                if state1 != state2:
+                    transition_arr[i, state1, state2] = (
+                        tau[state2] * scaling / np.sum(tau)
+                    )
 
-    for state in range(trans_prop.shape[0]):
-        transition_arr[:, state, state] = 1 - np.nansum(
-            transition_arr[:, state], axis=1
-        )
+    for state in range(len(tau)):
+        transition_arr[:, state, state] = 1 - np.sum(transition_arr[:, state], axis=1)
+
     transition_arr = np.log(transition_arr)
     return transition_arr
 
@@ -351,10 +352,7 @@ def e_m_step(
 
     ### Comment this block if you wish to update the transition matrix automatically
     if args.t_admix_guess is not None:
-        trans_prop = np.ones((args.num_clusters, args.num_clusters))
-        for i in range(args.num_clusters):
-            trans_prop[:, i] = args.t_admix_guess * tau[i]
-            trans_prop[i, i] = np.nan
+        trans_prop = args.t_admix_guess
 
     # print(trans_prop)
     transition_arr = get_transition_arr(
@@ -606,18 +604,10 @@ def random_sweep_iter(
         tau = np.random.uniform(0.01, 0.99, n_clusters)
 
     if args.t_admix_guess is not None:
-        trans_prop = np.ones((args.num_clusters, args.num_clusters))
-        for i in range(args.num_clusters):
-            trans_prop[:, i] = args.t_admix_guess * tau[i]
-            trans_prop[i, i] = np.nan
+        trans_prop = args.t_admix_guess
 
     else:
-        trans_prop = np.ones((len(tau), len(tau))) * np.nan
-        random_dates = np.random.uniform(200, 2000, n_clusters)
-        for state1 in range(n_clusters):
-            for state2 in range(n_clusters):
-                if state1 != state2:
-                    trans_prop[state1, state2] = random_dates[state1] * tau[state2]
+        trans_prop = np.random.uniform(200, 2000, n_clusters)
 
     transition_arr = get_transition_arr(
         args,
