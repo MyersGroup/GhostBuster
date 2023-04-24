@@ -365,28 +365,27 @@ def filter_opportunity(
     return mask_dodgy_low_evidence
 
 
-def load_mask_csv(args, sample_id_list, ts_list, mask_dodgy, chrs):
-    membership_mask = pd.read_csv(args.load_mask, sep="\s+")
+def load_mask_csv(args, membership_mask, sample_id_list, ts_list, mask_dodgy, chrs):
     count = 0
-    for sample_no in range(len(sample_id_list)):
-        for chr_count, chr in enumerate(chrs):
-            tree = ts_list[chr_count].first()
-            membership_mask_chr = membership_mask[membership_mask.chr == chr]
-            for tid in range(ts_list[chr_count].num_trees):
+    for chr_count, chr in enumerate(chrs):
+        tree = ts_list[chr_count].first()
+        membership_mask_chr = membership_mask[membership_mask.chr == chr]
+        membership_mask_chr["pos"] = membership_mask_chr["pos"] // args.force_build
+        for tid in range(ts_list[chr_count].num_trees):
+            if (
+                tree.interval[1] // args.force_build
+                - tree.interval[0] // args.force_build
+                > 0
+            ):
                 if (
-                    tree.interval[1] // args.force_build
-                    - tree.interval[0] // args.force_build
-                    > 0
+                    tree.interval[0] // args.force_build
+                    in membership_mask_chr["pos"].values.tolist()
                 ):
-                    if (
-                        tree.interval[0] // args.force_build
-                        in membership_mask_chr["pos"].values.tolist()
-                    ):
-                        mask_dodgy[count] = True
-                    else:
-                        mask_dodgy[count] = False
-                    count += 1
-                tree.next()
+                    mask_dodgy[count] = True
+                else:
+                    mask_dodgy[count] = False
+                count += 1
+            tree.next()
 
     print("Number of trees = " + str(np.sum(mask_dodgy)))
     return mask_dodgy

@@ -107,7 +107,7 @@ def Forward_prob(
             toadd = np.zeros(len(state_nums))
             for state2 in state_nums:
                 toadd[state2] = (
-                    transitions[t, state2, state]
+                    transitions[t - 1, state2, state]
                     + probabilities[state, t]
                     + forwards_in[state2, t - 1]
                 )
@@ -142,7 +142,7 @@ def Backward_prob(
             toadd = np.zeros(len(state_nums))
             for state2 in state_nums:
                 toadd[state2] = (
-                    transitions[t, state, state2]
+                    transitions[t - 1, state, state2]
                     + probabilities[state2, t]
                     + backwards[state2, t]
                 )
@@ -183,7 +183,26 @@ def makeprobability_of_transition_matrix(
     return pot
 
 
-def Forward_backward(init_start, transition_arr, probabilities, gen_grid):
+def get_transition_arr(t_admix, tau, gen_grid):
+    gen_grid_diff = np.abs(np.diff(gen_grid))
+    transition_arr = np.zeros((len(gen_grid_diff), len(tau), len(tau)))
+    for i in range(len(gen_grid_diff)):
+        scaling = 1 - np.exp(-gen_grid_diff[i] * t_admix)
+        for state1 in range(len(tau)):
+            for state2 in range(len(tau)):
+                if state1 != state2:
+                    transition_arr[i, state1, state2] = (
+                        tau[state2] * scaling / np.sum(tau)
+                    )
+
+    for state in range(len(tau)):
+        transition_arr[:, state, state] = 1 - np.sum(transition_arr[:, state], axis=1)
+
+    transition_arr = np.log(transition_arr)
+    return transition_arr
+
+
+def Forward_backward(init_start, t_admix, probabilities, gen_grid):
     """
     Posterior decoding, using the forward-backward algorithm.
     """
@@ -193,6 +212,8 @@ def Forward_backward(init_start, transition_arr, probabilities, gen_grid):
     forwards_in = np.zeros((len(init_start), number_observations))
     forwards_in[:, 0] = init_start + probabilities[:, 0]
     backwards_in = np.zeros((len(init_start), number_observations))
+
+    transition_arr = get_transition_arr(t_admix, np.exp(init_start), gen_grid)
 
     forward_prob, forwards = Forward_prob(
         init_start,
@@ -225,23 +246,41 @@ def Forward_backward(init_start, transition_arr, probabilities, gen_grid):
         backwards,
         forward_prob,
     )
-    gen_grid_diff = np.abs(np.diff(gen_grid, prepend=-1))
-    trans = np.nan * np.ones((len(init_start), len(init_start)))
+    pot = np.exp(pot)
+    gen_grid_diff = np.abs(np.diff(gen_grid))
+    prob_of_recomb_prior = np.exp(-t_admix * gen_grid_diff)
+    prob_of_atleast_one_recomb_and_state = np.zeros(
+        (len(state_nums), number_observations - 1)
+    )
     for state in state_nums:
-        state_prob = np.logaddexp.reduce(posat[state])
         for oth in state_nums:
             if state != oth:
-                trans[state, oth] = np.exp(
-                    np.logaddexp.reduce(
-                        np.nan_to_num(
-                            pot[state, oth] - np.log(gen_grid_diff[:-1]), nan=-np.inf
-                        )
-                    )
-                    - state_prob
-                )
-    print(trans[0, 1] + trans[1, 0])
-    trans = trans[0, 1] + trans[1, 0]  ### approximate updates, set temporarily
-    return results, trans, forward_prob
+                prob_of_atleast_one_recomb_and_state[oth] += pot[state, oth]
+            else:
+                scaling = np.exp(init_start[state]) * (1 - prob_of_recomb_prior)
+                scaling = scaling / (scaling + prob_of_recomb_prior)
+                prob_of_atleast_one_recomb_and_state[oth] += pot[state, oth] * scaling
+
+    prob_of_atleast_one_recomb = np.sum(prob_of_atleast_one_recomb_and_state, axis=0)
+
+    numerator = np.sum(
+        np.nan_to_num(
+            t_admix
+            * gen_grid_diff
+            * prob_of_atleast_one_recomb
+            / (1 - prob_of_recomb_prior),
+            nan=0,
+        )
+    )
+
+    denominator = np.sum(gen_grid_diff)
+    t_admix_update = numerator / denominator
+
+    pi_update = np.sum(prob_of_atleast_one_recomb_and_state, axis=1)
+    pi_update /= np.sum(pi_update)
+
+    print("t_admix = ", t_admix_update)
+    return results, t_admix_update, pi_update, forward_prob
 
 
 def Decode_grid(
@@ -249,7 +288,7 @@ def Decode_grid(
     tree_right_bp,
     tree_left_bp_gen,
     tree_right_bp_gen,
-    transition_arr,
+    t_admix,
     probabilities,
     tau,
     window_size,
@@ -262,12 +301,6 @@ def Decode_grid(
     # infered proportions
     starting_probabilities = np.log(tau)
 
-    # if starting_probabilities[0] > starting_probabilities[1]:
-    #     a = [0.95, 0.05]
-    # else:
-    #     a = [0.05, 0.95]
-    # starting_probabilities = np.log(a)
-
     ## transfor probabilities to per-kb + scaling
     probabilities, gen_grid, bp_grid = trees_to_bp(
         probabilities,
@@ -279,8 +312,8 @@ def Decode_grid(
     )
 
     # Posterior decode the file
-    post_seq, trans, forward_prob = Forward_backward(
-        starting_probabilities, transition_arr, probabilities, gen_grid
+    post_seq, t_admix_update, pi_update, forward_prob = Forward_backward(
+        starting_probabilities, t_admix, probabilities, gen_grid
     )
     post_seq /= np.sum(post_seq, axis=0)
 
@@ -290,7 +323,7 @@ def Decode_grid(
             post_seq, tree_left_bp, tree_right_bp, window_size=window_size
         )
 
-    return post_seq, trans, forward_prob
+    return post_seq, t_admix_update, pi_update, forward_prob
 
 
 if __name__ == "__main__":

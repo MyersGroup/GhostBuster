@@ -74,6 +74,8 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
     #     (poplabels.GROUP == poplabels.GROUP.iloc[sample_list[0]]) & poplabels.INCLUDE
     #     == 1
     # ].index:
+    count_bad = 0
+    count_all = 0
     for sample in sample_list:
         target_branch_length_sample = []
         for chr_no, chr in enumerate(chrs):
@@ -118,11 +120,19 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                                 > 0
                             )
                         ):
-                            number_window_list.append(
-                                1.5
-                                * (edge.right // force_build - edge.left // force_build)
-                            )
-                            # number_window_list.append(1)
+                            # number_window_list.append(
+                            #     1.5
+                            #     * (edge.right // force_build - edge.left // force_build)
+                            # )
+                            if args.hmm:
+                                number_window_list.append(
+                                    float(edge.metadata.decode().split(" ")[1])
+                                    // force_build
+                                    - float(edge.metadata.decode().split(" ")[0])
+                                    // force_build
+                                )
+                            else:
+                                number_window_list.append(1)
                     # if count == 1:
                     #     pdb.set_trace()
                     # count += 1
@@ -131,6 +141,7 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                 tree.next()
         target_branch_length.append(target_branch_length_sample)
 
+    # print(count_bad / count_all)
     return target_branch_length  ## num_samples x num_trees x num_branches
 
 
@@ -367,7 +378,17 @@ def compute_mutden(ts_list, chrs, samples, mutden, force_build=1):
 
 def load_tree_stats(args, ts_list, poplabels):
     chrs = list(map(int, args.chrs.split(",")))
-    tree_stats_file_name = args.output + "_tree_stats_" + str(args.chrs) + ".pkl"
+    sample_id_label = "_".join([str(e) for e in args.sample_id])
+    tree_stats_file_name = (
+        args.output
+        + "_tree_stats_"
+        + str(args.chrs)
+        + "_samples_"
+        + sample_id_label
+        + "_hmm_"
+        + str(args.hmm)
+        + ".pkl"
+    )
     try:
         f_pkl = open(tree_stats_file_name, "rb")
         (
