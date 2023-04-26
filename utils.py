@@ -533,11 +533,9 @@ def compute_gamma_denom(own_membership, denom, n_epochs):
 
 def compute_gamma_denom_eventwise(
     own_membership,
-    prev_gamma,
-    proportion_of_coalescing_all,
     denom,
     epoch_index_all,
-    j,
+    num_ref_groups,
     n_epochs,
     target_branch_length,
     ignore_first_epoch,
@@ -547,11 +545,10 @@ def compute_gamma_denom_eventwise(
     window_size,
 ):
     eps = 1e-200
-    denom_1 = np.zeros(n_epochs - 1, dtype="float64")
+    denom_1 = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
     count_site = 0
     for tree in range(len(denom)):
         epoch_index_in_tree = epoch_index_all[tree]
-        proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tree]
         denom_in_tree = denom[tree]
         for _ in range(
             int(tree_left_bp[tree] / window_size),
@@ -559,31 +556,27 @@ def compute_gamma_denom_eventwise(
         ):
             count_i = 0
             for i, denom_coal in enumerate(denom_in_tree):
+                epoch = epoch_index_in_tree[i]
                 if (
-                    (
-                        ignore_first_epoch
-                        and not ignore_last_epoch
-                        and epoch_index_in_tree[i] >= 1
-                    )
+                    (ignore_first_epoch and not ignore_last_epoch and epoch >= 1)
                     or (
                         ignore_last_epoch
                         and not ignore_first_epoch
-                        and epoch_index_in_tree[i] < n_epochs - 2
+                        and epoch < n_epochs - 2
                     )
                     or (
                         ignore_first_epoch
                         and ignore_last_epoch
-                        and epoch_index_in_tree[i] >= 1
-                        and epoch_index_in_tree[i] < n_epochs - 2
+                        and epoch >= 1
+                        and epoch < n_epochs - 2
                     )
                     or (not ignore_first_epoch and not ignore_last_epoch)
                 ):
-                    for epoch in range(n_epochs - 1):
-                        denom_1[epoch] += (
-                            np.maximum(denom_coal[j][epoch], 0)
-                            * own_membership[count_site]
-                            / target_branch_length[tree][count_i]
-                        )
+                    denom_1 += (
+                        denom_coal
+                        * own_membership[count_site]
+                        / target_branch_length[tree][count_i]
+                    )
                     count_i += 1
             count_site += 1
 

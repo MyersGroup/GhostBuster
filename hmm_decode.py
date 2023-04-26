@@ -12,14 +12,6 @@ import pandas as pd
 from scipy.stats import hmean, gmean
 
 
-@jit
-def log_with_inf(x):
-    if x == 0:
-        return -np.inf
-    else:
-        return np.log(x)
-
-
 @jit(nopython=True)
 def add_in_log_space(y):
 
@@ -31,26 +23,6 @@ def add_in_log_space(y):
         result = x_star + np.log(np.exp(y - x_star).sum())
 
     return result
-
-
-def log_with_inf_array(matrix):
-
-    res = np.zeros((len(matrix), len(matrix[0])))
-    for rows in range(len(matrix)):
-        for col in range(len(matrix[0])):
-            res[rows, col] = log_with_inf(matrix[rows, col])
-
-    return res
-
-
-def log_with_inf_array3d(matrix):
-
-    res = np.zeros((len(matrix), len(matrix[0]), len(matrix[0][0])))
-    for rows in range(len(matrix)):
-        for col in range(len(matrix[0])):
-            for col2 in range(len(matrix[0][0])):
-                res[rows, col, col2] = log_with_inf(matrix[rows, col, col2])
-    return res
 
 
 def trees_to_bp(
@@ -324,32 +296,3 @@ def Decode_grid(
         )
 
     return post_seq, t_admix_update, pi_update, forward_prob
-
-
-if __name__ == "__main__":
-    prefix = "../output/deni_relate_ghost_hmm_all"
-    post = np.load(prefix + "_overall_membership_50.npy")
-    tau = np.load(prefix + "_props_50.npy")
-    gb_likelihood = (post.T / tau.T).T
-    gb_likelihood = log_with_inf_array(gb_likelihood)
-    gt = np.load(prefix + "_ground_truth_membership_50.npy")[0]
-    print(np.corrcoef(post[0], gt))
-    print(np.mean(post[0]))
-
-    mask = np.load(prefix + "_mask_50.npy")
-    f_pkl = open(prefix + "_tree_stats_1.pkl", "rb")
-    tree_stats = pickle.load(f_pkl)
-    f_pkl.close()
-    tree_left_bp = np.array(tree_stats[1])[mask]
-    tree_right_bp = np.array(tree_stats[2])[mask]
-    tree_left_bp_gen = np.array(tree_stats[3])[mask]
-    tree_right_bp_gen = np.array(tree_stats[4])[mask]
-    target_branch_length = []
-    for tid in range(len(tree_stats[19][0])):
-        if mask[tid]:
-            target_branch_length.append(
-                np.mean(
-                    tree_stats[19][0][tid]
-                    + [tree_stats[2][tid] // 1000 - tree_stats[1][tid] // 1000]
-                )
-            )

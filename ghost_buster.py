@@ -263,40 +263,19 @@ def e_m_step(
                     tree_right_bp,
                     args.force_build,
                 )
-            for i in range(n_unique_groups):
-                if epoch == 0:
-                    d[j, i] += compute_gamma_denom_eventwise(
-                        own_membership_sample[j],
-                        None,
-                        proportion_of_coalescing_all[sample_no],
-                        denom[sample_no],
-                        epoch_index_all[sample_no],
-                        i,
-                        n_epochs,
-                        target_branch_length_masked[sample_no],
-                        args.ignore_first_epoch,
-                        args.ignore_last_epoch,
-                        tree_left_bp,
-                        tree_right_bp,
-                        args.force_build,
-                    )
-                else:
-                    d[j, i] += compute_gamma_denom_eventwise(
-                        own_membership_sample[j],
-                        prev_gamma[j],
-                        proportion_of_coalescing_all[sample_no],
-                        denom[sample_no],
-                        epoch_index_all[sample_no],
-                        i,
-                        n_epochs,
-                        target_branch_length_masked[sample_no],
-                        args.ignore_first_epoch,
-                        args.ignore_last_epoch,
-                        tree_left_bp,
-                        tree_right_bp,
-                        args.force_build,
-                    )
-
+            d[j] += compute_gamma_denom_eventwise(
+                own_membership_sample[j],
+                denom[sample_no],
+                epoch_index_all[sample_no],
+                n_unique_groups,
+                n_epochs,
+                target_branch_length_masked[sample_no],
+                args.ignore_first_epoch,
+                args.ignore_last_epoch,
+                tree_left_bp,
+                tree_right_bp,
+                args.force_build,
+            )
     gamma_arr = n / d
     ### manually fixing gamma in last epoch
     gamma_arr[:, :, -1] = np.mean(gamma_arr[:, :, -1])
@@ -320,7 +299,7 @@ def e_m_step(
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
 
-    for _ in range(10):
+    for _ in range(1):
 
         log_num_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
         log_denom_em = np.zeros(
