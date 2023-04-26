@@ -298,6 +298,8 @@ def e_m_step(
                     )
 
     gamma_arr = n / d
+    ### manually fixing gamma in last epoch
+    gamma_arr[:, :, -1] = np.mean(gamma_arr[:, :, -1])
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
@@ -318,50 +320,54 @@ def e_m_step(
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
 
-    log_num_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
-    log_denom_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
-    count_masked_trees = 0
+    for _ in range(10):
 
-    for sample_no in range(n_samples):
-        for tid in masked_trees_index:
-            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[sample_no][
-                tid
-            ]
-            epoch_index_in_tree = epoch_index_all[sample_no][tid]
-            denom_in_tree = denom[sample_no][tid]
-            for j in range(args.num_clusters):
-                log_num_em_j, log_denom_em_j = update_membership_eventwise(
-                    proportion_of_coalescing_in_tree,
-                    epoch_index_in_tree,
-                    denom_in_tree,
-                    gamma_arr[j],
-                    tid,
-                    args.ignore_first_epoch,
-                    args.ignore_last_epoch,
-                    n_epochs,
-                    target_branch_length_masked[sample_no][tid],
-                )
-                log_num_em[j, count_masked_trees] = log_num_em_j
-                log_denom_em[j, count_masked_trees] = log_denom_em_j
-            count_masked_trees += 1
+        log_num_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
+        log_denom_em = np.zeros(
+            (args.num_clusters, n_trees * n_samples), dtype="float64"
+        )
+        count_masked_trees = 0
 
-    log_num_em = 1 * combine_local_ancestry(log_num_em, args.num_subtrees)
-    log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
+        for sample_no in range(n_samples):
+            for tid in masked_trees_index:
+                proportion_of_coalescing_in_tree = proportion_of_coalescing_all[
+                    sample_no
+                ][tid]
+                epoch_index_in_tree = epoch_index_all[sample_no][tid]
+                denom_in_tree = denom[sample_no][tid]
+                for j in range(args.num_clusters):
+                    log_num_em_j, log_denom_em_j = update_membership_eventwise(
+                        proportion_of_coalescing_in_tree,
+                        epoch_index_in_tree,
+                        denom_in_tree,
+                        gamma_arr[j],
+                        tid,
+                        args.ignore_first_epoch,
+                        args.ignore_last_epoch,
+                        n_epochs,
+                        target_branch_length_masked[sample_no][tid],
+                    )
+                    log_num_em[j, count_masked_trees] = log_num_em_j
+                    log_denom_em[j, count_masked_trees] = log_denom_em_j
+                count_masked_trees += 1
 
-    loglikelihood_per_comp = log_num_em + log_denom_em
+        log_num_em = 1 * combine_local_ancestry(log_num_em, args.num_subtrees)
+        log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
 
-    ### HMM smoothing
-    own_membership_hmm, trans_prop, tau, log_likelihood_hmm = Decode_grid(
-        tree_left_bp,
-        tree_right_bp,
-        tree_left_bp_gen,
-        tree_right_bp_gen,
-        trans_prop,
-        loglikelihood_per_comp,
-        tau,
-        window_size=args.force_build,
-    )
-    own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
+        loglikelihood_per_comp = log_num_em + log_denom_em
+
+        ### HMM smoothing
+        own_membership_hmm, trans_prop, tau, log_likelihood_hmm = Decode_grid(
+            tree_left_bp,
+            tree_right_bp,
+            tree_left_bp_gen,
+            tree_right_bp_gen,
+            trans_prop,
+            loglikelihood_per_comp,
+            tau,
+            window_size=args.force_build,
+        )
+        own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
 
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
     return own_membership, gamma_arr, tau, log_likelihood
