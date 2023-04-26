@@ -40,7 +40,7 @@ def make_one_hot(X, max_X=None):
 
 def mask_for_dodgy_trees(recomb_rates, masking_thresh):
     recomb_rates = np.array(recomb_rates)
-    mask = recomb_rates <= np.percentile(recomb_rates, (masking_thresh) * 100)
+    mask = recomb_rates <= np.nanpercentile(recomb_rates, (masking_thresh) * 100)
     return mask
 
 
@@ -142,7 +142,7 @@ def filter_recomb_rate(
         chr_list.extend(num_of_trees_in_chr)
 
     mask_dodgy = ~np.isnan(recomb_rates)
-    recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
+    recomb_0_thresh = np.nansum(np.array(recomb_rates) <= 0) / np.sum(mask_dodgy)
     mask_dodgy *= ~mask_for_dodgy_trees(
         recomb_rates,
         recomb_0_thresh,
@@ -580,7 +580,7 @@ def compute_gamma_denom_eventwise(
                 ):
                     for epoch in range(n_epochs - 1):
                         denom_1[epoch] += (
-                            denom_coal[j][epoch]
+                            np.maximum(denom_coal[j][epoch], 0)
                             * own_membership[count_site]
                             / target_branch_length[tree][count_i]
                         )

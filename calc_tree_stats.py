@@ -126,10 +126,13 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                             # )
                             if args.hmm:
                                 number_window_list.append(
-                                    float(edge.metadata.decode().split(" ")[1])
-                                    // force_build
-                                    - float(edge.metadata.decode().split(" ")[0])
-                                    // force_build
+                                    1.25
+                                    * (
+                                        float(edge.metadata.decode().split(" ")[1])
+                                        // force_build
+                                        - float(edge.metadata.decode().split(" ")[0])
+                                        // force_build
+                                    )
                                 )
                             else:
                                 number_window_list.append(1)
@@ -247,7 +250,7 @@ def compute_tree_stats(
                         - recomb_events.iloc[0]["Position(bp)"]
                     )
                 else:
-                    recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
+                    recomb_rate = np.nan  # recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
                 recomb_rates.append(recomb_rate)
                 if allmuts is not None:
                     relate_allmuts_tree = relate_allmuts_file.iloc[
