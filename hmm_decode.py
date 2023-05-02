@@ -40,8 +40,6 @@ def trees_to_bp(
     bp_grid = []
     for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
         for j in range(int(l / window_size), int(r / window_size)):
-            # number_of_windows = target_branch_length[i]
-            # number_of_windows = 3*(int(r/window_size) - int(l/window_size))
             res.append(probability[:, i])
             recomb_rate = (tree_right_bp_gen[i] - tree_left_bp_gen[i]) / (
                 tree_right_bp[i] - tree_left_bp[i]
