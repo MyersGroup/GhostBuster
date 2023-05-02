@@ -110,15 +110,37 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                                     list(tree.leaves(tree.children(parent)[0])),
                                     poplabels[poplabels.INCLUDE == 1].index.values,
                                 ).size
+                                - np.intersect1d(
+                                    list(tree.leaves(tree.children(parent)[0])),
+                                    list(set(sample_list) - set([sample])),
+                                ).size
                                 > 0
                             )
                             and (
                                 np.intersect1d(
                                     list(tree.leaves(tree.children(parent)[1])),
-                                    poplabels[poplabels.INCLUDE == 1].index.values,
+                                    poplabels[
+                                        poplabels.INCLUDE == 1
+                                    ].index.values.tolist(),
+                                ).size
+                                - np.intersect1d(
+                                    list(tree.leaves(tree.children(parent)[1])),
+                                    list(set(sample_list) - set([sample])),
                                 ).size
                                 > 0
                             )
+                            # and (
+                            #     np.intersect1d(
+                            #         list(tree.leaves(tree.children(parent)[0])),
+                            #         sample_list,
+                            #     ).size
+                            #     != len(sample_list)
+                            #     or np.intersect1d(
+                            #         list(tree.leaves(parent)),
+                            #         poplabels[poplabels.INCLUDE == 1].index.values,
+                            #     ).size
+                            #     != len(sample_list)
+                            # )
                         ):
                             # number_window_list.append(
                             #     1.5
@@ -127,11 +149,13 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                             if args.hmm:
                                 number_window_list.append(
                                     1.25
-                                    * (
+                                    * max(
                                         float(edge.metadata.decode().split(" ")[1])
                                         // force_build
                                         - float(edge.metadata.decode().split(" ")[0])
-                                        // force_build
+                                        // force_build,
+                                        tree.interval[1] // force_build
+                                        - tree.interval[0] // force_build,
                                     )
                                 )
                             else:
