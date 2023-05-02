@@ -42,6 +42,7 @@ def fixed_parameters(
     unique_groups,
     num_trees,
     mask_dodgy,
+    sample,
     sample_list,
     epoch_intervals_pow,
     force_build=1,
@@ -83,7 +84,7 @@ def fixed_parameters(
     for u in range(len(np.unique(poplabels_orig[poplabels_orig.INCLUDE == 1].GROUP))):
         group_id[np.unique(poplabels_orig[poplabels_orig.INCLUDE == 1].GROUP)[u]] = u
 
-    for sample_no, target_seq_ in enumerate(sample_list):
+    for sample_no, target_seq_ in enumerate([sample]):
         count_mut_trees_prev = copy.deepcopy(count_mut_trees)
         for chr_no, ts in enumerate(ts_list):
             tree = ts.first()

@@ -137,52 +137,40 @@ def update_membership_eventwise(
 ):
     log_num_em_j, log_denom_em_j = [], []
     for i in range(len(proportion_of_coalescing_in_tree)):
-        if (
-            (
-                ignore_first_epoch
-                and not ignore_last_epoch
-                and epoch_index_in_tree[i] >= 1
-            )
-            or (
-                ignore_last_epoch
-                and not ignore_first_epoch
-                and epoch_index_in_tree[i] < n_epochs - 2
-            )
-            or (
-                ignore_first_epoch
-                and ignore_last_epoch
-                and epoch_index_in_tree[i] >= 1
-                and epoch_index_in_tree[i] < n_epochs - 2
-            )
-            or (not ignore_first_epoch and not ignore_last_epoch)
-        ):
-            log_num_em_j.append(
-                np.log(
-                    sum(
-                        gamma_arr[:, epoch_index_in_tree[i]]
-                        * proportion_of_coalescing_in_tree[i]
+        if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
+            if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
+                log_num_em_j.append(
+                    np.log(
+                        sum(
+                            gamma_arr[:, epoch_index_in_tree[i]]
+                            * proportion_of_coalescing_in_tree[i]
+                        )
+                        / sum(proportion_of_coalescing_in_tree[i]),
                     )
-                    / sum(proportion_of_coalescing_in_tree[i]),
                 )
-            )
 
-            if ignore_first_epoch and ignore_last_epoch:
-                log_denom_em_j_i = -sum(
-                    sum(gamma_arr[:, 1:-1] * denom_in_tree[i][:, 1:-1])
-                )
-            elif ignore_first_epoch and not ignore_last_epoch:
-                log_denom_em_j_i = -sum(sum(gamma_arr[:, 1:] * denom_in_tree[i][:, 1:]))
-            elif ignore_last_epoch and not ignore_first_epoch:
-                log_denom_em_j_i = -sum(
-                    sum(gamma_arr[:, :-1] * denom_in_tree[i][:, :-1])
-                )
-            else:
-                log_denom_em_j_i = -sum(sum(gamma_arr * denom_in_tree[i]))
-            log_denom_em_j.append(log_denom_em_j_i)
+                if ignore_first_epoch and ignore_last_epoch:
+                    log_denom_em_j_i = -sum(
+                        sum(gamma_arr[:, 1:-1] * denom_in_tree[i][:, 1:-1])
+                    )
+                elif ignore_first_epoch and not ignore_last_epoch:
+                    log_denom_em_j_i = -sum(
+                        sum(gamma_arr[:, 1:] * denom_in_tree[i][:, 1:])
+                    )
+                elif ignore_last_epoch and not ignore_first_epoch:
+                    log_denom_em_j_i = -sum(
+                        sum(gamma_arr[:, :-1] * denom_in_tree[i][:, :-1])
+                    )
+                else:
+                    log_denom_em_j_i = -sum(sum(gamma_arr * denom_in_tree[i]))
+                log_denom_em_j.append(log_denom_em_j_i)
     if target_branch_length is not None:
-        return np.sum(np.array(log_num_em_j) / np.array(target_branch_length)), np.sum(
-            np.array(log_denom_em_j) / np.array(target_branch_length)
-        )
+        try:
+            return np.sum(
+                np.array(log_num_em_j) / np.array(target_branch_length)
+            ), np.sum(np.array(log_denom_em_j) / np.array(target_branch_length))
+        except:
+            pdb.set_trace()
     return np.sum(log_num_em_j), np.sum(log_denom_em_j)
 
 
@@ -278,7 +266,7 @@ def e_m_step(
             )
     gamma_arr = n / d
     ### manually fixing gamma in last epoch
-    gamma_arr[:, :, -1] = np.mean(gamma_arr[:, :, -1])
+    # gamma_arr[:, :, -1] = np.mean(gamma_arr[:, :, -1])
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
@@ -420,7 +408,8 @@ def estimate_gt_ref(
                 unique_groups,
                 n_trees,
                 mask_dodgy,
-                [sample],
+                sample,
+                args.sample_id,
                 epoch_intervals_pow,
                 args.force_build,
                 args.num_subtrees,
@@ -540,7 +529,7 @@ def random_sweep_iter(
         tau /= np.sum(tau)
 
     trans_prop = (
-        np.random.uniform(200, 2000)
+        np.power(10, np.random.uniform(np.log10(20), np.log10(2000)))
         if args.t_admix_guess is None
         else args.t_admix_guess
     )
@@ -567,7 +556,6 @@ def random_sweep_iter(
 
     else:
         gt_ref = None
-        unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
     own_membership_trial = np.ones((n_clusters, n_trees * n_samples), dtype="float64")
     log_num_em = np.zeros((n_clusters, n_trees * n_samples), dtype="float64")
     log_denom_em = np.zeros((n_clusters, n_trees * n_samples), dtype="float64")
@@ -586,7 +574,8 @@ def random_sweep_iter(
                 unique_groups,
                 n_trees,
                 mask_dodgy,
-                [sample],
+                sample,
+                args.sample_id,
                 epoch_intervals_pow,
                 args.force_build,
                 args.num_subtrees,
@@ -704,10 +693,11 @@ def random_sweep(
             ) = fixed_parameters(
                 ts_list,
                 poplabels,
-                poplabels[poplabels.INCLUDE == 1].GROUP.unique(),
+                unique_groups,
                 n_trees,
                 mask_dodgy,
-                [sample],
+                sample,
+                args.sample_id,
                 epoch_intervals_pow,
                 args.force_build,
                 args.num_subtrees,
@@ -1010,7 +1000,6 @@ def main(args):
                 target_branch_length_masked[sample].append(
                     target_branch_length[sample][tid]
                 )
-
     ### Calculate ground truth local ancestry
     if args.mode == "sim":
         ground_truth_membership = []
@@ -1107,7 +1096,8 @@ def main(args):
                 unique_groups,
                 num_trees,
                 mask_dodgy,
-                [sample],
+                sample,
+                args.sample_id,
                 np.power(10, epoch_intervals),
                 args.force_build,
                 args.num_subtrees,
@@ -1184,7 +1174,8 @@ def main(args):
                 unique_groups,
                 num_trees,
                 mask_dodgy,
-                [sample],
+                sample,
+                args.sample_id,
                 np.power(10, epoch_intervals),
                 args.force_build,
                 args.num_subtrees,
@@ -1197,7 +1188,7 @@ def main(args):
             epoch_index_all.append(epoch_index_all1)
         ### initial guess for trans_prop = t_admix
         date_guess = (
-            np.random.uniform(200, 2000)
+            np.power(10, np.random.uniform(np.log10(20), np.log10(2000)))
             if args.t_admix_guess is None
             else args.t_admix_guess
         )
