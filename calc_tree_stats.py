@@ -143,17 +143,22 @@ def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample
                             # )
                         ):
                             # number_window_list.append(
-                            #     1.5
+                            #     1.25
                             #     * (edge.right // force_build - edge.left // force_build)
                             # )
                             if args.hmm:
                                 number_window_list.append(
-                                    1.25
+                                    1.75
                                     * max(
-                                        float(edge.metadata.decode().split(" ")[1])
-                                        // force_build
-                                        - float(edge.metadata.decode().split(" ")[0])
-                                        // force_build,
+                                        1.00
+                                        * (
+                                            float(edge.metadata.decode().split(" ")[1])
+                                            // force_build
+                                            - float(
+                                                edge.metadata.decode().split(" ")[0]
+                                            )
+                                            // force_build
+                                        ),
                                         tree.interval[1] // force_build
                                         - tree.interval[0] // force_build,
                                     )
@@ -206,10 +211,6 @@ def compute_tree_stats(
     count = 0
     num_nodes = len(list(ts_list[0].first().nodes()))
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
-
-    target_branch_length = get_target_branch_length(
-        args, poplabels, ts_list, chrs, force_build, sample_list
-    )
 
     for chr_no, chr in enumerate(chrs):
         recomb_map = pd.read_csv(
@@ -364,7 +365,6 @@ def compute_tree_stats(
         chr_map,
         snps_not_mapping,
         snps_flipped,
-        target_branch_length,
     )
 
 
@@ -406,16 +406,7 @@ def compute_mutden(ts_list, chrs, samples, mutden, force_build=1):
 def load_tree_stats(args, ts_list, poplabels):
     chrs = list(map(int, args.chrs.split(",")))
     sample_id_label = "_".join([str(e) for e in args.sample_id])
-    tree_stats_file_name = (
-        args.output
-        + "_tree_stats_"
-        + str(args.chrs)
-        + "_samples_"
-        + sample_id_label
-        + "_hmm_"
-        + str(args.hmm)
-        + ".pkl"
-    )
+    tree_stats_file_name = args.output + "_tree_stats_" + str(args.chrs) + ".pkl"
     try:
         f_pkl = open(tree_stats_file_name, "rb")
         (
@@ -438,7 +429,6 @@ def load_tree_stats(args, ts_list, poplabels):
             chr_map,
             snps_not_mapping,
             snps_flipped,
-            target_branch_length,
         ) = pickle.load(f_pkl)
         f_pkl.close()
         print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -465,7 +455,6 @@ def load_tree_stats(args, ts_list, poplabels):
             chr_map,
             snps_not_mapping,
             snps_flipped,
-            target_branch_length,
         ) = compute_tree_stats(
             args,
             poplabels,
@@ -500,7 +489,6 @@ def load_tree_stats(args, ts_list, poplabels):
                 chr_map,
                 snps_not_mapping,
                 snps_flipped,
-                target_branch_length,
             ],
             f_pkl,
         )
@@ -518,5 +506,4 @@ def load_tree_stats(args, ts_list, poplabels):
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
         num_snps_on_lineage,
-        target_branch_length,
     )

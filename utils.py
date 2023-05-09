@@ -10,6 +10,7 @@ import pandas as pd
 import copy
 from matplotlib import pyplot as plt
 import math
+from tqdm import tqdm
 import pdb
 
 
@@ -141,6 +142,13 @@ def filter_recomb_rate(
         num_of_trees_in_chr = [c + 1] * ts_list[c].num_trees
         chr_list.extend(num_of_trees_in_chr)
 
+    recomb_rates = np.array(recomb_rates)
+    for i, r in enumerate(recomb_rates):
+        if np.isnan(r):
+            recomb_rates[
+                np.abs(np.array(tree_left_bp) - tree_left_bp[i]) < 500000
+            ] = np.inf
+    recomb_rates = np.nan_to_num(recomb_rates, posinf=np.nan)
     mask_dodgy = ~np.isnan(recomb_rates)
     recomb_0_thresh = np.nansum(np.array(recomb_rates) <= 0) / np.sum(mask_dodgy)
     mask_dodgy *= ~mask_for_dodgy_trees(
@@ -720,6 +728,125 @@ def load_props(path):
         return np.loadtxt(path)
     else:
         return np.array(path.split(" "), dtype="float")
+
+
+def get_target_branch_length(
+    args,
+    poplabels,
+    ts_list,
+    chrs,
+    mask_dodgy,
+    force_build,
+    sample_list,
+):
+    """
+    Calculates the branch length of the target population
+    """
+    target_branch_length = []
+    for sample in sample_list:
+        count_all_tree, count_all_tree2 = 0, 0
+        target_branch_length_sample = []
+        for chr_no, chr in enumerate(chrs):
+            ts = ts_list[chr_no]
+            ts_edges = ts.edges()
+
+            ## calculate tree_left and tree_right for masked trees
+            tree_left_bp_chr, tree_right_bp_chr = [], []
+            for tree in ts.trees():
+                if (
+                    tree.interval[1] // force_build - tree.interval[0] // force_build
+                    > 0
+                ):
+                    if mask_dodgy[count_all_tree]:
+                        tree_left_bp_chr.append(tree.interval[0])
+                        tree_right_bp_chr.append(tree.interval[1])
+                    count_all_tree += 1
+
+            ## calculate bp_grid for masked trees
+            bp_grid = []
+            for i, (l, r) in enumerate(zip(tree_left_bp_chr, tree_right_bp_chr)):
+                for j in range(int(l / force_build), int(r / force_build)):
+                    bp_grid.append(j)
+            bp_grid = np.array(bp_grid)
+
+            ## calculate the target branch persistence
+            tree = ts.first()
+            for tid in tqdm(range(ts.num_trees)):
+                if (
+                    tree.interval[1] // force_build - tree.interval[0] // force_build
+                    > 0
+                ):
+                    if mask_dodgy[count_all_tree2]:
+                        number_window_list = []
+                        parent = copy.deepcopy(sample)
+                        while parent != tree.root:
+                            edge_id = tree.edge(parent)
+                            edge = ts_edges[edge_id]
+                            parent = tree.parent(parent)
+                            if (
+                                (
+                                    tree.time(parent)
+                                    >= (np.power(10, args.start_time) / 28)
+                                    or not args.ignore_first_epoch
+                                )
+                                and (
+                                    tree.time(parent)
+                                    < (np.power(10, args.end_time) / 28)
+                                    or not args.ignore_last_epoch
+                                )
+                                and (
+                                    np.intersect1d(
+                                        list(tree.leaves(tree.children(parent)[0])),
+                                        poplabels[poplabels.INCLUDE == 1].index.values,
+                                    ).size
+                                    - np.intersect1d(
+                                        list(tree.leaves(tree.children(parent)[0])),
+                                        list(set(sample_list) - set([sample])),
+                                    ).size
+                                    > 0
+                                )
+                                and (
+                                    np.intersect1d(
+                                        list(tree.leaves(tree.children(parent)[1])),
+                                        poplabels[
+                                            poplabels.INCLUDE == 1
+                                        ].index.values.tolist(),
+                                    ).size
+                                    - np.intersect1d(
+                                        list(tree.leaves(tree.children(parent)[1])),
+                                        list(set(sample_list) - set([sample])),
+                                    ).size
+                                    > 0
+                                )
+                            ):
+                                # number_window_list.append(
+                                #     1.25
+                                #     * (edge.right // force_build - edge.left // force_build)
+                                # )
+                                if args.hmm:
+                                    edge_right = max(
+                                        float(edge.metadata.decode().split(" ")[1])
+                                        // force_build,
+                                        tree.interval[1] // force_build,
+                                    )
+                                    edge_left = min(
+                                        float(edge.metadata.decode().split(" ")[0])
+                                        // force_build,
+                                        tree.interval[0] // force_build,
+                                    )
+                                    number_of_overlaps = np.sum(
+                                        (edge_right > bp_grid) & (edge_left <= bp_grid)
+                                    )
+                                    number_window_list.append(1.75 * number_of_overlaps)
+                                else:
+                                    number_window_list.append(1)
+
+                        target_branch_length_sample.append(number_window_list)
+                    count_all_tree2 += 1
+                tree.next()
+        target_branch_length.append(target_branch_length_sample)
+
+    return target_branch_length  ## num_samples x num_trees x num_branches
 
 
 if __name__ == "__main__":

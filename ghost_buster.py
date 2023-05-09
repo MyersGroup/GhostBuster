@@ -27,6 +27,7 @@ from utils import (
     compute_gamma_denom_eventwise,
     load_gamma,
     load_props,
+    get_target_branch_length,
 )
 import pdb
 import warnings
@@ -939,7 +940,6 @@ def main(args):
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
         num_snps_on_lineage,
-        target_branch_length,
     ) = load_tree_stats(args, ts_list, poplabels)
 
     ### Filter based on recombination rates
@@ -993,13 +993,9 @@ def main(args):
         np.array(tree_right_bp_gen)[mask_dodgy].tolist() * len(args.sample_id)
     )
 
-    target_branch_length_masked = [[] for _ in range(len(args.sample_id))]
-    for sample in range(len(target_branch_length)):
-        for tid in range(len(target_branch_length[sample])):
-            if mask_dodgy[tid]:
-                target_branch_length_masked[sample].append(
-                    target_branch_length[sample][tid]
-                )
+    target_branch_length_masked = get_target_branch_length(
+        args, poplabels, ts_list, chrs, mask_dodgy, args.force_build, args.sample_id
+    )
     ### Calculate ground truth local ancestry
     if args.mode == "sim":
         ground_truth_membership = []
