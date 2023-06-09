@@ -13,6 +13,7 @@ import pickle
 import msprime
 import copy
 import pdb
+import os
 
 
 def lineage_nodes(tree, sample_ids):
@@ -64,119 +65,6 @@ def get_poisson_logpmf_bins(mutrates, num_epochs, mut_rate):
     return logpmf
 
 
-def get_target_branch_length(args, poplabels, ts_list, chrs, force_build, sample_list):
-    """
-    Calculates the branch length of the target population
-    """
-    target_branch_length = []
-    count = 0
-    # for sample in poplabels[
-    #     (poplabels.GROUP == poplabels.GROUP.iloc[sample_list[0]]) & poplabels.INCLUDE
-    #     == 1
-    # ].index:
-    count_bad = 0
-    count_all = 0
-    for sample in sample_list:
-        target_branch_length_sample = []
-        for chr_no, chr in enumerate(chrs):
-            ts = ts_list[chr_no]
-            ts_edges = ts.edges()
-            tree = ts.first()
-            for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
-                if (
-                    tree.interval[1] // force_build - tree.interval[0] // force_build
-                    > 0
-                ):
-                    number_window_list = []
-                    coal_time = []
-                    parent = copy.deepcopy(sample)
-                    while parent != tree.root:
-                        edge_id = tree.edge(parent)
-                        edge = ts_edges[edge_id]
-                        parent = tree.parent(parent)
-                        coal_time.append(tree.time(parent))
-                        if (
-                            (
-                                tree.time(parent)
-                                >= (np.power(10, args.start_time) / 28)
-                                or not args.ignore_first_epoch
-                            )
-                            and (
-                                tree.time(parent) < (np.power(10, args.end_time) / 28)
-                                or not args.ignore_last_epoch
-                            )
-                            and (
-                                np.intersect1d(
-                                    list(tree.leaves(tree.children(parent)[0])),
-                                    poplabels[poplabels.INCLUDE == 1].index.values,
-                                ).size
-                                - np.intersect1d(
-                                    list(tree.leaves(tree.children(parent)[0])),
-                                    list(set(sample_list) - set([sample])),
-                                ).size
-                                > 0
-                            )
-                            and (
-                                np.intersect1d(
-                                    list(tree.leaves(tree.children(parent)[1])),
-                                    poplabels[
-                                        poplabels.INCLUDE == 1
-                                    ].index.values.tolist(),
-                                ).size
-                                - np.intersect1d(
-                                    list(tree.leaves(tree.children(parent)[1])),
-                                    list(set(sample_list) - set([sample])),
-                                ).size
-                                > 0
-                            )
-                            # and (
-                            #     np.intersect1d(
-                            #         list(tree.leaves(tree.children(parent)[0])),
-                            #         sample_list,
-                            #     ).size
-                            #     != len(sample_list)
-                            #     or np.intersect1d(
-                            #         list(tree.leaves(parent)),
-                            #         poplabels[poplabels.INCLUDE == 1].index.values,
-                            #     ).size
-                            #     != len(sample_list)
-                            # )
-                        ):
-                            # number_window_list.append(
-                            #     1.25
-                            #     * (edge.right // force_build - edge.left // force_build)
-                            # )
-                            if args.hmm:
-                                number_window_list.append(
-                                    1.75
-                                    * max(
-                                        1.00
-                                        * (
-                                            float(edge.metadata.decode().split(" ")[1])
-                                            // force_build
-                                            - float(
-                                                edge.metadata.decode().split(" ")[0]
-                                            )
-                                            // force_build
-                                        ),
-                                        tree.interval[1] // force_build
-                                        - tree.interval[0] // force_build,
-                                    )
-                                )
-                            else:
-                                number_window_list.append(1)
-                    # if count == 1:
-                    #     pdb.set_trace()
-                    # count += 1
-
-                    target_branch_length_sample.append(number_window_list)
-                tree.next()
-        target_branch_length.append(target_branch_length_sample)
-
-    # print(count_bad / count_all)
-    return target_branch_length  ## num_samples x num_trees x num_branches
-
-
 def compute_tree_stats(
     args,
     poplabels,
@@ -211,6 +99,10 @@ def compute_tree_stats(
     count = 0
     num_nodes = len(list(ts_list[0].first().nodes()))
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
+
+    cent_telo_hla = pd.read_csv(
+        os.path.dirname(os.path.abspath(__file__)) + "/real_data_mask.txt", sep="\t"
+    )
 
     for chr_no, chr in enumerate(chrs):
         recomb_map = pd.read_csv(
@@ -266,7 +158,21 @@ def compute_tree_stats(
                         )
                     )
                 ]
-                if len(recomb_events) > 1:
+                if (
+                    args.mode == "real"
+                    and (
+                        (
+                            tree.interval[0]
+                            >= cent_telo_hla[cent_telo_hla.chr == str(chr)].start
+                        )
+                        & (
+                            tree.interval[1]
+                            < cent_telo_hla[cent_telo_hla.chr == str(chr)].end
+                        )
+                    ).any()
+                ):
+                    recomb_rate = np.nan
+                elif len(recomb_events) > 1:
                     recomb_rate = (
                         recomb_events.iloc[-1]["Map(cM)"]
                         - recomb_events.iloc[0]["Map(cM)"]
