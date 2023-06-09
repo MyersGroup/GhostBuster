@@ -781,6 +781,8 @@ def write_membership_grid(
     chr_map,
     tree_left_bp,
     tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
     n_clusters,
     sample_id_label,
     output,
@@ -792,11 +794,18 @@ def write_membership_grid(
     count_i = 0
     for i, (c, l, r) in enumerate(zip(chr_map_, tree_left_bp, tree_right_bp)):
         for j in range(int(l / window_size), int(r / window_size)):
-            res.append([c, j * window_size] + list(own_membership[:, count_i]))
+            recomb_rate = (tree_right_bp_gen[i] - tree_left_bp_gen[i]) / (
+                tree_right_bp[i] - tree_left_bp[i]
+            )
+            gen_pos = tree_left_bp_gen[i] + recomb_rate * (j * window_size - l)
+            res.append(
+                [c, j * window_size, 100 * gen_pos] + list(own_membership[:, count_i])
+            )
             count_i += 1
     pd.DataFrame(
         data=np.array(res),
-        columns=["chr", "pos"] + ["prob_" + str(i) for i in range(n_clusters)],
+        columns=["chr", "pos", "genpos"]
+        + ["prob_" + str(i) for i in range(n_clusters)],
     ).to_csv(
         output + "_overall_membership_" + sample_id_label + ".csv",
         index=False,
@@ -813,6 +822,8 @@ def write_membership_gamma(
     chr_map,
     tree_left_bp,
     tree_right_bp,
+    tree_left_bp_gen,
+    tree_right_bp_gen,
     epoch_intervals,
     unique_groups,
     sample_id_label,
@@ -830,6 +841,8 @@ def write_membership_gamma(
         np.array(chr_map)[mask_dodgy],
         tree_left_bp,
         tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
         args.num_clusters,
         sample_id_label,
         args.output,
@@ -955,7 +968,7 @@ def main(args):
             args, mask_df, args.sample_id, ts_list, mask_dodgy, chrs
         )
 
-    elif args.load_mask is None and args.masking_threshold > 0:
+    elif args.load_mask is None:
         mask_dodgy = filter_recomb_rate(
             args,
             ts_list,
@@ -964,10 +977,6 @@ def main(args):
             frac_branches_with_snp_target,
             num_snps_on_lineage,
         )
-    elif args.load_mask is None and args.masking_threshold <= 0:
-        print("Running GB on all trees")
-        mask_dodgy = np.ones(len(recomb_rates), dtype="bool")
-
     else:
         mask_dodgy = np.zeros(len(recomb_rates), dtype="bool")
         mask_df = pd.read_csv(args.load_mask, sep="\s+")
@@ -1306,6 +1315,8 @@ def main(args):
             chr_map,
             tree_left_bp,
             tree_right_bp,
+            tree_left_bp_gen,
+            tree_right_bp_gen,
             epoch_intervals,
             unique_groups,
             sample_id_label,
