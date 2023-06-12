@@ -6,6 +6,7 @@ from scipy.optimize import curve_fit
 import seaborn as sns
 import matplotlib
 from scipy import interpolate
+from scipy.optimize import minimize
 from scipy.interpolate import make_interp_spline, BSpline
 
 font = {"size": 16}
@@ -15,8 +16,8 @@ sns.set_palette("colorblind")
 color_palette = sns.color_palette("colorblind")
 
 
-def func(dist, a, admixtimes, c):
-    return a * np.exp(-admixtimes * dist) + c
+def func(dist, a, c):
+    return a * np.exp(-dist / 100) + c
 
 
 def plot_ld_curves(dist, means_all, admixtimes, output_prefix):
@@ -33,8 +34,12 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix):
         for j in range(num_clusters):
             spl = make_interp_spline(dist, mean_of_all_sam[i, j])
             ax[i, j].plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
-            popt, pcov = curve_fit(func, dist, mean_of_all_sam[i, j], maxfev=5000)
-            ax[i, j].plot(dist, func(dist, *popt), "--", color="green", linewidth=1)
+            popt, pcov = curve_fit(
+                func, dist * admixtimes, mean_of_all_sam[i, j], maxfev=5000
+            )
+            ax[i, j].plot(
+                dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1
+            )
     fig.text(0.5, 0.04, "Genetic distance (cM)", ha="center", va="center")
     fig.text(
         0.06, 0.5, "Relative probability", ha="center", va="center", rotation="vertical"
@@ -46,12 +51,24 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix):
     plt.show()
 
 
-def get_admixtimes(initial_values, dist, means):
-    admixtimes = 0
-    for i in range(len(means)):
-        popt, pcov = curve_fit(func, dist, means[i], maxfev=5000)
-        admixtimes += popt[1]
-    admixtimes = admixtimes * 100 / len(means)
+def get_admixtime_lhood(admixtimes, dist, means_all):
+    lhood = 0
+    for means in means_all:
+        for i in range(means.shape[0]):
+            for j in range(means.shape[1]):
+                popt, pcov = curve_fit(
+                    func, dist * admixtimes, means[i, j], maxfev=5000
+                )
+                res = (means[i, j] - func(dist * admixtimes, *popt)) ** 2
+                lhood += len(res) * np.log(np.mean(res)) / 2
+    return lhood
+
+
+def get_admixtimes(initial_guess, dist, means):
+    res = minimize(
+        get_admixtime_lhood, initial_guess, method="Nelder-Mead", args=(dist, means)
+    )
+    admixtimes = res.x[0]
     return admixtimes
 
 
@@ -96,7 +113,7 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters):
 
 if __name__ == "__main__":
     bin_size = 0.1
-    bin_max = 100
+    bin_max = 50
     initial_values = (
         np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000))))
         # if args.t_admix_guess is None
@@ -132,12 +149,9 @@ if __name__ == "__main__":
     # for i in range(2):
     #     for j in range(2):
     #         means[i,j] = np.exp(-dist * 500 / 100) + np.random.normal(0, 0.05, size=dist.shape)
-    means_diag = []
-    for sam in range(num_hap // 2):
-        for i in range(num_clusters):
-            means_diag.append(means_all[sam][i, i])
+    # means_all = [means]
 
-    admixtimes = get_admixtimes(initial_values, dist, means_diag)
+    admixtimes = get_admixtimes(initial_values, dist, means_all)
     print("Admixtime = " + str(admixtimes))
 
     plot_ld_curves(dist, means_all, admixtimes, "sim_bed")
