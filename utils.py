@@ -746,6 +746,7 @@ def get_target_branch_length(
     for sample in sample_list:
         count_all_tree, count_all_tree2 = 0, 0
         target_branch_length_sample = []
+        leave_one_sample_out = list(set(sample_list) - set([sample]))
         for chr_no, chr in enumerate(chrs):
             ts = ts_list[chr_no]
             ts_edges = ts.edges()
@@ -771,6 +772,7 @@ def get_target_branch_length(
 
             ## calculate the target branch persistence
             tree = ts.first()
+            poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
             for tid in tqdm(range(ts.num_trees)):
                 if (
                     tree.interval[1] // force_build - tree.interval[0] // force_build
@@ -784,62 +786,57 @@ def get_target_branch_length(
                             edge = ts_edges[edge_id]
                             parent = tree.parent(parent)
                             if (
-                                (
-                                    tree.time(parent)
-                                    >= (np.power(10, args.start_time) / 28)
-                                    or not args.ignore_first_epoch
-                                )
-                                and (
-                                    tree.time(parent)
-                                    < (np.power(10, args.end_time) / 28)
-                                    or not args.ignore_last_epoch
-                                )
-                                and (
-                                    np.intersect1d(
-                                        list(tree.leaves(tree.children(parent)[0])),
-                                        poplabels[poplabels.INCLUDE == 1].index.values,
-                                    ).size
-                                    - np.intersect1d(
-                                        list(tree.leaves(tree.children(parent)[0])),
-                                        list(set(sample_list) - set([sample])),
-                                    ).size
-                                    > 0
-                                )
-                                and (
-                                    np.intersect1d(
-                                        list(tree.leaves(tree.children(parent)[1])),
-                                        poplabels[
-                                            poplabels.INCLUDE == 1
-                                        ].index.values.tolist(),
-                                    ).size
-                                    - np.intersect1d(
-                                        list(tree.leaves(tree.children(parent)[1])),
-                                        list(set(sample_list) - set([sample])),
-                                    ).size
-                                    > 0
-                                )
+                                tree.time(parent)
+                                >= (np.power(10, args.start_time) / 28)
+                                or not args.ignore_first_epoch
+                            ) and (
+                                tree.time(parent) < (np.power(10, args.end_time) / 28)
+                                or not args.ignore_last_epoch
                             ):
-                                # number_window_list.append(
-                                #     1.25
-                                #     * (edge.right // force_build - edge.left // force_build)
-                                # )
-                                if args.hmm:
-                                    edge_right = max(
-                                        float(edge.metadata.decode().split(" ")[1])
-                                        // force_build,
-                                        tree.interval[1] // force_build,
-                                    )
-                                    edge_left = min(
-                                        float(edge.metadata.decode().split(" ")[0])
-                                        // force_build,
-                                        tree.interval[0] // force_build,
-                                    )
-                                    number_of_overlaps = np.sum(
-                                        (edge_right > bp_grid) & (edge_left <= bp_grid)
-                                    )
-                                    number_window_list.append(1.75 * number_of_overlaps)
-                                else:
-                                    number_window_list.append(1)
+                                tree_childrens = tree.children(parent)
+                                tree_leaves_left = list(tree.leaves(tree_childrens[0]))
+                                tree_leaves_right = list(tree.leaves(tree_childrens[1]))
+                                if (
+                                    np.intersect1d(
+                                        tree_leaves_left,
+                                        poplabels_included,
+                                    ).size
+                                    - np.intersect1d(
+                                        tree_leaves_left,
+                                        leave_one_sample_out,
+                                    ).size
+                                    > 0
+                                ) and (
+                                    np.intersect1d(
+                                        tree_leaves_right,
+                                        poplabels_included,
+                                    ).size
+                                    - np.intersect1d(
+                                        tree_leaves_right,
+                                        leave_one_sample_out,
+                                    ).size
+                                    > 0
+                                ):
+                                    if args.hmm:
+                                        edge_right = max(
+                                            float(edge.metadata.decode().split(" ")[1])
+                                            // force_build,
+                                            tree.interval[1] // force_build,
+                                        )
+                                        edge_left = min(
+                                            float(edge.metadata.decode().split(" ")[0])
+                                            // force_build,
+                                            tree.interval[0] // force_build,
+                                        )
+                                        number_of_overlaps = np.sum(
+                                            (edge_right > bp_grid)
+                                            & (edge_left <= bp_grid)
+                                        )
+                                        number_window_list.append(
+                                            3.75 * number_of_overlaps
+                                        )
+                                    else:
+                                        number_window_list.append(1)
 
                         target_branch_length_sample.append(number_window_list)
                     count_all_tree2 += 1
