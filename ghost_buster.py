@@ -10,6 +10,7 @@ import random
 from functools import partial
 from scipy.stats import hmean
 from joblib import Parallel, delayed
+import gc
 
 from calc_tree_stats import load_tree_stats
 from calc_fixed_params import fixed_parameters
@@ -288,57 +289,50 @@ def e_m_step(
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
 
-    for _ in range(1):
+    log_num_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
+    log_denom_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
+    count_masked_trees = 0
 
-        log_num_em = np.zeros((args.num_clusters, n_trees * n_samples), dtype="float64")
-        log_denom_em = np.zeros(
-            (args.num_clusters, n_trees * n_samples), dtype="float64"
-        )
-        count_masked_trees = 0
+    for sample_no in range(n_samples):
+        for tid in masked_trees_index:
+            proportion_of_coalescing_in_tree = proportion_of_coalescing_all[sample_no][
+                tid
+            ]
+            epoch_index_in_tree = epoch_index_all[sample_no][tid]
+            denom_in_tree = denom[sample_no][tid]
+            for j in range(args.num_clusters):
+                log_num_em_j, log_denom_em_j = update_membership_eventwise(
+                    proportion_of_coalescing_in_tree,
+                    epoch_index_in_tree,
+                    denom_in_tree,
+                    gamma_arr[j],
+                    tid,
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                    n_epochs,
+                    target_branch_length_masked[sample_no][tid],
+                )
+                log_num_em[j, count_masked_trees] = log_num_em_j
+                log_denom_em[j, count_masked_trees] = log_denom_em_j
+            count_masked_trees += 1
 
-        for sample_no in range(n_samples):
-            for tid in masked_trees_index:
-                proportion_of_coalescing_in_tree = proportion_of_coalescing_all[
-                    sample_no
-                ][tid]
-                epoch_index_in_tree = epoch_index_all[sample_no][tid]
-                denom_in_tree = denom[sample_no][tid]
-                for j in range(args.num_clusters):
-                    log_num_em_j, log_denom_em_j = update_membership_eventwise(
-                        proportion_of_coalescing_in_tree,
-                        epoch_index_in_tree,
-                        denom_in_tree,
-                        gamma_arr[j],
-                        tid,
-                        args.ignore_first_epoch,
-                        args.ignore_last_epoch,
-                        n_epochs,
-                        target_branch_length_masked[sample_no][tid],
-                    )
-                    log_num_em[j, count_masked_trees] = log_num_em_j
-                    log_denom_em[j, count_masked_trees] = log_denom_em_j
-                count_masked_trees += 1
+    log_num_em = 1 * combine_local_ancestry(log_num_em, args.num_subtrees)
+    log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
 
-        log_num_em = 1 * combine_local_ancestry(log_num_em, args.num_subtrees)
-        log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
-
-        loglikelihood_per_comp = log_num_em + log_denom_em
-
-        ### HMM smoothing
-        own_membership_hmm, trans_prop, tau, log_likelihood_hmm = Decode_grid(
-            tree_left_bp,
-            tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
-            trans_prop,
-            loglikelihood_per_comp,
-            tau,
-            window_size=args.force_build,
-        )
-        own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
-
+    loglikelihood_per_comp = log_num_em + log_denom_em
+    ### HMM smoothing
+    own_membership_hmm, trans_prop, tau, log_likelihood_hmm = Decode_grid(
+        tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
+        trans_prop,
+        loglikelihood_per_comp,
+        tau,
+        window_size=args.force_build,
+    )
+    own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
-    return own_membership, gamma_arr, tau, log_likelihood
 
 
 def estimate_gt_ref(
@@ -644,17 +638,26 @@ def random_sweep_iter(
             tree_left_bp_gen,
             tree_right_bp_gen,
         )
-    return (
-        log_likelihood,
-        own_membership_trial,
-        trans_prop,
-        tau,
-        num,
-        denom,
-        proportion_of_coalescing_all,
-        epoch_index_all,
-        unique_groups,
-    )
+    if args.joint_fit:
+        return (
+            log_likelihood,
+            own_membership_trial,
+            trans_prop,
+            tau,
+            num,
+            denom,
+            proportion_of_coalescing_all,
+            epoch_index_all,
+            unique_groups,
+        )
+    else:
+        return (
+            log_likelihood,
+            own_membership_trial,
+            trans_prop,
+            tau,
+            unique_groups,
+        )
 
 
 def random_sweep(
@@ -709,6 +712,9 @@ def random_sweep(
             denom.append(denom1)
             proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
             epoch_index_all.append(epoch_index_all1)
+        del ts_list
+        gc.collect()
+        ts_list = []
     else:
         num, denom, proportion_of_coalescing_all, epoch_index_all = (
             [],
@@ -742,17 +748,26 @@ def random_sweep(
         for n_iters in range(n_repeats)
     )
     for i in range(len(out)):
-        (
-            log_likelihood,
-            own_membership_trial,
-            trans_prop_trial,
-            tau_trial,
-            num,
-            denom,
-            proportion_of_coalescing_all,
-            epoch_index_all,
-            unique_groups,
-        ) = out[i]
+        if not args.joint_fit:
+            (
+                log_likelihood,
+                own_membership_trial,
+                trans_prop_trial,
+                tau_trial,
+                unique_groups,
+            ) = out[i]
+        else:
+            (
+                log_likelihood,
+                own_membership_trial,
+                trans_prop_trial,
+                tau_trial,
+                num,
+                denom,
+                proportion_of_coalescing_all,
+                epoch_index_all,
+                unique_groups,
+            ) = out[i]
         if log_likelihood > best_loglikelihood or i == 0:
             best_loglikelihood = log_likelihood
             own_membership = own_membership_trial
@@ -1246,7 +1261,6 @@ def main(args):
             np.save(f, own_membership)
 
         log_likelihood_arr = []
-        start_time_em = time.time()
         print("Starting the EM..")
 
         filename_logl = args.output + "_" + sample_id_label + ".logl"
