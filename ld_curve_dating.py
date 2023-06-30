@@ -119,11 +119,22 @@ if __name__ == "__main__":
         # if args.t_admix_guess is None
         # else [args.t_admix_guess]
     )
-    df = pd.read_csv(
-        "../../Mosaic/hazara_all_overall_membership_44_45_46_47_48_49_50_51_52_53_54_55_56_57_58_59_60_61_62_63_64_65_66_67_68_69_70_71_72_73_74_75_76_77_78_79.csv",
-        sep="\s+",
-    )
-    num_hap = 36
+    # df = pd.read_csv(
+    #     "../../hgdp_1gp/output/basal_overall_membership_132_133_134_135_136_137_138_139_140_141_142_143_144_145_146_147_148_149_150_151.csv",
+    #     sep="\s+",
+    # )
+    num_hap = 40
+    for i in range(0, 0 + num_hap):
+        df_i = pd.read_csv(
+            "../../hgdp_1gp/output/japanese_all_overall_membership_" + str(i) + ".csv",
+            "\s+",
+        )
+        try:
+            df = pd.concat([df, df_i], axis=0)
+            print(df)
+        except:
+            df = df_i.copy()
+
     num_clusters = df.shape[1] - 3
     prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
 
