@@ -320,6 +320,19 @@ def e_m_step(
     log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
 
     loglikelihood_per_comp = log_num_em + log_denom_em
+    ### caution!!!
+    ### regress out the mean likelihood across samples from this
+    # mean_loglikelihood = loglikelihood_per_comp.reshape(
+    #     args.num_clusters, n_trees, n_samples
+    # ).mean(axis=2)
+    # mean_loglikelihood = np.repeat(mean_loglikelihood, n_samples, axis=1)
+    # for c in range(args.num_clusters):
+    #     loglikelihood_per_comp[c] -= (
+    #         mean_loglikelihood[c]
+    #         * (mean_loglikelihood[c].T @ loglikelihood_per_comp[c])
+    #         / (mean_loglikelihood[c].T @ mean_loglikelihood[c])
+    #     )
+
     ### HMM smoothing
     own_membership_hmm, trans_prop, tau, log_likelihood_hmm = Decode_grid(
         tree_left_bp,
