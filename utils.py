@@ -811,7 +811,7 @@ def get_target_branch_length(
                                             np.float64(2.0 * number_of_overlaps)
                                         )
                                     else:
-                                        number_window_list.append(1.0)
+                                        number_window_list.append(np.float64(1.0))
 
                         target_branch_length_sample.append(number_window_list)
                     count_all_tree2 += 1

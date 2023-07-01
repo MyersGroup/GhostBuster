@@ -143,7 +143,6 @@ def update_membership_eventwise(
 ):
     log_num_em = np.zeros((num_clusters, n_trees), dtype="float64")
     log_denom_em = np.zeros((num_clusters, n_trees), dtype="float64")
-    count_masked_trees = 0
     for tid in masked_trees_index:
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
         epoch_index_in_tree = epoch_index_all[tid]
@@ -187,9 +186,8 @@ def update_membership_eventwise(
                             )
                         count_valid_i += 1
 
-            log_num_em[j, count_masked_trees] = log_num_em_j
-            log_denom_em[j, count_masked_trees] = log_denom_em_j
-        count_masked_trees += 1
+            log_num_em[j, tid] = log_num_em_j
+            log_denom_em[j, tid] = log_denom_em_j
 
     return log_num_em, log_denom_em
 
@@ -1127,7 +1125,7 @@ def main(args):
             for j in range(len(own_membership_sample)):
                 n[j] += compute_gamma_num(
                     own_membership_sample[j],
-                    np.ones_like(n),
+                    np.ones_like(n)[j],
                     proportion_of_coalescing_all1,
                     epoch_index_all1,
                     len(unique_groups),
