@@ -34,6 +34,7 @@ import pdb
 import warnings
 from hmm_decode import Decode_grid
 from numba import jit
+import numba as nb
 
 warnings.filterwarnings("ignore")
 
@@ -127,7 +128,7 @@ def update_membership(
     return log_num_em_j_i, log_denom_em_j
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, parallel=True)
 def update_membership_eventwise(
     proportion_of_coalescing_all,
     epoch_index_all,
@@ -143,13 +144,15 @@ def update_membership_eventwise(
 ):
     log_num_em = np.zeros((num_clusters, n_trees), dtype="float64")
     log_denom_em = np.zeros((num_clusters, n_trees), dtype="float64")
-    for tid in masked_trees_index:
+    for tid in nb.prange(len(masked_trees_index)):
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
         epoch_index_in_tree = epoch_index_all[tid]
         denom_in_tree = denom[tid]
         target_branch_length_in_tree = target_branch_length[tid]
         for j in range(num_clusters):
-            log_num_em_j, log_denom_em_j, count_valid_i = 0.0, 0.0, 0
+            log_num_em_j = 0.0
+            log_denom_em_j = 0.0
+            count_valid_i = 0
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
