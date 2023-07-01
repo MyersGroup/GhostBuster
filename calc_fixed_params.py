@@ -10,7 +10,7 @@ from tqdm import tqdm
 import pickle
 import math
 from calc_ground_truth import make_ground_truth
-from utils import get_epoch_interval
+from utils import get_epoch_interval, make_numba_nested_list
 import random
 
 
@@ -423,6 +423,10 @@ def fixed_parameters(
                                         epoch,
                                     ] = 0
 
+    ## convert to Numba Lists
+    denom_all = make_numba_nested_list(denom_all)
+    proportion_of_coalescing_all = make_numba_nested_list(proportion_of_coalescing_all)
+    epoch_index_all = make_numba_nested_list(epoch_index_all)
     return (
         coal_count,
         denom_all,
