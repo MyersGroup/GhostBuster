@@ -441,7 +441,7 @@ def get_epoch_interval(args, ts_list):
     return np.array([-np.inf] + np.log10(bins).tolist() + [np.inf], dtype="float64")
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True, fastmath=True)
 def compute_gamma_num(
     own_membership,
     prev_gamma,
@@ -459,7 +459,7 @@ def compute_gamma_num(
 ):
     num_full_tree = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
     count_site = 0
-    for tid in nb.prange(len(masked_trees_index)):
+    for tid in masked_trees_index:
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
         epoch_index_in_tree = epoch_index_all[tid]
         for _ in range(
@@ -513,7 +513,7 @@ def compute_gamma_denom(own_membership, denom, n_epochs):
     return denom_1 + eps
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True, fastmath=True)
 def compute_gamma_denom_eventwise(
     own_membership,
     denom,
@@ -530,7 +530,7 @@ def compute_gamma_denom_eventwise(
     eps = 1e-200
     denom_1 = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
     count_site = 0
-    for tree in nb.prange(len(denom)):
+    for tree in range(len(denom)):
         epoch_index_in_tree = epoch_index_all[tree]
         denom_in_tree = denom[tree]
         for _ in range(

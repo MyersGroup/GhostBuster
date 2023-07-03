@@ -128,7 +128,7 @@ def update_membership(
     return log_num_em_j_i, log_denom_em_j
 
 
-@jit(nopython=True, parallel=True)
+@jit(nopython=True, fastmath=True)
 def update_membership_eventwise(
     proportion_of_coalescing_all,
     epoch_index_all,
@@ -144,15 +144,13 @@ def update_membership_eventwise(
 ):
     log_num_em = np.zeros((num_clusters, n_trees), dtype="float64")
     log_denom_em = np.zeros((num_clusters, n_trees), dtype="float64")
-    for tid in nb.prange(len(masked_trees_index)):
+    for tid in masked_trees_index:
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
         epoch_index_in_tree = epoch_index_all[tid]
         denom_in_tree = denom[tid]
         target_branch_length_in_tree = target_branch_length[tid]
         for j in range(num_clusters):
-            log_num_em_j = 0.0
-            log_denom_em_j = 0.0
-            count_valid_i = 0
+            log_num_em_j, log_denom_em_j, count_valid_i = 0.0, 0.0, 0
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
@@ -683,6 +681,7 @@ def random_sweep(
     best_loglikelihood = -np.inf
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
+    st = time.time()
     if not args.joint_fit:
         num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
         for sample_no, sample in enumerate(args.sample_id):
@@ -723,7 +722,8 @@ def random_sweep(
             [],
             [],
         )
-
+    print("fixed params:" + str(time.time() - st))
+    st = time.time()
     out = Parallel(n_jobs=args.n_jobs)(
         delayed(random_sweep_iter)(
             args,
@@ -748,6 +748,7 @@ def random_sweep(
         )
         for n_iters in range(n_repeats)
     )
+    print("random sweep: " + str(time.time() - st))
     for i in range(len(out)):
         if not args.joint_fit:
             (
@@ -1017,10 +1018,11 @@ def main(args):
     tree_right_bp_gen = np.array(
         np.array(tree_right_bp_gen)[mask_dodgy].tolist() * len(args.sample_id)
     )
-
+    st = time.time()
     target_branch_length_masked = get_target_branch_length(
         args, poplabels, ts_list, chrs, mask_dodgy, args.force_build, args.sample_id
     )
+    print("target branch length: " + str(time.time() - st))
     ### Calculate ground truth local ancestry
     if args.mode == "sim":
         ground_truth_membership = []
@@ -1213,7 +1215,7 @@ def main(args):
             if args.t_admix_guess is None
             else args.t_admix_guess
         )
-        print("Admixture time guess = ", date_guess)
+        # print("Admixture time guess = ", date_guess)
         trans_prop = date_guess
         tau = np.mean(own_membership, axis=1)
 
@@ -1262,13 +1264,14 @@ def main(args):
             np.save(f, own_membership)
 
         log_likelihood_arr = []
-        print("Starting the EM..")
+        # print("Starting the EM..")
 
         filename_logl = args.output + "_" + sample_id_label + ".logl"
         filename_tau = args.output + "_" + sample_id_label + ".tau"
         f_logl = open(filename_logl, "w")
         f_tau = open(filename_tau, "w")
 
+        st = time.time()
         for epoch in range(args.num_iters):
             own_membership, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
                 args,
@@ -1290,7 +1293,7 @@ def main(args):
                 tree_left_bp_gen,
                 tree_right_bp_gen,
             )
-            print(tau)
+            # print(tau)
 
             if epoch == 0:
                 write_coal(
@@ -1309,8 +1312,10 @@ def main(args):
                 calculate_accuracy(own_membership, ground_truth_membership)
 
             ## Early-stopping
-            print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
+            # print("log-likelihood = " + str(log_likelihood_arr[-1]), flush=True)
             f_logl.write(str(log_likelihood_arr[-1]) + "\n")
+
+        print("em iters: " + str(time.time() - st))
 
         if args.mode == "sim":
             write_calibration(args, own_membership, ground_truth_membership)
