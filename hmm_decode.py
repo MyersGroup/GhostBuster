@@ -247,10 +247,10 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
     t_admix_update = numerator / denominator
 
     pi_update = np.sum(prob_of_atleast_one_recomb_and_state, axis=1)
-    pi_update /= np.sum(pi_update)
+    # pi_update /= np.sum(pi_update)
 
-    print("t_admix = ", t_admix_update)
-    return results, t_admix_update, pi_update, forward_prob
+    # print("t_admix = ", t_admix_update)
+    return results, numerator, denominator, pi_update, forward_prob
 
 
 def Decode_grid(
@@ -282,7 +282,7 @@ def Decode_grid(
     )
 
     # Posterior decode the file
-    post_seq, t_admix_update, pi_update, forward_prob = Forward_backward(
+    post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob = Forward_backward(
         starting_probabilities, t_admix, probabilities, gen_grid
     )
     post_seq /= np.sum(post_seq, axis=0)
@@ -293,4 +293,4 @@ def Decode_grid(
             post_seq, tree_left_bp, tree_right_bp, window_size=window_size
         )
 
-    return post_seq, t_admix_update, pi_update, forward_prob
+    return post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob
