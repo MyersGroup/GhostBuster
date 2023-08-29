@@ -442,10 +442,11 @@ def get_epoch_interval(args, ts_list):
 
 
 @jit(nopython=True, fastmath=True)
-def compute_gamma_num(
+def compute_gamma_num_denom(
     own_membership,
     prev_gamma,
     proportion_of_coalescing_all,
+    denom,
     epoch_index_all,
     num_ref_groups,
     masked_trees_index,
@@ -457,11 +458,14 @@ def compute_gamma_num(
     tree_right_bp,
     window_size,
 ):
+    eps = 1e-200
+    denom_1 = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
     num_full_tree = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
     count_site = 0
     for tid in masked_trees_index:
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
         epoch_index_in_tree = epoch_index_all[tid]
+        denom_in_tree = denom[tid]
         for _ in range(
             int(tree_left_bp[tid] / window_size),
             int(tree_right_bp[tid] / window_size),
@@ -495,14 +499,14 @@ def compute_gamma_num(
                         sum_of_num != 0
                     ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
                         num = num / sum_of_num
-                    num_full_tree[:, epoch] += (
-                        own_membership[count_site]
-                        * num
-                        / target_branch_length[tid][count_i]
+                    common_term = (
+                        own_membership[count_site] / target_branch_length[tid][count_i]
                     )
+                    num_full_tree[:, epoch] += common_term * num
+                    denom_1 += common_term * denom_in_tree[i]
                     count_i += 1
             count_site += 1
-    return num_full_tree
+    return num_full_tree, denom_1 + eps
 
 
 def compute_gamma_denom(own_membership, denom, n_epochs):
@@ -677,21 +681,26 @@ def load_gamma(path, groups, ref_groups):
         with open(path) as f:
             header = f.readline().strip("\n").split(" ")
         header = np.array(header)
-        if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
-            print(
-                "Groups in header do not match groups in input, groups in header are: "
-                + str(header)
-            )
-            raise ValueError
-        groups_to_index = [np.where(header == g)[0][0] for g in groups]
-        ref_groups_to_index = [np.where(header == g)[0][0] for g in ref_groups]
+        # if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
+        #     print(
+        #         "Groups in header do not match groups in input, groups in header are: "
+        #         + str(header)
+        #     )
+        #     raise ValueError
+        groups_to_index = np.arange(0, 2).tolist()
+        ref_groups_to_index = []
+        for g in ref_groups:
+            try:
+                ref_groups_to_index.append(np.where(header == g)[0][0])
+            except:
+                ref_groups_to_index.append(np.nan)
         df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
-        gamma_arr = np.zeros((len(groups), len(ref_groups), df.shape[1] - 2))
+        gamma_arr = np.nan*np.ones((len(groups), len(ref_groups), df.shape[1] - 2))
         for i, gid1 in enumerate(groups_to_index):
             for j, gid2 in enumerate(ref_groups_to_index):
-                gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
-        print(np.nan_to_num(gamma_arr, nan=0))
-        return np.nan_to_num(gamma_arr, nan=0)
+                if not np.isnan(gid2):
+                    gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+        return gamma_arr
     else:
         print("Unsupported file format for gamma files")
 
