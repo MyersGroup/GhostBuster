@@ -8,6 +8,7 @@ import matplotlib
 from scipy import interpolate
 from scipy.optimize import minimize
 from scipy.interpolate import make_interp_spline, BSpline
+import glob
 
 font = {"size": 16}
 matplotlib.rc("font", **font)
@@ -20,10 +21,10 @@ def func(dist, a, c):
     return a * np.exp(-dist / 100) + c
 
 
-def plot_ld_curves(dist, means_all, admixtimes, output_prefix):
+def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
     num_sam = len(means_all)
     num_clusters = len(means_all[0])
-    fig, ax = plt.subplots(num_clusters, num_clusters, figsize=(10, 10))
+    fig, ax = plt.subplots(num_clusters, num_clusters, figsize=(10, 10), dpi=300)
     for sam in range(num_sam):
         for i in range(num_clusters):
             for j in range(num_clusters):
@@ -34,20 +35,27 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix):
         for j in range(num_clusters):
             spl = make_interp_spline(dist, mean_of_all_sam[i, j])
             ax[i, j].plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
+            if refit:
+                initial_values = (np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000)))))
+                admixtimes = get_admixtimes(initial_values, dist, np.array(means_all)[:,i:i+1,j:j+1])
             popt, pcov = curve_fit(
                 func, dist * admixtimes, mean_of_all_sam[i, j], maxfev=5000
             )
             ax[i, j].plot(
                 dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1
             )
+            if refit:
+                y_cord = 0.5
+                ax[i, j].text(0.35, y_cord, '{0:.1f} gens'.format(admixtimes), transform=ax[i, j].transAxes, fontsize=14, verticalalignment='bottom')
     fig.text(0.5, 0.04, "Genetic distance (cM)", ha="center", va="center")
     fig.text(
         0.06, 0.5, "Relative probability", ha="center", va="center", rotation="vertical"
     )
-    fig.suptitle(
-        "Co-ancestry curves (admix time = {0:.1f} generations)".format(admixtimes)
-    )
-    plt.savefig(output_prefix + "_ld_curve.png")
+    if not refit:
+        fig.suptitle(
+            "Co-ancestry curves (admix time = {0:.1f} generations)".format(admixtimes)
+        )
+    plt.savefig(output_prefix + "ld_curve.pdf")
     plt.show()
 
 
@@ -112,50 +120,64 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters):
 
 
 if __name__ == "__main__":
-    bin_size = 0.1
-    bin_max = 50
+    bin_size = 0.05
+    bin_max = 10
     initial_values = (
         np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000))))
         # if args.t_admix_guess is None
         # else [args.t_admix_guess]
     )
     # df = pd.read_csv(
-    #     "../../hgdp_1gp/output/basal_overall_membership_132_133_134_135_136_137_138_139_140_141_142_143_144_145_146_147_148_149_150_151.csv",
+    #     "../../hgdp_1gp/output/sindhi_all_overall_membership_0_1_2_3_4_5_6_7_8_9_10_11_12_13_14_15_16_17_18_19_20_21_22_23_24_25_26_27_28_29_30_31_32_33_34_35_36_37_38_39.csv",
     #     sep="\s+",
     # )
-    num_hap = 40
-    for i in range(0, 0 + num_hap):
-        df_i = pd.read_csv(
-            "../../hgdp_1gp/output/japanese_all_overall_membership_" + str(i) + ".csv",
-            "\s+",
-        )
-        try:
-            df = pd.concat([df, df_i], axis=0)
-            print(df)
-        except:
-            df = df_i.copy()
+    output_prefix = '../../Relate_wolfdog/output/american_all_'
+    num_hap = 0
+    len_all = []
+    for chr in range(1, 7):
+        file_list = glob.glob(output_prefix + '{0}_overall_membership_*.csv'.format(chr))
+        sorted_hap_no = []
+        sorted_file_list = []
+        for file in file_list:
+            hap_no = int(file.split(output_prefix + '{0}_overall_membership_'.format(chr))[1].split('.csv')[0])
+            sorted_hap_no.append(hap_no)
+        
+        num_hap += len(sorted_hap_no)
+        for hap_no in np.sort(sorted_hap_no):
+            file = output_prefix + '{0}_overall_membership_'.format(chr) + str(hap_no) + '.csv'
+            df_i = pd.read_csv(
+                file,
+                "\s+",
+            )
+            len_all.append(len(df_i))
+            try:
+                df = pd.concat([df, df_i], axis=0)
+            except:
+                df = df_i.copy()
 
+    print("Number of haplotypes = " + str(num_hap))
     num_clusters = df.shape[1] - 3
     prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
 
     means_all = []
-    for sam in range(num_hap // 2):
-        hap_1 = 2 * sam
-        hap_2 = 2 * sam + 1
-        df_hap1 = df.iloc[
-            hap_1 * df.shape[0] // num_hap : hap_2 * df.shape[0] // num_hap
-        ]
-        df_hap2 = df.iloc[
-            hap_2 * df.shape[0] // num_hap : (hap_2 + 1) * df.shape[0] // num_hap
-        ]
-        for prob_col in prob_labels:
-            df_hap1[prob_col] = (
-                df_hap1[prob_col].values + df_hap2[prob_col].values
-            ) / 2
-        means, dist = get_coancestry_per_sample(
-            df_hap1, bin_size, bin_max, num_clusters
-        )
-        means_all.append(means)
+    len_all_cumsum = np.cumsum(len_all)
+    for sam in range(num_hap):
+        if sam >= 1:
+            df_sam = df.iloc[
+                len_all_cumsum[sam - 1] : len_all_cumsum[sam]
+            ]
+        else:
+            df_sam = df.iloc[0: len_all_cumsum[0]]
+        if sam % 2 == 0:
+            df_hap1 = df_sam
+        else:
+            for prob_col in prob_labels:
+                df_hap1[prob_col] += df_sam[prob_col]
+                df_hap1[prob_col] /= 2
+            means, dist = get_coancestry_per_sample(
+                df_hap1, bin_size, bin_max, num_clusters
+            )
+            means_all.append(means)
 
     # for i in range(2):
     #     for j in range(2):
@@ -165,4 +187,4 @@ if __name__ == "__main__":
     admixtimes = get_admixtimes(initial_values, dist, means_all)
     print("Admixtime = " + str(admixtimes))
 
-    plot_ld_curves(dist, means_all, admixtimes, "sim_bed")
+    plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False)
