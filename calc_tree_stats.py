@@ -105,10 +105,18 @@ def compute_tree_stats(
     )
 
     for chr_no, chr in enumerate(chrs):
-        recomb_map = pd.read_csv(
-            rec + str(chr) + ".txt",
-            sep="\t",
-        )
+        if os.path.isfile(rec + str(chr) + ".txt"):
+            recomb_map = pd.read_csv(
+                rec + str(chr) + ".txt",
+                sep="\t",
+            )
+        elif os.path.isfile(rec + str(chr) + ".txt.gz"):
+            recomb_map = pd.read_csv(
+                rec + str(chr) + ".txt.gz",
+                sep="\t",
+            )
+        else:
+            raise "Recomb map format not identified"
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
         recomb_map["Start Position(bp)"] = np.array(
             [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
@@ -153,7 +161,7 @@ def compute_tree_stats(
                             > tree.interval[1] + recomb_window_size
                         )
                         | (
-                            recomb_map["Position(bp)"]
+                            recomb_map[recomb_map.columns[1]] ##position(bp)
                             < tree.interval[0] - recomb_window_size
                         )
                     )
@@ -174,11 +182,11 @@ def compute_tree_stats(
                     recomb_rate = np.nan
                 elif len(recomb_events) > 1:
                     recomb_rate = (
-                        recomb_events.iloc[-1]["Map(cM)"]
-                        - recomb_events.iloc[0]["Map(cM)"]
+                        recomb_events.iloc[-1][recomb_map.columns[3]] ##map(cm)
+                        - recomb_events.iloc[0][recomb_map.columns[3]]
                     ) / (
-                        recomb_events.iloc[-1]["Position(bp)"]
-                        - recomb_events.iloc[0]["Position(bp)"]
+                        recomb_events.iloc[-1][recomb_map.columns[1]] ##position(bp)
+                        - recomb_events.iloc[0][recomb_map.columns[1]]
                     )
                 else:
                     recomb_rate = np.nan  # recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
