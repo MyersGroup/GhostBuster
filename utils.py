@@ -76,8 +76,29 @@ def downsample_trees(ground_truth, pop_index, downsample_frac):
     mask[ground_truth[pop_index] == 1] = downsample_mask
     return mask
 
+def get_paired_diff(arr):
+    paired_diff_sum = 0
+    for i in range(len(arr)):
+        for j in range(len(arr)):
+            if i!=j:
+                if np.nansum((arr[i] - arr[j])**2) > paired_diff_sum:
+                    paired_diff_sum = np.nansum((arr[i] - arr[j])**2)
+    return paired_diff_sum
 
 def write_coal(gamma_arr, filename, labs, output, epoch_intervals):
+    if len(labs) > 10:
+        logmse = []
+        for i in range(gamma_arr.shape[1]):
+            per_comp = []
+            for j in range(gamma_arr.shape[0]):
+                per_comp.append(np.log10(gamma_arr[j,i]))
+            logmse.append(get_paired_diff(per_comp))
+
+        logmse = np.array(logmse)
+        top10_groups = np.argsort(-logmse)[0:10]
+        labs = np.array(labs)[top10_groups].tolist()
+        gamma_arr = gamma_arr[:, top10_groups]
+
     epoch_intervals_pow = np.power(10, epoch_intervals)
     filename = output + "_" + filename
     f = open(filename, "w")
@@ -687,7 +708,7 @@ def load_gamma(path, groups, ref_groups):
         #         + str(header)
         #     )
         #     raise ValueError
-        groups_to_index = np.arange(0, 2).tolist()
+        groups_to_index = groups
         ref_groups_to_index = []
         for g in ref_groups:
             try:
@@ -700,6 +721,7 @@ def load_gamma(path, groups, ref_groups):
             for j, gid2 in enumerate(ref_groups_to_index):
                 if not np.isnan(gid2):
                     gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+        
         return gamma_arr
     else:
         print("Unsupported file format for gamma files")
