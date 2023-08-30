@@ -185,7 +185,7 @@ def filter_recomb_rate(
             ] = np.inf
     recomb_rates = np.nan_to_num(recomb_rates, posinf=np.nan)
     mask_dodgy = ~np.isnan(recomb_rates)
-    recomb_0_thresh = np.nansum(np.array(recomb_rates) <= 0) / np.sum(mask_dodgy)
+    recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
     mask_dodgy *= ~mask_for_dodgy_trees(
         recomb_rates,
         recomb_0_thresh,
