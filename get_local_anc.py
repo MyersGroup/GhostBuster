@@ -1,10 +1,11 @@
 from tqdm import tqdm
 import numpy as np
-import pandas as pd 
-import tskit 
+import pandas as pd
+import tskit
 from pathlib import Path
 import argparse
 import pdb
+
 
 def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
     if samples is None:
@@ -14,7 +15,7 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
         N += 1
     migrations = []
     for (m, migration) in enumerate(ts.migrations()):
-        if np.abs(migration.time-migr_time) < 1:
+        if np.abs(migration.time - migr_time) < 1:
             migrations.append(
                 {
                     "left": migration.left,
@@ -28,16 +29,17 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
     migration_array = [[[]] for _ in range(N)]
     tree = ts.first()
     for (m, migration) in enumerate(sorted_migrations):
-        tree = ts.at(migration["left"])
-        while migration["right"] >= tree.interval[0]:
-            parent_node = migration["node"]
-            for i in tree.get_leaves(parent_node):
+        print(m)
+        for tree in ts.trees(leaf_lists=True):
+            if migration["left"] > tree.get_interval()[0]:
+                continue
+            if migration["right"] <= tree.get_interval()[0]:
+                break
+            for i in tree.leaves(migration["node"]):
                 migration_array[i].append(
                     [tree.interval[0], tree.interval[1], migration["dest"]]
                 )
-            if tree.next() == False:
-                break
-    
+
     for j in samples:
         migrating_tracts_i = migration_array[j][1:]
         if migrating_tracts_i != []:
@@ -69,14 +71,15 @@ def get_migrating_tracts_with_id(ts, path, migr_time, samples=None):
                 delimiter=",",
             )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-sample_id",
         "--sample_id",
         help="Enter space seperated list of the indices of haplotype you wish local ancestry for",
         nargs="+",
-        type=int,
+        type=str,
         default=None,
     )
     parser.add_argument(
@@ -99,6 +102,23 @@ if __name__ == '__main__':
         default=None,
     )
     args = parser.parse_args()
-    for chr in tqdm(args.chrs.split(',')):
-        ts = tskit.load(Path(args.path) / str("stdpopsim_homsap_chr" + str(chr) + ".trees"))
-        get_migrating_tracts_with_id(ts, Path(args.path), args.migr_time, args.sample_id)
+    sample_id = []
+    for i in range(len(args.sample_id)):
+        if "-" in args.sample_id[i]:
+            sample_id.extend(
+                np.arange(
+                    int(args.sample_id[i].split("-")[0]),
+                    int(args.sample_id[i].split("-")[1]),
+                ).tolist()
+            )
+        else:
+            sample_id.append(int(args.sample_id[i]))
+    args.sample_id = sample_id
+
+    for chr in tqdm(args.chrs.split(",")):
+        ts = tskit.load(
+            Path(args.path) / str("stdpopsim_homsap_chr" + str(chr) + ".trees")
+        )
+        get_migrating_tracts_with_id(
+            ts, Path(args.path), args.migr_time, args.sample_id
+        )

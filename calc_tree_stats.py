@@ -10,6 +10,10 @@ import scipy.stats as stats
 import pandas as pd
 from tqdm import tqdm
 import pickle
+import msprime
+import copy
+import pdb
+import os
 
 
 def lineage_nodes(tree, sample_ids):
@@ -62,10 +66,21 @@ def get_poisson_logpmf_bins(mutrates, num_epochs, mut_rate):
 
 
 def compute_tree_stats(
-    ts_list, chrs, allmuts, mutden, rec, sample_list=None, force_build=1
+    args,
+    poplabels,
+    ts_list,
+    chrs,
+    allmuts,
+    mutden,
+    rec,
+    sample_list=None,
+    force_build=1,
 ):
     tree_size = []
     tree_left_bp = []
+    tree_right_bp = []
+    tree_left_bp_gen = []
+    tree_right_bp_gen = []
     no_of_mutations = []
     tmrca = []
     recomb_window_size = 50000  ## window size for measure recombination rates
@@ -84,15 +99,31 @@ def compute_tree_stats(
     count = 0
     num_nodes = len(list(ts_list[0].first().nodes()))
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
+
+    cent_telo_hla = pd.read_csv(
+        os.path.dirname(os.path.abspath(__file__)) + "/real_data_mask.txt", sep="\t"
+    )
+
     for chr_no, chr in enumerate(chrs):
-        recomb_map = pd.read_csv(
-            rec + str(chr) + ".txt",
-            sep="\t",
-        )
+        if os.path.isfile(rec + str(chr) + ".txt"):
+            recomb_map = pd.read_csv(
+                rec + str(chr) + ".txt",
+                sep="\s+",
+            )
+            recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt")
+        elif os.path.isfile(rec + str(chr) + ".txt.gz"):
+            recomb_map = pd.read_csv(
+                rec + str(chr) + ".txt.gz",
+                sep="\s+",
+            )
+            recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt.gz")
+        else:
+            raise "Recomb map format not identified"
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
         recomb_map["Start Position(bp)"] = np.array(
             [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
         )
+        tree_left_bp_chr, tree_right_bp_chr = [], []
         if allmuts is not None:
             relate_allmuts_file = pd.read_csv(
                 allmuts + str(chr) + ".allmuts",
@@ -119,7 +150,8 @@ def compute_tree_stats(
         for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
             if tree.interval[1] // force_build - tree.interval[0] // force_build > 0:
                 tree_size.append(tree.interval[1] - tree.interval[0])
-                tree_left_bp.append(tree.interval[0])
+                tree_left_bp_chr.append(tree.interval[0])
+                tree_right_bp_chr.append(tree.interval[1])
                 no_of_mutations.append(tree.num_mutations)
                 tmrca.append(tree.time(tree.root))
                 chr_map.append(chr)
@@ -130,21 +162,35 @@ def compute_tree_stats(
                             > tree.interval[1] + recomb_window_size
                         )
                         | (
-                            recomb_map["Position(bp)"]
+                            recomb_map[recomb_map.columns[1]] ##position(bp)
                             < tree.interval[0] - recomb_window_size
                         )
                     )
                 ]
-                if len(recomb_events) > 1:
+                if (
+                    args.mode == "real"
+                    and (
+                        (
+                            tree.interval[0]
+                            >= cent_telo_hla[cent_telo_hla.chr == str(chr)].start
+                        )
+                        & (
+                            tree.interval[1]
+                            < cent_telo_hla[cent_telo_hla.chr == str(chr)].end
+                        )
+                    ).any()
+                ):
+                    recomb_rate = np.nan
+                elif len(recomb_events) > 1:
                     recomb_rate = (
-                        recomb_events.iloc[-1]["Map(cM)"]
-                        - recomb_events.iloc[0]["Map(cM)"]
+                        recomb_events.iloc[-1][recomb_map.columns[3]] ##map(cm)
+                        - recomb_events.iloc[0][recomb_map.columns[3]]
                     ) / (
-                        recomb_events.iloc[-1]["Position(bp)"]
-                        - recomb_events.iloc[0]["Position(bp)"]
+                        recomb_events.iloc[-1][recomb_map.columns[1]] ##position(bp)
+                        - recomb_events.iloc[0][recomb_map.columns[1]]
                     )
                 else:
-                    recomb_rate = recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
+                    recomb_rate = np.nan  # recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
                 recomb_rates.append(recomb_rate)
                 if allmuts is not None:
                     relate_allmuts_tree = relate_allmuts_file.iloc[
@@ -172,8 +218,8 @@ def compute_tree_stats(
                         )
                     )
                     num_branches_on_target.append(len(lineage_nodes(tree, sample_list)))
-                    snps_not_mapping.append(0) #(relate_mutgz_tree['is_not_mapping'])
-                    snps_flipped.append(0) #relate_mutgz_tree['is_flipped'])
+                    snps_not_mapping.append(0)  # (relate_mutgz_tree['is_not_mapping'])
+                    snps_flipped.append(0)  # relate_mutgz_tree['is_flipped'])
                     # mutrate_logpmf_target.append(
                     #     get_poisson_logpmf_bins(
                     #         mut_rates_tid, mutrate_num_epochs, mut_rate=1e-8
@@ -197,6 +243,14 @@ def compute_tree_stats(
 
         del tree
         del ts
+        tree_left_bp_gen.extend(
+            recomb_map_msprime.get_cumulative_mass(tree_left_bp_chr).tolist()
+        )
+        tree_right_bp_gen.extend(
+            recomb_map_msprime.get_cumulative_mass(tree_right_bp_chr).tolist()
+        )
+        tree_left_bp.extend(tree_left_bp_chr)
+        tree_right_bp.extend(tree_right_bp_chr)
 
     if mutden is not None:
         mutrate_logpmf_target, mutrate_opportunity_target = compute_mutden(
@@ -209,6 +263,9 @@ def compute_tree_stats(
     return (
         tree_size,
         tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
         no_of_mutations,
         tmrca,
         recomb_rates,
@@ -222,7 +279,7 @@ def compute_tree_stats(
         mutrate_opportunity_target,
         chr_map,
         snps_not_mapping,
-        snps_flipped
+        snps_flipped,
     )
 
 
@@ -263,12 +320,16 @@ def compute_mutden(ts_list, chrs, samples, mutden, force_build=1):
 
 def load_tree_stats(args, ts_list, poplabels):
     chrs = list(map(int, args.chrs.split(",")))
+    sample_id_label = "_".join([str(e) for e in args.sample_id])
     tree_stats_file_name = args.output + "_tree_stats_" + str(args.chrs) + ".pkl"
     try:
         f_pkl = open(tree_stats_file_name, "rb")
         (
             tree_size,
             tree_left_bp,
+            tree_right_bp,
+            tree_left_bp_gen,
+            tree_right_bp_gen,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -282,7 +343,7 @@ def load_tree_stats(args, ts_list, poplabels):
             mutrate_opportunity_target,
             chr_map,
             snps_not_mapping,
-            snps_flipped
+            snps_flipped,
         ) = pickle.load(f_pkl)
         f_pkl.close()
         print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -292,6 +353,9 @@ def load_tree_stats(args, ts_list, poplabels):
         (
             tree_size,
             tree_left_bp,
+            tree_right_bp,
+            tree_left_bp_gen,
+            tree_right_bp_gen,
             no_of_mutations,
             tmrca,
             recomb_rates,
@@ -305,8 +369,10 @@ def load_tree_stats(args, ts_list, poplabels):
             mutrate_opportunity_target,
             chr_map,
             snps_not_mapping,
-            snps_flipped
+            snps_flipped,
         ) = compute_tree_stats(
+            args,
+            poplabels,
             ts_list,
             chrs,
             args.allmuts,
@@ -321,6 +387,9 @@ def load_tree_stats(args, ts_list, poplabels):
             [
                 tree_size,
                 tree_left_bp,
+                tree_right_bp,
+                tree_left_bp_gen,
+                tree_right_bp_gen,
                 no_of_mutations,
                 tmrca,
                 recomb_rates,
@@ -334,7 +403,7 @@ def load_tree_stats(args, ts_list, poplabels):
                 mutrate_opportunity_target,
                 chr_map,
                 snps_not_mapping,
-                snps_flipped
+                snps_flipped,
             ],
             f_pkl,
         )
@@ -345,8 +414,11 @@ def load_tree_stats(args, ts_list, poplabels):
         recomb_rates,
         mutrate_opportunity_target,
         tree_left_bp,
+        tree_right_bp,
+        tree_left_bp_gen,
+        tree_right_bp_gen,
         chr_map,
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
-        num_snps_on_lineage
+        num_snps_on_lineage,
     )
