@@ -988,6 +988,31 @@ def write_membership_grid(
     )
 
 
+def write_membership_grid(
+    own_membership,
+    tree_left_bp,
+    tree_right_bp,
+    n_clusters,
+    sample_id_label,
+    output,
+    window_size=1e3,
+):
+    assert len(own_membership[0]) == len(tree_left_bp)
+    assert len(tree_left_bp) == len(tree_right_bp)
+    res = []
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        for j in range(int(l / window_size), int(r / window_size)):
+            res.append([j * window_size] + list(own_membership[:, i]))
+    pd.DataFrame(
+        data=np.array(res),
+        columns=["start"] + ["prob_" + str(i) for i in range(n_clusters)],
+    ).to_csv(
+        output + "_overall_membership_" + sample_id_label + ".csv",
+        index=False,
+        sep="\t",
+    )
+
+
 def write_membership_gamma(
     args,
     own_membership,
@@ -1018,6 +1043,8 @@ def write_membership_gamma(
         tree_right_bp,
         tree_left_bp_gen,
         tree_right_bp_gen,
+        tree_left_bp,
+        tree_right_bp,
         args.num_clusters,
         sample_id_label,
         args.output,
