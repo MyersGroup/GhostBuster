@@ -959,7 +959,7 @@ def write_membership_grid(
     tree_left_bp_gen,
     tree_right_bp_gen,
     n_clusters,
-    sample_id_label,
+    sample_name_list,
     output,
     window_size=1e3,
 ):
@@ -977,40 +977,19 @@ def write_membership_grid(
                 [c, j * window_size, 100 * gen_pos] + list(own_membership[:, count_i])
             )
             count_i += 1
-    pd.DataFrame(
-        data=np.array(res),
-        columns=["chr", "pos", "genpos"]
-        + ["prob_" + str(i) for i in range(n_clusters)],
-    ).to_csv(
-        output + "_overall_membership_" + sample_id_label + ".csv",
-        index=False,
-        sep="\t",
-    )
-
-
-def write_membership_grid(
-    own_membership,
-    tree_left_bp,
-    tree_right_bp,
-    n_clusters,
-    sample_id_label,
-    output,
-    window_size=1e3,
-):
-    assert len(own_membership[0]) == len(tree_left_bp)
-    assert len(tree_left_bp) == len(tree_right_bp)
-    res = []
-    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
-        for j in range(int(l / window_size), int(r / window_size)):
-            res.append([j * window_size] + list(own_membership[:, i]))
-    pd.DataFrame(
-        data=np.array(res),
-        columns=["start"] + ["prob_" + str(i) for i in range(n_clusters)],
-    ).to_csv(
-        output + "_overall_membership_" + sample_id_label + ".csv",
-        index=False,
-        sep="\t",
-    )
+    
+    for i, sample_name in enumerate(sample_name_list):
+        res_sam = np.array(res)[i*len(res) // len(sample_name_list):max((i+1)*len(res) // len(sample_name_list),len(res))]
+        print(res_sam)
+        pd.DataFrame(
+            data=np.array(res_sam),
+            columns=["chr", "pos", "genpos"]
+            + ["prob_" + str(i) for i in range(n_clusters)],
+        ).to_csv(
+            output + "_overall_membership_" + sample_name + ".csv",
+            index=False,
+            sep="\t",
+        )
 
 
 def write_membership_gamma(
@@ -1027,6 +1006,7 @@ def write_membership_gamma(
     epoch_intervals,
     unique_groups,
     sample_id_label,
+    sample_name_list
 ):
     ## gamma and membership plots
     filename = (
@@ -1043,10 +1023,8 @@ def write_membership_gamma(
         tree_right_bp,
         tree_left_bp_gen,
         tree_right_bp_gen,
-        tree_left_bp,
-        tree_right_bp,
         args.num_clusters,
-        sample_id_label,
+        sample_name_list,
         args.output,
         args.force_build,
     )
@@ -1143,6 +1121,7 @@ def main(args):
     print(sample_id)
     args.sample_id = sample_id
     sample_id_label = "_".join([str(e) for e in args.sample_id])
+    sample_name_list = poplabels.loc[args.sample_id].ID.tolist(); print(sample_name_list)
 
     num_samples = len(poplabels)
     for sample in args.sample_id:
@@ -1576,6 +1555,7 @@ def main(args):
             epoch_intervals,
             unique_groups,
             sample_id_label,
+            sample_name_list
         )
 
     return
