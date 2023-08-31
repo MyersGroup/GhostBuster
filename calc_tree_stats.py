@@ -347,7 +347,6 @@ def load_tree_stats(args, ts_list, poplabels):
         ) = pickle.load(f_pkl)
         f_pkl.close()
         print("Done loading tree statistics from: " + str(tree_stats_file_name))
-        import pdb; pdb.set_trace()
     except:
         print("Tree statistics file not found, calculating tree statistics..")
         ## mapping samples back to their original names
