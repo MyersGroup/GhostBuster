@@ -108,20 +108,21 @@ def compute_tree_stats(
         if os.path.isfile(rec + str(chr) + ".txt"):
             recomb_map = pd.read_csv(
                 rec + str(chr) + ".txt",
-                sep="\t",
+                sep="\s+",
             )
+            recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt")
         elif os.path.isfile(rec + str(chr) + ".txt.gz"):
             recomb_map = pd.read_csv(
                 rec + str(chr) + ".txt.gz",
-                sep="\t",
+                sep="\s+",
             )
+            recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt.gz")
         else:
             raise "Recomb map format not identified"
         recomb_map_arr = np.array(recomb_map[recomb_map.columns[1:]])
         recomb_map["Start Position(bp)"] = np.array(
             [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
         )
-        recomb_map_msprime = msprime.RateMap.read_hapmap(rec + str(chr) + ".txt")
         tree_left_bp_chr, tree_right_bp_chr = [], []
         if allmuts is not None:
             relate_allmuts_file = pd.read_csv(
@@ -346,6 +347,7 @@ def load_tree_stats(args, ts_list, poplabels):
         ) = pickle.load(f_pkl)
         f_pkl.close()
         print("Done loading tree statistics from: " + str(tree_stats_file_name))
+        import pdb; pdb.set_trace()
     except:
         print("Tree statistics file not found, calculating tree statistics..")
         ## mapping samples back to their original names
