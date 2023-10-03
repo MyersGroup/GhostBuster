@@ -76,28 +76,41 @@ def downsample_trees(ground_truth, pop_index, downsample_frac):
     mask[ground_truth[pop_index] == 1] = downsample_mask
     return mask
 
-def get_paired_diff(arr):
-    paired_diff_sum = 0
-    for i in range(len(arr)):
-        for j in range(len(arr)):
-            if i!=j:
-                if np.nansum((arr[i] - arr[j])**2) > paired_diff_sum:
-                    paired_diff_sum = np.nansum((arr[i] - arr[j])**2)
-    return paired_diff_sum
-
 def write_coal(gamma_arr, filename, labs, output, epoch_intervals):
     if len(labs) > 10:
-        logmse = []
-        for i in range(gamma_arr.shape[1]):
-            per_comp = []
-            for j in range(gamma_arr.shape[0]):
-                per_comp.append(np.log10(gamma_arr[j,i]))
-            logmse.append(get_paired_diff(per_comp))
+        epoch_intervals_pow = np.power(10, epoch_intervals)
+        f = open(output + "_" + filename + '.all', "w")
+        f.write(" ".join(labs) + "\n")
+        for val in epoch_intervals_pow:
+            f.write("%s " % val)
+        f.write("\n")
+        for i in range(gamma_arr.shape[0]):
+            for j in range(gamma_arr.shape[1]):
+                f.write(str(i) + " " + str(j) + " ")
+                for e in range(gamma_arr.shape[2]):
+                    f.write(str(gamma_arr[i][j][e]) + " ")
+                f.write("\n")
 
-        logmse = np.array(logmse)
-        top10_groups = np.argsort(-logmse)[0:10]
-        labs = np.array(labs)[top10_groups].tolist()
-        gamma_arr = gamma_arr[:, top10_groups]
+        f.close()
+
+        min_avg_coal = []
+        mean_popsize = -np.log10(np.nanmean(gamma_arr[:,:,1:-1], axis=2))
+        for i in range(gamma_arr.shape[1]):
+            min_diff_arr = []
+            for j in range(gamma_arr.shape[0]):
+                min_diff_with_other_comp = -np.inf
+                for k in range(gamma_arr.shape[0]):
+                    if k != j:
+                        min_diff_with_other_comp = max(min_diff_with_other_comp, mean_popsize[j, i] - mean_popsize[k, i])
+                min_diff_arr.append(min_diff_with_other_comp)
+            min_avg_coal.append(min_diff_arr)
+
+        min_avg_coal = np.array(min_avg_coal)  ## N_ref x N_clusters
+        top_groups = []
+        for j in range(gamma_arr.shape[0]):
+            top_groups.extend(np.argsort(min_avg_coal[:, j])[0:10//gamma_arr.shape[0]])
+        labs = np.array(labs)[top_groups].tolist()
+        gamma_arr = gamma_arr[:, top_groups]
 
     epoch_intervals_pow = np.power(10, epoch_intervals)
     filename = output + "_" + filename
@@ -412,8 +425,8 @@ def load_mask_csv(args, membership_mask, sample_id_list, ts_list, mask_dodgy, ch
     count = 0
     for chr_count, chr in enumerate(chrs):
         tree = ts_list[chr_count].first()
-        membership_mask_chr = membership_mask[membership_mask.chr == chr]
-        membership_mask_chr["pos"] = membership_mask_chr["pos"] // args.force_build
+        membership_mask_chr = membership_mask[membership_mask[membership_mask.columns[0]].str.strip('chr') == chr]
+        membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]] // args.force_build
         for tid in range(ts_list[chr_count].num_trees):
             if (
                 tree.interval[1] // args.force_build
@@ -422,7 +435,7 @@ def load_mask_csv(args, membership_mask, sample_id_list, ts_list, mask_dodgy, ch
             ):
                 if (
                     tree.interval[0] // args.force_build
-                    in membership_mask_chr["pos"].values.tolist()
+                    in membership_mask_chr[membership_mask.columns[1]].values.tolist()
                 ):
                     mask_dodgy[count] = True
                 else:

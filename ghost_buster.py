@@ -36,6 +36,7 @@ from hmm_decode import Decode_grid
 from numba import jit
 import numba as nb
 import networkx as nx 
+import glob
 
 warnings.filterwarnings("ignore")
 
@@ -647,6 +648,9 @@ def random_sweep_iter(
         tau = load_props(args.load_props)
 
     else:
+        if args.joint_fit:
+            n_unique_groups = n_unique_groups + n_clusters - 1
+
         gamma_arr = np.power(
             np.e,
             np.random.uniform(
@@ -764,6 +768,8 @@ def random_sweep_iter(
     loglikelihood_per_comp = log_num_em + log_denom_em
     own_membership_trial = np.array(own_membership_trial, dtype='float64')
     own_membership_trial = np.repeat(own_membership_trial, args.num_subtrees, axis=1)
+    if args.regress_out:
+        loglikelihood_per_comp = loglikelihood_per_comp[0] - loglikelihood_per_comp[1]
 
     for epoch in range(args.sweep_num_iters):
         own_membership_trial, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
@@ -786,8 +792,6 @@ def random_sweep_iter(
             tree_left_bp_gen,
             tree_right_bp_gen,
         )
-
-    loglikelihood_per_comp = loglikelihood_per_comp[0] - loglikelihood_per_comp[1]
     if args.joint_fit:
         return (
             log_likelihood,
@@ -838,10 +842,6 @@ def random_sweep(
     if not args.joint_fit:
         num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
         for sample_no, sample in enumerate(args.sample_id):
-            # poplabels_only_mbuti = copy.deepcopy(poplabels)
-            # poplabels_only_mbuti.loc[
-            #     (poplabels.GROUP == "Han") & (poplabels.ID != sample + 1), "INCLUDE"
-            # ] = 0
             (
                 num1,
                 denom1,
@@ -960,6 +960,7 @@ def write_membership_grid(
     tree_right_bp_gen,
     n_clusters,
     sample_name_list,
+    sample_id_list,
     output,
     window_size=1e3,
 ):
@@ -978,15 +979,14 @@ def write_membership_grid(
             )
             count_i += 1
     
-    for i, sample_name in enumerate(sample_name_list):
-        res_sam = np.array(res)[i*len(res) // len(sample_name_list):max((i+1)*len(res) // len(sample_name_list),len(res))]
-        print(res_sam)
+    for i, (sample_name, sample_id) in enumerate(zip(sample_name_list, sample_id_list)):
+        res_sam = np.array(res)[i*len(res) // len(sample_name_list):min((i+1)*len(res) // len(sample_name_list),len(res))]
         pd.DataFrame(
             data=np.array(res_sam),
             columns=["chr", "pos", "genpos"]
             + ["prob_" + str(i) for i in range(n_clusters)],
         ).to_csv(
-            output + "_overall_membership_" + sample_name + ".csv",
+            output + "_overall_membership_" + sample_name + "_sample_id_" + str(sample_id) + ".csv",
             index=False,
             sep="\t",
         )
@@ -1025,6 +1025,7 @@ def write_membership_gamma(
         tree_right_bp_gen,
         args.num_clusters,
         sample_name_list,
+        args.sample_id,
         args.output,
         args.force_build,
     )
@@ -1456,7 +1457,8 @@ def main(args):
             import matplotlib.pyplot as plt 
             plt.Figure((6,6))
             sns.heatmap(mean_loglikelihood_corr, center=0)
-            plt.title('Expected Corr. matrix (Avg. corr. = {0})'.format(np.round(np.median(mean_loglikelihood_corr),2)))
+            mean_ll_corr = np.sum(mean_loglikelihood_corr) / (len(mean_loglikelihood_corr)**2-len(mean_loglikelihood_corr))
+            plt.title('Expected Corr. matrix (Avg. corr. = {0})'.format(np.round(mean_ll_corr,2)))
             plt.savefig("corr1.png", dpi=300)
 
 
