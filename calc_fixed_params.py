@@ -423,10 +423,6 @@ def fixed_parameters(
                                         epoch,
                                     ] = 0
 
-    ## convert to Numba Lists
-    denom_all = make_numba_nested_list(denom_all)
-    proportion_of_coalescing_all = make_numba_nested_list(proportion_of_coalescing_all)
-    epoch_index_all = make_numba_nested_list(epoch_index_all)
     return (
         coal_count,
         denom_all,
@@ -435,112 +431,68 @@ def fixed_parameters(
     )
 
 
-def load_fixed_params(args, ts_list, poplabels, mask_dodgy, epoch_intervals):
+def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, fixed_params_file_prefix=None):
     chrs = list(map(int, args.chrs.split(",")))
-    sample_id_label = "_".join([str(e) for e in args.sample_id])
-    num_trees = np.sum(mask_dodgy)
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
-    fixed_params_file_name = (
-        args.output
-        + "_fixed_params_"
-        + sample_id_label
-        + "_"
-        + str(args.force_build)
-        + "_"
-        + str(args.chrs)
-        + "_"
-        + str(args.masking_threshold)
-        + ".pkl"
-    )
-    try:
-        f_pkl = open(fixed_params_file_name, "rb")
-        if args.mode == "sim":
-            (
-                num,
-                denom,
-                proportion_of_coalescing_all,
-                epoch_index_all,
-                ground_truth_membership,
-            ) = pickle.load(f_pkl)
+    denom_all = []
+    proportion_of_coalescing_all = []
+    epoch_index_all = []
+
+    for chr_no, chr in enumerate(chrs):
+        if fixed_params_file_prefix is not None:
+            fixed_params_file_name = fixed_params_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
         else:
-            (
-                num,
-                denom,
-                proportion_of_coalescing_all,
-                epoch_index_all,
-            ) = pickle.load(f_pkl)
+            fixed_params_file_name = args.output + "_fixed_params_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
+        try:
+            f_pkl = open(fixed_params_file_name, "rb")
+            (num_subtrees, max_per_group, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index) = pickle.load(f_pkl)
             f_pkl.close()
-            ground_truth_membership = None
-        print("Done loading fixed parameters from: " + str(fixed_params_file_name))
+            if (num_subtrees == args.num_subtrees) & (max_per_group == args.max_per_group) & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values):
+                ##convert to numba list
+                denom_all.extend(denom)
+                proportion_of_coalescing_all.extend(proportion_of_coalescing)
+                epoch_index_all.extend(epoch_index)
+                print("Loaded fixed parameters from: " + str(fixed_params_file_name))
+                continue
 
-    except:
-        print("Fixed parameters file not found, calculating fixed parameters..")
-        if args.mode == "sim":
-            ground_truth_membership = make_ground_truth(
-                ts_list,
-                num_trees // args.num_subtrees,
-                mask_dodgy=mask_dodgy[:: args.num_subtrees],
-                path=args.ground_truth_path,
-                sample=args.sample_id,
-                chrs=chrs,
-                force_build=args.force_build,
+        except:
+            print("Fixed parameters file not found, calculating fixed parameters..")
+            mask_dodgy_sam_chr = mask_dodgy[np.array(chr_map) == chr]
+            num_trees = np.sum(mask_dodgy_sam_chr)
+            (coal_count, denom, proportion_of_coalescing, epoch_index) = fixed_parameters(
+                ts_list[chr_no:chr_no + 1],
+                poplabels,
+                unique_groups,
+                num_trees,
+                mask_dodgy_sam_chr,
+                sample,
+                args.sample_id,
+                epoch_intervals_pow,
+                args.force_build,
+                args.num_subtrees,
+                args.max_per_group,
+                gt_ref=None,
+                ignore_first_epoch=args.ignore_first_epoch,
             )
-            ground_truth_membership = np.repeat(
-                ground_truth_membership, args.num_subtrees, axis=1
-            )
-        else:
-            ground_truth_membership = None
-        (num, denom, proportion_of_coalescing_all, epoch_index_all,) = fixed_parameters(
-            ts_list,
-            poplabels,
-            unique_groups,
-            num_trees,
-            mask_dodgy,
-            args.sample_id,
-            epoch_intervals_pow,
-            args.force_build,
-            args.num_subtrees,
-            args.max_per_group,
-            args.ignore_first_epoch,
-        )
-        f_pkl = open(fixed_params_file_name, "wb")
-        if args.mode == "sim":
-            pickle.dump(
-                [
-                    num,
-                    denom,
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                    ground_truth_membership,
-                ],
-                f_pkl,
-            )
-        else:
-            pickle.dump(
-                [
-                    num,
-                    denom,
-                    proportion_of_coalescing_all,
-                    epoch_index_all,
-                ],
-                f_pkl,
-            )
+            f_pkl = open(fixed_params_file_name, "wb")
+            pickle.dump([args.num_subtrees, args.max_per_group, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index], f_pkl)
             f_pkl.close()
-        print("Fixed parameters stored in: " + str(fixed_params_file_name))
+            denom_all.extend(denom)
+            proportion_of_coalescing_all.extend(proportion_of_coalescing)
+            epoch_index_all.extend(epoch_index)
+            print("Fixed parameters stored in: " + str(fixed_params_file_name))
 
-    if (denom < -1e-8).any():
-        raise ValueError(
-            "The opportunity has negative values, check the sampling times in poplabels.txt"
-        )
+    
+    denom_all = make_numba_nested_list(denom_all)
+    proportion_of_coalescing_all = make_numba_nested_list(proportion_of_coalescing_all)
+    epoch_index_all = make_numba_nested_list(epoch_index_all)
 
-        ### Clipping the opportunity to zero (because there might be some very small -ve values cause of numerical instabilities)
-    denom = copy.deepcopy(np.maximum(denom, 0))
+
     return (
-        num,
-        denom,
+        coal_count,
+        denom_all,
         proportion_of_coalescing_all,
         epoch_index_all,
-        ground_truth_membership,
     )

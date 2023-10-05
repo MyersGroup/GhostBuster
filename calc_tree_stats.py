@@ -318,73 +318,28 @@ def compute_mutden(ts_list, chrs, samples, mutden, force_build=1):
     return mutrate_logpmf_target, mutrate_opportunity_target
 
 
-def load_tree_stats(args, ts_list, poplabels):
+def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
     chrs = list(map(int, args.chrs.split(",")))
     sample_id_label = "_".join([str(e) for e in args.sample_id])
-    tree_stats_file_name = args.output + "_tree_stats_" + str(args.chrs) + ".pkl"
-    try:
-        f_pkl = open(tree_stats_file_name, "rb")
-        (
-            tree_size,
-            tree_left_bp,
-            tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
-            no_of_mutations,
-            tmrca,
-            recomb_rates,
-            rank_zero_snp_branches_target,
-            frac_branches_with_snp_target,
-            frac_branches_with_snp,
-            num_snps_on_tree,
-            num_snps_on_lineage,
-            num_branches_on_target,
-            mutrate_logpmf_target,
-            mutrate_opportunity_target,
-            chr_map,
-            snps_not_mapping,
-            snps_flipped,
-        ) = pickle.load(f_pkl)
-        f_pkl.close()
-        print("Done loading tree statistics from: " + str(tree_stats_file_name))
-    except:
-        print("Tree statistics file not found, calculating tree statistics..")
-        ## mapping samples back to their original names
-        (
-            tree_size,
-            tree_left_bp,
-            tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
-            no_of_mutations,
-            tmrca,
-            recomb_rates,
-            rank_zero_snp_branches_target,
-            frac_branches_with_snp_target,
-            frac_branches_with_snp,
-            num_snps_on_tree,
-            num_snps_on_lineage,
-            num_branches_on_target,
-            mutrate_logpmf_target,
-            mutrate_opportunity_target,
-            chr_map,
-            snps_not_mapping,
-            snps_flipped,
-        ) = compute_tree_stats(
-            args,
-            poplabels,
-            ts_list,
-            chrs,
-            args.allmuts,
-            args.mutden,
-            args.rec,
-            args.sample_id,
-            args.force_build,
-        )
+    recomb_rates_all = []
+    mutrate_opportunity_target_all = []
+    tree_left_bp_all = []
+    tree_right_bp_all = []
+    tree_left_bp_gen_all = []
+    tree_right_bp_gen_all = []
+    chr_map_all = []
+    frac_branches_with_snp_target_all = []
+    mutrate_logpmf_target_all = []
+    num_snps_on_lineage_all = []    
 
-        f_pkl = open(tree_stats_file_name, "wb")
-        pickle.dump(
-            [
+    for chrom in chrs:
+        if tree_stats_file_prefix is not None:
+            tree_stats_file_name = tree_stats_file_prefix + '_chr' + str(chrom) + ".pkl"
+        else:
+            tree_stats_file_name = args.output + "_tree_stats_chr" + str(chrom) + ".pkl"
+        try:
+            f_pkl = open(tree_stats_file_name, "rb")
+            (
                 tree_size,
                 tree_left_bp,
                 tree_right_bp,
@@ -404,21 +359,92 @@ def load_tree_stats(args, ts_list, poplabels):
                 chr_map,
                 snps_not_mapping,
                 snps_flipped,
-            ],
-            f_pkl,
-        )
-        f_pkl.close()
-        print("Tree statistics stored in: " + str(tree_stats_file_name))
+            ) = pickle.load(f_pkl)
+            f_pkl.close()
+            print("Done loading tree statistics from: " + str(tree_stats_file_name))
+        except:
+            print("Tree statistics file not found, calculating tree statistics..")
+            ## mapping samples back to their original names
+            (
+                tree_size,
+                tree_left_bp,
+                tree_right_bp,
+                tree_left_bp_gen,
+                tree_right_bp_gen,
+                no_of_mutations,
+                tmrca,
+                recomb_rates,
+                rank_zero_snp_branches_target,
+                frac_branches_with_snp_target,
+                frac_branches_with_snp,
+                num_snps_on_tree,
+                num_snps_on_lineage,
+                num_branches_on_target,
+                mutrate_logpmf_target,
+                mutrate_opportunity_target,
+                chr_map,
+                snps_not_mapping,
+                snps_flipped,
+            ) = compute_tree_stats(
+                args,
+                poplabels,
+                ts_list,
+                chrs,
+                args.allmuts,
+                args.mutden,
+                args.rec,
+                args.sample_id,
+                args.force_build,
+            )
+
+            f_pkl = open(tree_stats_file_name, "wb")
+            pickle.dump(
+                [
+                    tree_size,
+                    tree_left_bp,
+                    tree_right_bp,
+                    tree_left_bp_gen,
+                    tree_right_bp_gen,
+                    no_of_mutations,
+                    tmrca,
+                    recomb_rates,
+                    rank_zero_snp_branches_target,
+                    frac_branches_with_snp_target,
+                    frac_branches_with_snp,
+                    num_snps_on_tree,
+                    num_snps_on_lineage,
+                    num_branches_on_target,
+                    mutrate_logpmf_target,
+                    mutrate_opportunity_target,
+                    chr_map,
+                    snps_not_mapping,
+                    snps_flipped,
+                ],
+                f_pkl,
+            )
+            f_pkl.close()
+            print("Tree statistics stored in: " + str(tree_stats_file_name))
+        recomb_rates_all.extend(recomb_rates)
+        mutrate_opportunity_target_all.extend(mutrate_opportunity_target)
+        tree_left_bp_all.extend(tree_left_bp)
+        tree_right_bp_all.extend(tree_right_bp)
+        tree_left_bp_gen_all.extend(tree_left_bp_gen)
+        tree_right_bp_gen_all.extend(tree_right_bp_gen)
+        chr_map_all.extend(chr_map)
+        frac_branches_with_snp_target_all.extend(frac_branches_with_snp_target)
+        mutrate_logpmf_target_all.extend(mutrate_logpmf_target)
+        num_snps_on_lineage_all.extend(num_snps_on_lineage)
+
 
     return (
-        recomb_rates,
-        mutrate_opportunity_target,
-        tree_left_bp,
-        tree_right_bp,
-        tree_left_bp_gen,
-        tree_right_bp_gen,
-        chr_map,
-        frac_branches_with_snp_target,
-        mutrate_logpmf_target,
-        num_snps_on_lineage,
+        recomb_rates_all,
+        mutrate_opportunity_target_all,
+        tree_left_bp_all,
+        tree_right_bp_all,
+        tree_left_bp_gen_all,
+        tree_right_bp_gen_all,
+        chr_map_all,
+        frac_branches_with_snp_target_all,
+        mutrate_logpmf_target_all,
+        num_snps_on_lineage_all,
     )

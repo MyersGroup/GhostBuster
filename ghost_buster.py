@@ -13,7 +13,7 @@ from joblib import Parallel, delayed
 import gc
 
 from calc_tree_stats import load_tree_stats
-from calc_fixed_params import fixed_parameters
+from calc_fixed_params import fixed_parameters, load_fixed_params
 from calc_ground_truth import get_groundtruth_reference, make_ground_truth
 from utils import (
     make_one_hot,
@@ -320,6 +320,7 @@ def e_m_step(
     tree_right_bp_gen,
     loglikehood_cov=None,
 ):
+    st = time.time()
     masked_trees_index = np.arange(0, n_trees)
     n_unique_groups = len(unique_groups)
     n = np.zeros(
@@ -359,6 +360,10 @@ def e_m_step(
             n[j] += n_j
             d[j] += d_j
     gamma_arr = n / d
+
+    print("M-step time: " + str(time.time() - st))
+
+    st = time.time()
     ### manually fixing gamma in last epoch
     # gamma_arr[:, :, -1] = np.mean(gamma_arr[:, :, -1])
     if epoch == 0 and args.load_gamma != None and args.load_props != None:
@@ -408,6 +413,7 @@ def e_m_step(
     log_denom_em = 1 * combine_local_ancestry(log_denom_em, args.num_subtrees)
 
     loglikelihood_per_comp = log_num_em + log_denom_em
+    print("log-like time: " + str(time.time() - st))
 
     if loglikehood_cov is not None:
         st = time.time()
@@ -443,6 +449,7 @@ def e_m_step(
     #     )
 
     ### HMM smoothing
+    st = time.time()
     own_membership_hmm = np.zeros((args.num_clusters, n_sites*n_samples), dtype="float64")
     for sample_no in range(n_samples):
         own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
@@ -473,6 +480,8 @@ def e_m_step(
     own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
     if loglikehood_cov is not None:
         log_likelihood_hmm += loglikehood_base
+    
+    print("HMM time: " + str(time.time() - st))
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
 
 
@@ -551,6 +560,7 @@ def estimate_gt_ref(
                 args.num_subtrees,
                 args.max_per_group,
                 gt_ref=gt_ref,
+                ignore_first_epoch=args.ignore_first_epoch,
             )
             ## E-step to infer local ancestry
             own_membership_trial = np.ones(
@@ -670,23 +680,58 @@ def random_sweep_iter(
     masked_trees_index = np.arange(0, n_trees)
     n_samples = len(args.sample_id)
     if args.joint_fit:
-        gt_ref, unique_groups = estimate_gt_ref(
-            gamma_arr,
-            tau,
-            args,
-            ts_list,
-            poplabels,
-            n_trees,
-            n_epochs,
-            mask_dodgy,
-            epoch_intervals_pow,
-            target_branch_length_masked,
-            tree_left_bp,
-            tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
-        )
+        # gt_ref, unique_groups = estimate_gt_ref(
+        #     gamma_arr,
+        #     tau,
+        #     args,
+        #     ts_list,
+        #     poplabels,
+        #     n_trees,
+        #     n_epochs,
+        #     mask_dodgy,
+        #     epoch_intervals_pow,
+        #     target_branch_length_masked,
+        #     tree_left_bp,
+        #     tree_right_bp,
+        #     tree_left_bp_gen,
+        #     tree_right_bp_gen,
+        # )
+        unique_groups, i = {}, 0
+        poplabels_included = poplabels[poplabels.INCLUDE == 1]
+        for group in np.unique(poplabels_included.GROUP):
+            if group == 'han':
+                for c in range(args.num_clusters):
+                    unique_groups[group + str(c + 1)] = i
+                    i += 1
+            else:
+                unique_groups[group] = i
+                i += 1
 
+        gt_ref = np.zeros((len(poplabels.GROUP), n_trees), dtype="object")
+        for sample_no, sample in enumerate(poplabels.index):
+            group = poplabels.GROUP.loc[sample]
+            if group == 'han':
+                gt_ref[sample_no] = {
+                    poplabels.GROUP.iloc[sample] + str(c + 1): 1/(args.num_clusters)
+                    for c in range(args.num_clusters)
+                }
+            else:
+                try:
+                    gt_ref[sample_no] = unique_groups[group]
+                except:
+                    gt_ref[sample_no] = "NA"
+        
+        for sample_no, sample in enumerate(np.arange(748, 758)):
+            file_name = glob.glob('output/han_regressed_overall_membership*' + str(sample) + '.csv.chr5')
+            local_anc = pd.read_csv(file_name[0], sep='\s+')
+            for n_t in range(n_trees):
+                tree_genpos = 100*(tree_left_bp_gen[n_t] + tree_right_bp_gen[n_t])/2
+                local_anc_nt = local_anc.iloc[(local_anc['genpos']-tree_genpos).abs().argsort()[:1]].values[:, 3:].flatten()
+                gt_ref[sample, n_t] = {
+                    poplabels.GROUP.iloc[sample]
+                    + str(c + 1): local_anc_nt[c]
+                    for c in range(args.num_clusters)
+                }
     else:
         gt_ref = None
     own_membership_trial = [[] for _ in range(n_clusters)]
@@ -715,6 +760,7 @@ def random_sweep_iter(
                 args.num_subtrees,
                 args.max_per_group,
                 gt_ref=gt_ref,
+                ignore_first_epoch=args.ignore_first_epoch,
             )
             num.append(num1)
             denom.append(denom1)
@@ -832,6 +878,7 @@ def random_sweep(
     tree_right_bp,
     tree_left_bp_gen,
     tree_right_bp_gen,
+    chr_map
 ):
     print("Performing a random sweep for better initialization")
     masked_trees_index = np.arange(0, n_trees)
@@ -847,20 +894,25 @@ def random_sweep(
                 denom1,
                 proportion_of_coalescing_all1,
                 epoch_index_all1,
-            ) = fixed_parameters(
-                ts_list,
-                poplabels,
-                unique_groups,
-                n_trees,
-                mask_dodgy,
-                sample,
-                args.sample_id,
-                epoch_intervals_pow,
-                args.force_build,
-                args.num_subtrees,
-                args.max_per_group,
-                gt_ref=None,
-            )
+            ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, args.fixed_params_file_prefix)
+            # = fixed_parameters(
+            #     ts_list,
+            #     poplabels,
+            #     unique_groups,
+            #     n_trees,
+            #     mask_dodgy,
+            #     sample,
+            #     args.sample_id,
+            #     epoch_intervals_pow,
+            #     args.force_build,
+            #     args.num_subtrees,
+            #     args.max_per_group,
+            #     gt_ref=None,
+            #     ignore_first_epoch=args.ignore_first_epoch,
+            # )
+
+            
+
             num.append(num1)
             denom.append(denom1)
             proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
@@ -1094,13 +1146,19 @@ def main(args):
 
     ### Load all the trees in a list
     ts_list = load_trees(args, poplabels)
-    if len(poplabels) == ts_list[0].num_samples // 2:
+    if len(ts_list) > 0:
+        if len(poplabels) == ts_list[0].num_samples // 2:
+            poplabels = pd.DataFrame(
+                np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
+            )
+        if len(poplabels) != ts_list[0].num_samples:
+            raise ValueError(
+                "Number of samples in trees doesnt match number of samples in poplabels.txt"
+            )
+    else:
+        ### TODO: check if poplabels need to repeated or not, if no trees specified
         poplabels = pd.DataFrame(
             np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
-        )
-    if len(poplabels) != ts_list[0].num_samples:
-        raise ValueError(
-            "Number of samples in trees doesnt match number of samples in poplabels.txt"
         )
 
     sample_id = []
@@ -1146,7 +1204,7 @@ def main(args):
         frac_branches_with_snp_target,
         mutrate_logpmf_target,
         num_snps_on_lineage,
-    ) = load_tree_stats(args, ts_list, poplabels)
+    ) = load_tree_stats(args, ts_list, poplabels, args.tree_stats_file_prefix)
 
     ### Filter based on recombination rates
     if args.spurious_run is not None:
@@ -1164,7 +1222,6 @@ def main(args):
     elif args.load_mask is None:
         mask_dodgy = filter_recomb_rate(
             args,
-            ts_list,
             tree_left_bp,
             recomb_rates,
             frac_branches_with_snp_target,
@@ -1196,7 +1253,7 @@ def main(args):
     )
     st = time.time()
     target_branch_length_masked = get_target_branch_length(
-        args, poplabels, ts_list, chrs, mask_dodgy, args.force_build, args.sample_id
+        args, poplabels, ts_list, chrs, mask_dodgy, args.force_build, args.sample_id, args.branch_persistence_file_prefix
     )
     print("target branch length: " + str(time.time() - st))
     ### Calculate ground truth local ancestry
@@ -1302,6 +1359,7 @@ def main(args):
                 args.num_subtrees,
                 args.max_per_group,
                 gt_ref=gt_ref,
+                ignore_first_epoch=args.ignore_first_epoch,
             )
             for j in range(len(own_membership_sample)):
                 n[j] += compute_gamma_num(
@@ -1362,6 +1420,7 @@ def main(args):
         own_membership = ground_truth_membership
         num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
         for sample_no, sample in enumerate(args.sample_id):
+            ## TODO: use load_fixed_params instead
             (
                 num1,
                 denom1,
@@ -1380,6 +1439,7 @@ def main(args):
                 args.num_subtrees,
                 args.max_per_group,
                 gt_ref=None,
+                ignore_first_epoch=args.ignore_first_epoch,
             )
             num.append(num1)
             denom.append(denom1)
@@ -1422,6 +1482,7 @@ def main(args):
             tree_right_bp,
             tree_left_bp_gen,
             tree_right_bp_gen,
+            chr_map
         )
         if args.regress_out:
             st = time.time()
@@ -1791,6 +1852,9 @@ if __name__ == "__main__":
         default=False,
     )
     parser.add_argument("--ypg", type=float, default=28, help="years per generation, 28 years default")
+    parser.add_argument("--tree_stats_file_prefix", type=str, default=None, help="file prefix for the tree stats file")
+    parser.add_argument("--branch_persistence_file_prefix", type=str, default=None, help="file prefix for the branch persistence file")
+    parser.add_argument("--fixed_params_file_prefix", type=str, default=None, help="file prefix for the fixed params file")
     args = parser.parse_args()
     if not args.hmm:
         args.t_admix_guess = 10.0**30
