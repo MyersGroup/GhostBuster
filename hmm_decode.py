@@ -24,6 +24,7 @@ def add_in_log_space(y):
 
     return result
 
+@jit(nopython=True)
 def trees_to_bp(
     probability,
     tree_left_bp,
@@ -34,18 +35,23 @@ def trees_to_bp(
 ):
     assert len(probability[0]) == len(tree_left_bp)
     assert len(tree_left_bp) == len(tree_right_bp)
-    res = []
-    gen_grid = []
-    bp_grid = []
+    num_sites = 0
+    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
+        num_sites += int(r/window_size) - int(l/window_size)
+    res = np.zeros((len(probability), num_sites))
+    gen_grid = np.zeros(num_sites)
+    bp_grid = np.zeros(num_sites)
+    n_site = 0
     for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
         for j in range(int(l / window_size), int(r / window_size)):
-            res.append(probability[:, i])
+            res[:, n_site] = probability[:, i]
             recomb_rate = (tree_right_bp_gen[i] - tree_left_bp_gen[i]) / (
                 tree_right_bp[i] - tree_left_bp[i]
             )
-            gen_grid.append(tree_left_bp_gen[i] + recomb_rate * (j * window_size - l))
-            bp_grid.append(j * window_size)
-    return np.array(res).T, np.array(gen_grid), np.array(bp_grid)
+            gen_grid[n_site] = tree_left_bp_gen[i] + recomb_rate * (j * window_size - l)
+            bp_grid[n_site] = j * window_size
+            n_site += 1
+    return res, gen_grid, bp_grid
 
 
 def bp_to_trees(probability, tree_left_bp, tree_right_bp, window_size=1e3):
@@ -97,7 +103,7 @@ def Forward_prob(
 
 @jit(nopython=True)
 def Backward_prob(
-    init_start, transitions, probabilities, state_nums, backwards, reversedlist
+    init_start, transitions, probabilities, state_nums, backwards, number_observations
 ):
     """
     Returns the probability of seeing the given `observations` sequence,
@@ -105,7 +111,7 @@ def Backward_prob(
     """
 
     # Fill out the matrix
-    for t in reversedlist:
+    for t in np.arange(number_observations - 1, 0, -1):
         for state in state_nums:
 
             toadd = np.zeros(len(state_nums))
@@ -191,15 +197,16 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
         number_observations,
         forwards_in,
     )
-    reversedlist = List()
-    [reversedlist.append(x) for x in range(number_observations - 1, 0, -1)]
+    # reversedlist = List()
+    # [reversedlist.append(x) for x in range(number_observations - 1, 0, -1)] ##can be made faster?
     backward_prob, backwards = Backward_prob(
         init_start,
         transition_arr,
         probabilities,
         state_nums,
         backwards_in,
-        reversedlist,
+        number_observations
+        # reversedlist,
     )
 
     posat = forwards + backwards - forward_prob
@@ -249,7 +256,6 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
     # print("t_admix = ", t_admix_update)
     return results, numerator, denominator, pi_update, forward_prob
 
-import time
 def Decode_grid(
     tree_left_bp,
     tree_right_bp,
@@ -269,7 +275,6 @@ def Decode_grid(
     starting_probabilities = np.log(tau)
 
     ## transfor probabilities to per-kb + scaling
-    st = time.time()
     probabilities, gen_grid, bp_grid = trees_to_bp(
         probabilities,
         tree_left_bp,
@@ -278,9 +283,7 @@ def Decode_grid(
         tree_right_bp_gen,
         window_size=window_size,
     )
-    print("time to transform to per-kb", time.time() - st)
 
-    st = time.time()
     # Posterior decode the file
     post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob = Forward_backward(
         starting_probabilities, t_admix, probabilities, gen_grid
@@ -292,5 +295,4 @@ def Decode_grid(
         post_seq = bp_to_trees(
             post_seq, tree_left_bp, tree_right_bp, window_size=window_size
         )
-    print("FB", time.time() - st)
     return post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob
