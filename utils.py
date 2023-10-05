@@ -498,6 +498,7 @@ def compute_gamma_num_denom(
             int(tree_left_bp[tid] / window_size),
             int(tree_right_bp[tid] / window_size),
         ):
+            denom_1 += own_membership[count_site] * denom_in_tree 
             count_i = 0
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (
@@ -531,7 +532,7 @@ def compute_gamma_num_denom(
                         own_membership[count_site] / target_branch_length_tree[count_i]
                     )
                     num_full_tree[:, epoch] += common_term * num
-                    denom_1 += common_term * denom_in_tree[i] ##slowest
+                    # denom_1 += common_term * denom_in_tree[i] ##slowest
                     count_i += 1
             count_site += 1
     return num_full_tree, denom_1 + eps
