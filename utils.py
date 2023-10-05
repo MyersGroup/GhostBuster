@@ -499,7 +499,6 @@ def compute_gamma_num_denom(
             int(tree_right_bp[tid] / window_size),
         ):
             denom_1 += own_membership[count_site] * denom_in_tree 
-            count_i = 0
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (
                     (
@@ -529,11 +528,10 @@ def compute_gamma_num_denom(
                     ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
                         num = num / sum_of_num
                     common_term = (
-                        own_membership[count_site] / target_branch_length_tree[count_i]
+                        own_membership[count_site] / target_branch_length_tree[i]
                     )
                     num_full_tree[:, epoch] += common_term * num
                     # denom_1 += common_term * denom_in_tree[i] ##slowest
-                    count_i += 1
             count_site += 1
     return num_full_tree, denom_1 + eps
 
@@ -750,9 +748,7 @@ def get_target_branch_length(
     ts_list,
     chrs,
     mask_dodgy,
-    force_build,
     sample_list,
-    branch_persistence_file_prefix=None
 ):
     """
     Calculates the branch length of the target population
@@ -763,15 +759,15 @@ def get_target_branch_length(
         target_branch_length_sample = List()
         leave_one_sample_out = list(set(sample_list) - set([sample]))
         for chr_no, chr in enumerate(chrs):
-            if branch_persistence_file_prefix is not None:
-                branch_persistence_file_name = branch_persistence_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
+            if args.branch_persistence_file_prefix is not None:
+                branch_persistence_file_name = args.branch_persistence_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
             else:
                 branch_persistence_file_name = args.output + "_branch_persistence_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
             try:
                 f_pkl = open(branch_persistence_file_name, "rb")
                 (force_build_file, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, target_branch_length_sample_chr) = pickle.load(f_pkl)
                 f_pkl.close()
-                if (force_build_file == force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values):
+                if (force_build_file == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values):
                     ##convert to numba list
                     for i in target_branch_length_sample_chr:
                         numba_i = List().empty_list(nb.types.float64)
@@ -790,7 +786,7 @@ def get_target_branch_length(
                 tree_left_bp_chr, tree_right_bp_chr = [], []
                 for tree in ts.trees():
                     if (
-                        tree.interval[1] // force_build - tree.interval[0] // force_build
+                        tree.interval[1] // args.force_build - tree.interval[0] // args.force_build
                         > 0
                     ):
                         if mask_dodgy[count_all_tree]:
@@ -801,7 +797,7 @@ def get_target_branch_length(
                 ## calculate bp_grid for masked trees
                 bp_grid = []
                 for i, (l, r) in enumerate(zip(tree_left_bp_chr, tree_right_bp_chr)):
-                    for j in range(int(l / force_build), int(r / force_build)):
+                    for j in range(int(l / args.force_build), int(r / args.force_build)):
                         bp_grid.append(j)
                 bp_grid = np.array(bp_grid)
 
@@ -810,7 +806,7 @@ def get_target_branch_length(
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
                 for tid in tqdm(range(ts.num_trees)):
                     if (
-                        tree.interval[1] // force_build - tree.interval[0] // force_build
+                        tree.interval[1] // args.force_build - tree.interval[0] // args.force_build
                         > 0
                     ):
                         if mask_dodgy[count_all_tree2]:
@@ -820,14 +816,7 @@ def get_target_branch_length(
                                 edge_id = tree.edge(parent)
                                 edge = ts_edges[edge_id]
                                 parent = tree.parent(parent)
-                                if (
-                                    tree.time(parent)
-                                    >= (np.power(10, args.start_time) / 28)
-                                    or not args.ignore_first_epoch
-                                ) and (
-                                    tree.time(parent) < (np.power(10, args.end_time) / 28)
-                                    or not args.ignore_last_epoch
-                                ):
+                                if True:
                                     tree_childrens = tree.children(parent)
                                     tree_leaves_left = list(tree.leaves(tree_childrens[0]))
                                     tree_leaves_right = list(tree.leaves(tree_childrens[1]))
@@ -855,13 +844,13 @@ def get_target_branch_length(
                                         if args.hmm:
                                             edge_right = max(
                                                 float(edge.metadata.decode().split(" ")[1])
-                                                // force_build,
-                                                tree.interval[1] // force_build,
+                                                // args.force_build,
+                                                tree.interval[1] // args.force_build,
                                             )
                                             edge_left = min(
                                                 float(edge.metadata.decode().split(" ")[0])
-                                                // force_build,
-                                                tree.interval[0] // force_build,
+                                                // args.force_build,
+                                                tree.interval[0] // args.force_build,
                                             )
                                             number_of_overlaps = np.sum(
                                                 (edge_right > bp_grid)
@@ -879,7 +868,7 @@ def get_target_branch_length(
                     tree.next()
 
                 f_pkl = open(branch_persistence_file_name, "wb")
-                pickle.dump([force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr], f_pkl)
+                pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr], f_pkl)
                 f_pkl.close()                
                 ##convert to numba list
                 for i in target_branch_length_sample_chr:

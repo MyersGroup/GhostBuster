@@ -24,8 +24,6 @@ from utils import (
     calculate_accuracy,
     boolean,
     compute_gamma_num_denom,
-    compute_gamma_denom,
-    compute_gamma_denom_eventwise,
     load_gamma,
     load_props,
     get_target_branch_length,
@@ -152,7 +150,7 @@ def update_membership_eventwise_numba(
         denom_in_tree = denom[tid]
         target_branch_length_in_tree = target_branch_length[tid]
         for j in range(num_clusters):
-            log_num_em_j, log_denom_em_j, count_valid_i = 0.0, 0.0, 0
+            log_num_em_j, log_denom_em_j = 0.0, 0.0
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
@@ -164,29 +162,24 @@ def update_membership_eventwise_numba(
                                 )
                                 / sum(proportion_of_coalescing_in_tree[i]),
                             )
-                        ) / target_branch_length_in_tree[count_valid_i]
-                        count_valid_i += 1
+                        ) / target_branch_length_in_tree[i]
             if ignore_first_epoch and ignore_last_epoch:
                 log_denom_em_j += (
                     -np.sum(
                         gamma_arr[j][:, 1:-1] * denom_in_tree[:, 1:-1]
                     )
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             elif ignore_first_epoch and not ignore_last_epoch:
                 log_denom_em_j += (
                     -np.sum(gamma_arr[j][:, 1:] * denom_in_tree[:, 1:])
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             elif ignore_last_epoch and not ignore_first_epoch:
                 log_denom_em_j += (
                     -np.sum(gamma_arr[j][:, :-1] * denom_in_tree[:, :-1])
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             else:
                 log_denom_em_j += (
                     -np.sum(gamma_arr[j] * denom_in_tree)
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             log_num_em[j, tid] = log_num_em_j
             log_denom_em[j, tid] = log_denom_em_j
@@ -215,7 +208,7 @@ def update_membership_eventwise_numpy(
         denom_in_tree = denom[tid]
         target_branch_length_in_tree = target_branch_length[tid]
         for j in range(num_clusters):
-            log_num_em_j, log_denom_em_j, count_valid_i = 0.0, 0.0, 0
+            log_num_em_j, log_denom_em_j = 0.0, 0.0
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
@@ -230,29 +223,24 @@ def update_membership_eventwise_numpy(
                                     )
                                     / sum(proportion_of_coalescing_in_tree_nan_removed),
                                 )
-                            ) / target_branch_length_in_tree[count_valid_i]
-                        count_valid_i += 1
+                            ) / target_branch_length_in_tree[i]
             if ignore_first_epoch and ignore_last_epoch:
                 log_denom_em_j += (
                     -np.sum(
                         gamma_arr_nan_removed[j][:, 1:-1] * denom_in_tree_nan_removed[:, 1:-1]
                     )
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             elif ignore_first_epoch and not ignore_last_epoch:
                 log_denom_em_j += (
                     -np.sum(gamma_arr_nan_removed[j][:, 1:] * denom_in_tree_nan_removed[:, 1:])
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             elif ignore_last_epoch and not ignore_first_epoch:
                 log_denom_em_j += (
                     -np.sum(gamma_arr_nan_removed[j][:, :-1] * denom_in_tree_nan_removed[:, :-1])
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
             else:
                 log_denom_em_j += (
                     -np.sum(gamma_arr_nan_removed[j] * denom_in_tree_nan_removed)
-                    #/ target_branch_length_in_tree[count_valid_i]
                 )
 
             log_num_em[j, tid] = log_num_em_j
@@ -554,6 +542,7 @@ def estimate_gt_ref(
                 sample,
                 args.sample_id,
                 epoch_intervals_pow,
+                target_branch_length_masked[sample_no],
                 args.force_build,
                 args.num_subtrees,
                 args.max_per_group,
@@ -754,6 +743,7 @@ def random_sweep_iter(
                 sample,
                 args.sample_id,
                 epoch_intervals_pow,
+                target_branch_length_masked[sample_no],
                 args.force_build,
                 args.num_subtrees,
                 args.max_per_group,
@@ -892,57 +882,9 @@ def random_sweep(
                 denom1,
                 proportion_of_coalescing_all1,
                 epoch_index_all1,
-            ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, args.fixed_params_file_prefix)
-            ## normalize the denom by target branch length
-            st = time.time()
-            
-            denom1_epochwise = np.zeros((len(denom1), len(denom1[0][0]), len(denom1[0][0][0])), dtype='float64')
-            for n_t in range(len(denom1)):
-                epoch_index_in_tree = epoch_index_all1[n_t]
-                coal_count_in_range = 0
-                for c_t in range(len(denom1[n_t])):
-                    if (
-                        (
-                            args.ignore_first_epoch
-                            and not args.ignore_last_epoch
-                            and epoch_index_in_tree[c_t] >= 1
-                        )
-                        or (
-                            args.ignore_last_epoch
-                            and not args.ignore_first_epoch
-                            and epoch_index_in_tree[c_t] < n_epochs - 2
-                        )
-                        or (
-                            args.ignore_first_epoch
-                            and args.ignore_last_epoch
-                            and epoch_index_in_tree[c_t] >= 1
-                            and epoch_index_in_tree[c_t] < n_epochs - 2
-                        )
-                        or (not args.ignore_first_epoch and not args.ignore_last_epoch)
-                    ):
-                        denom1_epochwise[n_t] += denom1[n_t][c_t]/target_branch_length_masked[sample_no][n_t][coal_count_in_range]  
-                        coal_count_in_range += 1         
-            print("extra time = " + str(time.time() - st))
-            # = fixed_parameters(
-            #     ts_list,
-            #     poplabels,
-            #     unique_groups,
-            #     n_trees,
-            #     mask_dodgy,
-            #     sample,
-            #     args.sample_id,
-            #     epoch_intervals_pow,
-            #     args.force_build,
-            #     args.num_subtrees,
-            #     args.max_per_group,
-            #     gt_ref=None,
-            #     ignore_first_epoch=args.ignore_first_epoch,
-            # )
-
-            
-
+            ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked[sample_no])
             num.append(num1)
-            denom.append(denom1_epochwise)
+            denom.append(denom1)
             proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
             epoch_index_all.append(epoch_index_all1)
         del ts_list
@@ -1281,7 +1223,7 @@ def main(args):
     )
     st = time.time()
     target_branch_length_masked = get_target_branch_length(
-        args, poplabels, ts_list, chrs, mask_dodgy, args.force_build, args.sample_id, args.branch_persistence_file_prefix
+        args, poplabels, ts_list, chrs, mask_dodgy, args.sample_id
     )
     print("target branch length: " + str(time.time() - st))
     ### Calculate ground truth local ancestry
@@ -1383,6 +1325,7 @@ def main(args):
                 sample,
                 args.sample_id,
                 np.power(10, epoch_intervals),
+                target_branch_length_masked[sample_no],
                 args.force_build,
                 args.num_subtrees,
                 args.max_per_group,
@@ -1390,11 +1333,12 @@ def main(args):
                 ignore_first_epoch=args.ignore_first_epoch,
             )
             for j in range(len(own_membership_sample)):
-                n[j] += compute_gamma_num(
+                n_j, d_j = compute_gamma_num_denom(
                     own_membership_sample[j],
                     np.ones_like(n)[j],
-                    proportion_of_coalescing_all1,
-                    epoch_index_all1,
+                    proportion_of_coalescing_all[sample_no],
+                    denom[sample_no],
+                    epoch_index_all[sample_no],
                     len(unique_groups),
                     np.arange(0, num_trees),
                     len(epoch_intervals),
@@ -1405,21 +1349,8 @@ def main(args):
                     tree_right_bp,
                     args.force_build,
                 )
-                for i in range(len(unique_groups)):
-                    d[j, i] += compute_gamma_denom_eventwise(
-                        own_membership_sample[j],
-                        denom1,
-                        epoch_index_all1,
-                        i,
-                        len(epoch_intervals),
-                        target_branch_length_masked[sample_no],
-                        args.ignore_first_epoch,
-                        args.ignore_last_epoch,
-                        tree_left_bp,
-                        tree_right_bp,
-                        args.force_build,
-                    )
-
+                n[j] += n_j
+                d[j] += d_j
             print(np.mean(own_membership_sample, axis=1))
 
             tau += np.mean(own_membership_sample, axis=1)
@@ -1463,6 +1394,7 @@ def main(args):
                 sample,
                 args.sample_id,
                 np.power(10, epoch_intervals),
+                target_branch_length_masked[sample_no],
                 args.force_build,
                 args.num_subtrees,
                 args.max_per_group,
