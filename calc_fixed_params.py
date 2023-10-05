@@ -45,6 +45,7 @@ def fixed_parameters(
     sample,
     sample_list,
     epoch_intervals_pow,
+    target_branch_length_masked,
     force_build=1,
     num_subtrees=1,
     max_per_group=-1,
@@ -423,15 +424,22 @@ def fixed_parameters(
                                         epoch,
                                     ] = 0
 
+
+    denom_epochwise = np.zeros((len(denom_all), len(denom_all[0][0]), len(denom_all[0][0][0])), dtype='float64')
+    for n_t in range(len(denom_all)):
+        epoch_index_in_tree = epoch_index_all[n_t]
+        for c_t in range(len(denom_all[n_t])):
+            denom_epochwise[n_t] += denom_all[n_t][c_t]/target_branch_length_masked[n_t][c_t]  
+
     return (
         coal_count,
-        denom_all,
+        denom_epochwise,
         proportion_of_coalescing_all,
         epoch_index_all,
     )
 
 
-def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, fixed_params_file_prefix=None):
+def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked):
     chrs = list(map(int, args.chrs.split(",")))
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
     epoch_intervals_pow = np.power(10, epoch_intervals)
@@ -441,10 +449,11 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
     epoch_index_all = []
 
     for chr_no, chr in enumerate(chrs):
-        if fixed_params_file_prefix is not None:
-            fixed_params_file_name = fixed_params_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
+        if args.fixed_params_file_prefix is not None:
+            fixed_params_file_name = args.fixed_params_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
         else:
             fixed_params_file_name = args.output + "_fixed_params_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
+
         try:
             f_pkl = open(fixed_params_file_name, "rb")
             (num_subtrees, max_per_group, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index) = pickle.load(f_pkl)
@@ -461,6 +470,11 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             print("Fixed parameters file not found, calculating fixed parameters..")
             mask_dodgy_sam_chr = mask_dodgy[np.array(chr_map) == chr]
             num_trees = np.sum(mask_dodgy_sam_chr)
+            target_branch_length_masked_chr = []
+            # make faster #
+            for t in range(len(target_branch_length_masked)):
+                if chr_map[t] == chr:
+                    target_branch_length_masked_chr.append(target_branch_length_masked[t])
             (coal_count, denom, proportion_of_coalescing, epoch_index) = fixed_parameters(
                 ts_list[chr_no:chr_no + 1],
                 poplabels,
@@ -470,6 +484,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 sample,
                 args.sample_id,
                 epoch_intervals_pow,
+                target_branch_length_masked_chr,
                 args.force_build,
                 args.num_subtrees,
                 args.max_per_group,
@@ -485,7 +500,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             print("Fixed parameters stored in: " + str(fixed_params_file_name))
 
     
-    denom_all = make_numba_nested_list(denom_all)
+    # denom_all = make_numba_nested_list(denom_all)
     proportion_of_coalescing_all = make_numba_nested_list(proportion_of_coalescing_all)
     epoch_index_all = make_numba_nested_list(epoch_index_all)
 
