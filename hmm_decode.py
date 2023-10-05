@@ -24,7 +24,6 @@ def add_in_log_space(y):
 
     return result
 
-
 def trees_to_bp(
     probability,
     tree_left_bp,
@@ -152,7 +151,7 @@ def makeprobability_of_transition_matrix(
 
     return pot
 
-
+@jit(nopython=True)
 def get_transition_arr(t_admix, tau, gen_grid):
     gen_grid_diff = np.abs(np.diff(gen_grid))
     transition_arr = np.zeros((len(gen_grid_diff), len(tau), len(tau)))
@@ -184,7 +183,6 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
     backwards_in = np.zeros((len(init_start), number_observations))
 
     transition_arr = get_transition_arr(t_admix, np.exp(init_start), gen_grid)
-
     forward_prob, forwards = Forward_prob(
         init_start,
         transition_arr,
@@ -193,7 +191,6 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
         number_observations,
         forwards_in,
     )
-
     reversedlist = List()
     [reversedlist.append(x) for x in range(number_observations - 1, 0, -1)]
     backward_prob, backwards = Backward_prob(
@@ -252,7 +249,7 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
     # print("t_admix = ", t_admix_update)
     return results, numerator, denominator, pi_update, forward_prob
 
-
+import time
 def Decode_grid(
     tree_left_bp,
     tree_right_bp,
@@ -272,6 +269,7 @@ def Decode_grid(
     starting_probabilities = np.log(tau)
 
     ## transfor probabilities to per-kb + scaling
+    st = time.time()
     probabilities, gen_grid, bp_grid = trees_to_bp(
         probabilities,
         tree_left_bp,
@@ -280,7 +278,9 @@ def Decode_grid(
         tree_right_bp_gen,
         window_size=window_size,
     )
+    print("time to transform to per-kb", time.time() - st)
 
+    st = time.time()
     # Posterior decode the file
     post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob = Forward_backward(
         starting_probabilities, t_admix, probabilities, gen_grid
@@ -292,5 +292,5 @@ def Decode_grid(
         post_seq = bp_to_trees(
             post_seq, tree_left_bp, tree_right_bp, window_size=window_size
         )
-
+    print("FB", time.time() - st)
     return post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob
