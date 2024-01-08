@@ -61,13 +61,10 @@ def fixed_parameters(
     num_samples = len(list(ts_list[0].first().samples()))
     num_nodes = len(list(ts_list[0].first().nodes()))
     coal_count = np.zeros(
-        (
-            len(unique_groups),
-            len(epoch_intervals_pow) - 1,
-            num_trees,
-        ),
-        dtype="float64",
+        num_trees,
+        dtype="int32",
     )
+    num_sites_per_tree = np.zeros(num_trees, dtype="int32")
     opportunity = np.zeros(
         (
             len(unique_groups),
@@ -143,6 +140,7 @@ def fixed_parameters(
                         target_seq = target_seq_
                         for _ in range(num_subtrees):
                             count_mut_trees += 1
+                            num_sites_per_tree[count_mut_trees] = (tree.interval[1] // force_build - tree.interval[0] // force_build)
                             if max_per_group == -1:
                                 poplabels = poplabels_orig.copy()
                             else:
@@ -257,8 +255,8 @@ def fixed_parameters(
                                             lineage_content[b]
                                         )  # / (sum(lineage_content[b]))
                                         coal_count[
-                                            :, epoch, count_mut_trees
-                                        ] += proportion_of_coalescing
+                                            count_mut_trees
+                                        ] += 1
                                         target_seq = c
                                         lineage_content[c] = 0
                                         lineage_content_sum[c] = 0
@@ -283,8 +281,8 @@ def fixed_parameters(
                                         )  # / (sum(lineage_content[a]))
                                         ## sum() faster than np.sum()
                                         coal_count[
-                                            :, epoch, count_mut_trees
-                                        ] += proportion_of_coalescing
+                                            count_mut_trees
+                                        ] += 1
                                         target_seq = c
                                         lineage_content[c] = 0
                                         lineage_content_sum[c] = 0
@@ -425,12 +423,20 @@ def fixed_parameters(
                                     ] = 0
 
 
+
+    proportion_of_coalescing_all = np.repeat(proportion_of_coalescing_all, num_sites_per_tree, axis=0)
+    epoch_index_all = np.repeat(epoch_index_all, num_sites_per_tree, axis=0)
+    denom_all = np.repeat(denom_all, num_sites_per_tree, axis=0)
+    coal_count = np.repeat(coal_count, num_sites_per_tree, axis=0)
+
+    # import pdb; pdb.set_trace()
     denom_epochwise = np.zeros((len(denom_all), len(denom_all[0][0]), len(denom_all[0][0][0])), dtype='float64')
     for n_t in range(len(denom_all)):
         epoch_index_in_tree = epoch_index_all[n_t]
         for c_t in range(len(denom_all[n_t])):
             denom_epochwise[n_t] += denom_all[n_t][c_t]/target_branch_length_masked[n_t][c_t]  
 
+            
     return (
         coal_count,
         denom_epochwise,
@@ -439,15 +445,15 @@ def fixed_parameters(
     )
 
 
-def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked):
+def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked, gt_ref=None, unique_groups=None):
     chrs = list(map(int, args.chrs.split(",")))
-    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
+    unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP) if unique_groups is None else unique_groups
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
     denom_all = []
     proportion_of_coalescing_all = []
     epoch_index_all = []
-
+    num_trees_prev = 0
     for chr_no, chr in enumerate(chrs):
         if args.fixed_params_file_prefix is not None:
             fixed_params_file_name = args.fixed_params_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
@@ -458,13 +464,16 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             f_pkl = open(fixed_params_file_name, "rb")
             (num_subtrees, max_per_group, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index) = pickle.load(f_pkl)
             f_pkl.close()
-            if (num_subtrees == args.num_subtrees) & (max_per_group == args.max_per_group) & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values):
+            if (num_subtrees == args.num_subtrees) & (max_per_group == args.max_per_group) & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
                 ##convert to numba list
                 denom_all.extend(denom)
                 proportion_of_coalescing_all.extend(proportion_of_coalescing)
                 epoch_index_all.extend(epoch_index)
                 print("Loaded fixed parameters from: " + str(fixed_params_file_name))
                 continue
+            else:
+                print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
+                raise Exception
 
         except:
             print("Fixed parameters file not found, calculating fixed parameters..")
@@ -472,9 +481,26 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             num_trees = np.sum(mask_dodgy_sam_chr)
             target_branch_length_masked_chr = []
             # make faster #
+            num_sites_per_tree = np.zeros(np.sum(mask_dodgy), dtype='int32')            
+            i, count_i  = 0,0 
+            for tseq in ts_list:
+                for tree in tseq.trees():
+                    if tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0:
+                        if mask_dodgy[count_i]:
+                            num_sites_per_tree[i] = (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build)
+                            i+= 1
+                        count_i += 1
+
+            chr_map_masked = np.array(chr_map)[mask_dodgy]
+            chr_map_masked = np.repeat(chr_map_masked, num_sites_per_tree, axis=0)
             for t in range(len(target_branch_length_masked)):
-                if chr_map[t] == chr:
+                if chr_map_masked[t] == chr:
                     target_branch_length_masked_chr.append(target_branch_length_masked[t])
+            
+            if gt_ref is not None:
+                gt_ref_chr = gt_ref[:, num_trees_prev:num_trees_prev + num_trees]
+                num_trees_prev += num_trees
+
             (coal_count, denom, proportion_of_coalescing, epoch_index) = fixed_parameters(
                 ts_list[chr_no:chr_no + 1],
                 poplabels,
@@ -488,7 +514,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 args.force_build,
                 args.num_subtrees,
                 args.max_per_group,
-                gt_ref=None,
+                gt_ref=gt_ref_chr if gt_ref is not None else None,
                 ignore_first_epoch=args.ignore_first_epoch,
             )
             f_pkl = open(fixed_params_file_name, "wb")
@@ -507,7 +533,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
 
     return (
         coal_count,
-        denom_all,
+        np.array(denom_all),
         proportion_of_coalescing_all,
         epoch_index_all,
     )

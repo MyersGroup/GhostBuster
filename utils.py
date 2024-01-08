@@ -78,6 +78,8 @@ def downsample_trees(ground_truth, pop_index, downsample_frac):
     return mask
 
 def write_coal(gamma_arr, filename, labs, output, epoch_intervals):
+    if type(labs) == dict:
+        labs = list(labs.keys())
     if len(labs) > 10:
         epoch_intervals_pow = np.power(10, epoch_intervals)
         f = open(output + "_" + filename + '.all', "w")
@@ -110,6 +112,7 @@ def write_coal(gamma_arr, filename, labs, output, epoch_intervals):
         top_groups = []
         for j in range(gamma_arr.shape[0]):
             top_groups.extend(np.argsort(min_avg_coal[:, j])[0:10//gamma_arr.shape[0]])
+        
         labs = np.array(labs)[top_groups].tolist()
         gamma_arr = gamma_arr[:, top_groups]
 
@@ -179,72 +182,31 @@ def filter_recomb_rate(
     args,
     tree_left_bp,
     recomb_rates,
-    frac_branches,
-    num_snps_on_lineage,
-    fine_map=False,
+    chr_map,
 ):
     recomb_rates = np.array(recomb_rates)
-    for i, r in enumerate(recomb_rates):
-        if np.isnan(r):
-            recomb_rates[
-                np.abs(np.array(tree_left_bp) - tree_left_bp[i]) < 500000
-            ] = np.inf
-    recomb_rates = np.nan_to_num(recomb_rates, posinf=np.nan)
-    mask_dodgy = ~np.isnan(recomb_rates)
-    recomb_0_thresh = np.sum(np.array(recomb_rates) <= 0) / len(recomb_rates)
-    mask_dodgy *= ~mask_for_dodgy_trees(
-        recomb_rates,
-        recomb_0_thresh,
-    )
+    mask_dodgy = np.ones_like(recomb_rates, dtype='bool')
+    for chr in np.unique(chr_map):
+        recomb_rates_chr = recomb_rates[chr_map == chr]
+        for i, r in enumerate(recomb_rates_chr):
+            if np.isnan(r):
+                recomb_rates_chr[
+                    np.abs(np.array(tree_left_bp)[chr_map == chr] - np.array(tree_left_bp)[chr_map == chr][i]) < 500000
+                ] = np.inf
+        recomb_rates_chr = np.nan_to_num(recomb_rates_chr, posinf=np.nan)
+        mask_dodgy[chr_map == chr] = ~np.isnan(recomb_rates_chr)
 
-    if fine_map is False:
-        mask_dodgy *= mask_for_dodgy_trees(
-            recomb_rates,
+        recomb_0_thresh = np.sum(np.array(recomb_rates_chr) <= 0) / len(recomb_rates_chr)
+        mask_dodgy[chr_map == chr]  *= ~mask_for_dodgy_trees(
+            recomb_rates_chr,
+            recomb_0_thresh,
+        )
+        mask_dodgy[chr_map == chr] *= mask_for_dodgy_trees(
+            recomb_rates_chr,
             1 - args.masking_threshold,
         )
-    else:
-        print("Fine-mapping to get near independent trees")
-        coverage = copy.deepcopy(np.array(mask_dodgy, dtype="float"))
-        coverage[coverage == 0] = np.inf
-        mask_dodgy = copy.deepcopy(np.zeros_like(coverage, dtype="bool"))
-        while np.sum(coverage != np.inf) > 0 and np.sum(mask_dodgy) <= (
-            len(mask_dodgy) * (1 - args.masking_threshold)
-        ):
-            ## choose the best tree
-            best_id = np.argmin(np.nan_to_num(recomb_rates * coverage, nan=np.inf))
-            print(np.sum(mask_dodgy))
-            mask_dodgy[best_id] = True
 
-            ## mask (remove) the near-ones
-            recomb_rate = recomb_rates[best_id]
-            window = 0.001 / recomb_rate  ## 0.01 cM around the tree
-            for i in range(max(0, best_id - 10), min(best_id + 10, len(tree_left_bp))):
-                if (
-                    tree_left_bp[i] < tree_left_bp[best_id] + window
-                    and tree_left_bp[i] > tree_left_bp[best_id] - window
-                ):
-                    coverage[i] = np.inf
-
-    ### Added frac_branch_target to filter trees aswell
-    # mask_dodgy *= ~mask_for_dodgy_trees(
-    #    frac_branches,
-    #    args.masking_threshold,
-    # )
     mask_dodgy = np.array(mask_dodgy)
-    # mask_dodgy = np.tile(mask_dodgy, len(args.sample_id))
-    # if args.mode == "sim":
-    #   #### Caution: manually downsampling HAN (1) !! 🌵
-    #   print("Downsampling !! Caution !!")
-    #   ground_truth_membership = make_ground_truth(
-    #       ts_list,
-    #       np.sum(mask_dodgy),
-    #       mask_dodgy=mask_dodgy,
-    #       path=args.ground_truth_path,
-    #       sample=args.sample_id,
-    #       chrs=chrs,
-    #       force_build=args.force_build,
-    #   )
-    #   mask_dodgy[mask_dodgy] *= downsample_trees(ground_truth_membership, 1, 0.5)
 
     print(
         "Filtering based on recombination rate, trees remaining: "
@@ -414,28 +376,23 @@ def filter_opportunity(
     return mask_dodgy_low_evidence
 
 
-def load_mask_csv(args, membership_mask, sample_id_list, ts_list, mask_dodgy, chrs):
+def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, chr_map):
+    mask_dodgy = np.zeros(len(tree_left_bp), dtype="bool")
     count = 0
-    for chr_count, chr in enumerate(chrs):
-        tree = ts_list[chr_count].first()
-        membership_mask_chr = membership_mask[membership_mask[membership_mask.columns[0]].str.strip('chr') == chr]
+    for chr_count, chr in enumerate(np.unique(chr_map)):
+        membership_mask_chr = membership_mask[membership_mask[membership_mask.columns[0]] == chr]
         membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]] // args.force_build
-        for tid in range(ts_list[chr_count].num_trees):
-            if (
-                tree.interval[1] // args.force_build
-                - tree.interval[0] // args.force_build
-                > 0
-            ):
+        membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]].astype(int)
+
+        for tree_left_i, tree_right_i in zip(np.array(tree_left_bp)[chr_map == chr], np.array(tree_right_bp)[chr_map == chr]):
+            for tree_pos in range(int(tree_left_i // args.force_build), int(tree_right_i // args.force_build)):
                 if (
-                    tree.interval[0] // args.force_build
+                    tree_pos
                     in membership_mask_chr[membership_mask.columns[1]].values.tolist()
                 ):
                     mask_dodgy[count] = True
-                else:
-                    mask_dodgy[count] = False
-                count += 1
-            tree.next()
-
+            
+            count += 1
     print("Number of trees = " + str(np.sum(mask_dodgy)))
     return mask_dodgy
 
@@ -469,78 +426,60 @@ def get_epoch_interval(args, ts_list):
 
 
 @jit(nopython=True, fastmath=True)
-def compute_gamma_num_denom(
+def compute_gamma_num(
     own_membership,
     prev_gamma,
     proportion_of_coalescing_all,
-    denom,
     epoch_index_all,
     num_ref_groups,
-    masked_trees_index,
     n_epochs,
     target_branch_length,
     ignore_first_epoch,
     ignore_last_epoch,
-    tree_left_bp,
-    tree_right_bp,
-    window_size,
 ):
-    eps = 1e-200
-    denom_1 = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
     num_full_tree = np.zeros((num_ref_groups, n_epochs - 1), dtype="float64")
-    count_site = 0
-    for tid in masked_trees_index:
-        proportion_of_coalescing_in_tree = proportion_of_coalescing_all[tid]
-        epoch_index_in_tree = epoch_index_all[tid]
-        denom_in_tree = denom[tid]
-        target_branch_length_tree = target_branch_length[tid]
-        for _ in range(
-            int(tree_left_bp[tid] / window_size),
-            int(tree_right_bp[tid] / window_size),
-        ):
-            denom_1 += own_membership[count_site] * denom_in_tree 
-            for i in range(len(proportion_of_coalescing_in_tree)):
+    for n_site in range(len(own_membership)):
+        proportion_of_coalescing_in_tree = proportion_of_coalescing_all[n_site]
+        epoch_index_in_tree = epoch_index_all[n_site]
+        target_branch_length_tree = target_branch_length[n_site]
+        for i in range(len(proportion_of_coalescing_in_tree)):
+            if (
+                (
+                    ignore_first_epoch
+                    and not ignore_last_epoch
+                    and epoch_index_in_tree[i] >= 1
+                )
+                or (
+                    ignore_last_epoch
+                    and not ignore_first_epoch
+                    and epoch_index_in_tree[i] < n_epochs - 2
+                )
+                or (
+                    ignore_first_epoch
+                    and ignore_last_epoch
+                    and epoch_index_in_tree[i] >= 1
+                    and epoch_index_in_tree[i] < n_epochs - 2
+                )
+                or (not ignore_first_epoch and not ignore_last_epoch)
+            ):
+                epoch = epoch_index_in_tree[i]
+                prev_gamma_e = prev_gamma[:, epoch]
+                num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
+                sum_of_num = np.sum(num)
                 if (
-                    (
-                        ignore_first_epoch
-                        and not ignore_last_epoch
-                        and epoch_index_in_tree[i] >= 1
-                    )
-                    or (
-                        ignore_last_epoch
-                        and not ignore_first_epoch
-                        and epoch_index_in_tree[i] < n_epochs - 2
-                    )
-                    or (
-                        ignore_first_epoch
-                        and ignore_last_epoch
-                        and epoch_index_in_tree[i] >= 1
-                        and epoch_index_in_tree[i] < n_epochs - 2
-                    )
-                    or (not ignore_first_epoch and not ignore_last_epoch)
-                ):
-                    epoch = epoch_index_in_tree[i]
-                    prev_gamma_e = prev_gamma[:, epoch]
-                    num = prev_gamma_e * proportion_of_coalescing_in_tree[i]
-                    sum_of_num = np.sum(num)
-                    if (
-                        sum_of_num != 0
-                    ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
-                        num = num / sum_of_num
-                    common_term = (
-                        own_membership[count_site] / target_branch_length_tree[i]
-                    )
-                    num_full_tree[:, epoch] += common_term * num
-                    # denom_1 += common_term * denom_in_tree[i] ##slowest
-            count_site += 1
-    return num_full_tree, denom_1 + eps
+                    sum_of_num != 0
+                ):  ## sometimes the num are less than python float64 precision, we ignore those coal events while calculating
+                    num = num / sum_of_num
+                common_term = (
+                    own_membership[n_site] / target_branch_length_tree[i]
+                )
+                num_full_tree[:, epoch] += common_term * num
+    return num_full_tree
 
 
-def compute_gamma_denom(own_membership, denom, n_epochs):
+def compute_gamma_denom(own_membership, denom):
     eps = 1e-200
-    denom_1 = np.zeros(n_epochs - 1, dtype="float64")
-    for epoch in range(n_epochs - 1):  #
-        denom_1[epoch] = sum(denom[epoch] * own_membership)
+    denom_1 = np.sum((own_membership * denom.T).T, axis=0)
     return denom_1 + eps
 
 
@@ -701,6 +640,37 @@ def neighbour_smoothing(post, dist, window=3, alpha=1e-6):
     return post_smooth[:, window:-window]
 
 
+# def load_gamma(path, groups, ref_groups):
+#     if ".npy" in path:
+#         return np.load(path)
+#     elif ".coal" in path:
+#         with open(path) as f:
+#             header = f.readline().strip("\n").split(" ")
+#         header = np.array(header)
+#         # if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
+#         #     print(
+#         #         "Groups in header do not match groups in input, groups in header are: "
+#         #         + str(header)
+#         #     )
+#         #     raise ValueError
+#         groups_to_index = groups
+#         ref_groups_to_index = []
+#         for g in ref_groups:
+#             try:
+#                 ref_groups_to_index.append(np.where(header == g)[0][0])
+#             except:
+#                 ref_groups_to_index.append(np.nan)
+#         df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
+#         gamma_arr = np.nan*np.ones((len(groups), len(ref_groups), df.shape[1] - 2))
+#         for i, gid1 in enumerate(groups_to_index):
+#             for j, gid2 in enumerate(ref_groups_to_index):
+#                 if not np.isnan(gid2):
+#                     gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+        
+#         return gamma_arr
+#     else:
+#         print("Unsupported file format for gamma files")
+
 def load_gamma(path, groups, ref_groups):
     if ".npy" in path:
         return np.load(path)
@@ -708,30 +678,23 @@ def load_gamma(path, groups, ref_groups):
         with open(path) as f:
             header = f.readline().strip("\n").split(" ")
         header = np.array(header)
-        # if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
-        #     print(
-        #         "Groups in header do not match groups in input, groups in header are: "
-        #         + str(header)
-        #     )
-        #     raise ValueError
-        groups_to_index = groups
-        ref_groups_to_index = []
-        for g in ref_groups:
-            try:
-                ref_groups_to_index.append(np.where(header == g)[0][0])
-            except:
-                ref_groups_to_index.append(np.nan)
+        if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
+            print(
+                "Groups in header do not match groups in input, groups in header are: "
+                + str(header)
+            )
+            raise ValueError
+        groups_to_index = [np.where(header == g)[0][0] for g in groups]
+        ref_groups_to_index = [np.where(header == g)[0][0] for g in ref_groups]
         df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
-        gamma_arr = np.nan*np.ones((len(groups), len(ref_groups), df.shape[1] - 2))
+        gamma_arr = np.zeros((len(groups), len(ref_groups), df.shape[1] - 2))
         for i, gid1 in enumerate(groups_to_index):
             for j, gid2 in enumerate(ref_groups_to_index):
-                if not np.isnan(gid2):
-                    gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
-        
-        return gamma_arr
+                gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+        print(np.nan_to_num(gamma_arr, nan=0))
+        return np.nan_to_num(gamma_arr, nan=0)
     else:
         print("Unsupported file format for gamma files")
-
 
 def load_props(path):
     if ".npy" in path:
@@ -767,7 +730,7 @@ def get_target_branch_length(
                 f_pkl = open(branch_persistence_file_name, "rb")
                 (force_build_file, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, target_branch_length_sample_chr) = pickle.load(f_pkl)
                 f_pkl.close()
-                if (force_build_file == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values):
+                if (force_build_file == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]):
                     ##convert to numba list
                     for i in target_branch_length_sample_chr:
                         numba_i = List().empty_list(nb.types.float64)
@@ -776,6 +739,9 @@ def get_target_branch_length(
                         target_branch_length_sample.append(numba_i)
                     print("Loaded branch persistence statistics from: " + str(branch_persistence_file_name))
                     continue
+                else:
+                    print("Branch persistence statistics file does not match the current settings, recomputing...")
+                    raise Exception
             except:
                 print("Saving branch persistence statistics to: " + str(branch_persistence_file_name))
                 target_branch_length_sample_chr = []
@@ -796,10 +762,13 @@ def get_target_branch_length(
 
                 ## calculate bp_grid for masked trees
                 bp_grid = []
+                num_sites_per_tree = []
                 for i, (l, r) in enumerate(zip(tree_left_bp_chr, tree_right_bp_chr)):
+                    num_sites_per_tree.append(r // args.force_build - l // args.force_build)
                     for j in range(int(l / args.force_build), int(r / args.force_build)):
                         bp_grid.append(j)
                 bp_grid = np.array(bp_grid)
+                num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
                 ## calculate the target branch persistence
                 tree = ts.first()
@@ -867,6 +836,7 @@ def get_target_branch_length(
                         count_all_tree2 += 1
                     tree.next()
 
+                target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
                 f_pkl = open(branch_persistence_file_name, "wb")
                 pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr], f_pkl)
                 f_pkl.close()                

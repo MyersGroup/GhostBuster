@@ -332,7 +332,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
     mutrate_logpmf_target_all = []
     num_snps_on_lineage_all = []    
 
-    for chrom in chrs:
+    for chrom_no, chrom in enumerate(chrs):
         if tree_stats_file_prefix is not None:
             tree_stats_file_name = tree_stats_file_prefix + '_chr' + str(chrom) + ".pkl"
         else:
@@ -388,8 +388,8 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
             ) = compute_tree_stats(
                 args,
                 poplabels,
-                ts_list,
-                chrs,
+                ts_list[chrom_no:chrom_no + 1],
+                [chrom],
                 args.allmuts,
                 args.mutden,
                 args.rec,
