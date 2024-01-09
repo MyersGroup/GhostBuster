@@ -131,13 +131,16 @@ def update_membership(
 
 
 def update_membership_eventwise_denom(gamma_arr, denom, ignore_first_epoch, ignore_last_epoch, n_epochs):
-    start_epoch_index = 1 if ignore_first_epoch else 0
-    end_epoch_index = n_epochs - 2 if ignore_last_epoch else n_epochs - 1
     log_denom_em = np.zeros((gamma_arr.shape[0], denom.shape[0]), dtype="float64")
-    gamma_arr_nan_removed = gamma_arr[:,np.isnan(gamma_arr).sum(axis=0).sum(axis=1) == 0]
-    denom_nan_removed = denom[:, np.isnan(gamma_arr).sum(axis=0).sum(axis=1) == 0]
+    start_end_mask = np.ones(n_epochs - 1, dtype=bool)
+    start_end_mask[0] = False if ignore_first_epoch else True
+    start_end_mask[-1] = False if ignore_last_epoch else True
     for j in range(gamma_arr.shape[0]):
-        log_denom_em[j] = -np.sum(gamma_arr_nan_removed[j, :, start_epoch_index:end_epoch_index] * denom_nan_removed[:, :, start_epoch_index:end_epoch_index], axis=(1,2))
+        nan_mask = np.isnan(gamma_arr[j]).sum(axis=0) == 0
+        combined_mask = np.logical_and(start_end_mask, nan_mask)
+        gamma_arr_nan_removed = gamma_arr[j][:, combined_mask]
+        denom_nan_removed = denom[:, :,  combined_mask]
+        log_denom_em[j] = -np.sum(gamma_arr_nan_removed * denom_nan_removed, axis=(1,2))
     return log_denom_em
    
 
@@ -185,7 +188,7 @@ def update_membership_eventwise_numpy(
     num_clusters,
 ):
     log_num_em = np.zeros((num_clusters, len(proportion_of_coalescing_all)), dtype="float64")
-    gamma_arr_nan_removed = gamma_arr[:,np.isnan(gamma_arr).sum(axis=0).sum(axis=1) == 0]
+    
     for n_site in range(len(proportion_of_coalescing_all)):
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[n_site]
         epoch_index_in_tree = epoch_index_all[n_site]
@@ -195,17 +198,17 @@ def update_membership_eventwise_numpy(
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
-                        proportion_of_coalescing_in_tree_nan_removed = proportion_of_coalescing_in_tree[i][np.isnan(gamma_arr).sum(axis=0).sum(axis=1) == 0]
-                        if sum(proportion_of_coalescing_in_tree_nan_removed) > 1e-8:
-                            log_num_em_j += (
-                                np.log(
-                                    sum(
-                                        gamma_arr_nan_removed[j][:, epoch_index_in_tree[i]]
-                                        * proportion_of_coalescing_in_tree_nan_removed
-                                    )
-                                    / sum(proportion_of_coalescing_in_tree_nan_removed),
+                        if np.isnan(gamma_arr[j][:, epoch_index_in_tree[i]]).any():
+                            continue
+                        log_num_em_j += (
+                            np.log(
+                                np.nansum(
+                                    gamma_arr[j][:, epoch_index_in_tree[i]]
+                                    * proportion_of_coalescing_in_tree[i]
                                 )
-                            ) / target_branch_length_in_tree[i]
+                                / sum(proportion_of_coalescing_in_tree[i]),
+                            )
+                        ) / target_branch_length_in_tree[i]
             log_num_em[j, n_site] = log_num_em_j
     return log_num_em
 
@@ -625,6 +628,7 @@ def random_sweep_iter(
     for i, (l, r) in enumerate(zip(tree_left_bp[0: n_trees], tree_right_bp[0: n_trees])):
         n_sites += int(r/args.force_build) - int(l/args.force_build)
 
+    
     n_unique_groups = len(unique_groups)
     if args.load_gamma is not None and args.load_props is not None and n_iters == 0:
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
@@ -649,7 +653,6 @@ def random_sweep_iter(
         if args.t_admix_guess is None
         else args.t_admix_guess
     )
-
     masked_trees_index = np.arange(0, n_trees)
     n_samples = len(args.sample_id)
     if args.joint_fit:
@@ -821,7 +824,6 @@ def random_sweep_iter(
             tau,
             window_size=args.force_build,
         )
-        
         for clust_j in range(n_clusters):
             own_membership_trial[clust_j].extend(own_membership_sam[clust_j].tolist())
         if sample_no == 0:

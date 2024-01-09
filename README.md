@@ -30,20 +30,29 @@ python ghost_buster.py \
     --init_at_truth 0
 ```
 
-* Running GhostBuster (joint fitting):
+* Running GhostBuster (supervised local ancestry inference):
 ```
-python ghost_buster.py \
-    --mode sim \
-    --trees example/stdpopsim_homsap_chr \
-    --poplabels example/poplabels.txt \
-    --ground_truth example/local_ancestry_chr \
-    --rec example/genetic_map_GRCh37_chr \
-    --sample_id 50-100 \
-    --chr 22 \
-    --output example/stdpopsim_homsap \
-    --init_at_truth 0 \
-    --n_repeats 1 \
-    --load_gamma example/best_guess_gamma.npy \
-    --load_props example/best_guess_props.npy \
-    --joint_fit
+python ../clean/RelateLocalAncestry/ghost_buster.py \
+--trees ${tree} \
+-k 2 \
+--mode real \
+--chr ${chr} \
+--sample_id ${sample_id}  \
+--num_iters 1 \
+--rec genetic_map_hg38_ \
+--init_at_truth 0 \
+--output ${out} \
+--masking_threshold 0.7 \
+--n_repeats 1 \
+--force_build 1e4 \
+--sweep_num_iters 0 \
+--hmm True \
+--regress_out False \
+--ignore_first_epoch True \
+--ignore_last_epoch True \
+--poplabels poplabels.txt \
+--load_gamma relate.pairwise.coal \
+--load_props "0.98 0.02" \
+--groups nfe nea \
+--t_admix_guess 1500 
 ```

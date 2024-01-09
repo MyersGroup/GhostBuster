@@ -640,37 +640,6 @@ def neighbour_smoothing(post, dist, window=3, alpha=1e-6):
     return post_smooth[:, window:-window]
 
 
-# def load_gamma(path, groups, ref_groups):
-#     if ".npy" in path:
-#         return np.load(path)
-#     elif ".coal" in path:
-#         with open(path) as f:
-#             header = f.readline().strip("\n").split(" ")
-#         header = np.array(header)
-#         # if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
-#         #     print(
-#         #         "Groups in header do not match groups in input, groups in header are: "
-#         #         + str(header)
-#         #     )
-#         #     raise ValueError
-#         groups_to_index = groups
-#         ref_groups_to_index = []
-#         for g in ref_groups:
-#             try:
-#                 ref_groups_to_index.append(np.where(header == g)[0][0])
-#             except:
-#                 ref_groups_to_index.append(np.nan)
-#         df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
-#         gamma_arr = np.nan*np.ones((len(groups), len(ref_groups), df.shape[1] - 2))
-#         for i, gid1 in enumerate(groups_to_index):
-#             for j, gid2 in enumerate(ref_groups_to_index):
-#                 if not np.isnan(gid2):
-#                     gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
-        
-#         return gamma_arr
-#     else:
-#         print("Unsupported file format for gamma files")
-
 def load_gamma(path, groups, ref_groups):
     if ".npy" in path:
         return np.load(path)
@@ -684,17 +653,53 @@ def load_gamma(path, groups, ref_groups):
                 + str(header)
             )
             raise ValueError
-        groups_to_index = [np.where(header == g)[0][0] for g in groups]
-        ref_groups_to_index = [np.where(header == g)[0][0] for g in ref_groups]
+        groups_to_index = []
+        ref_groups_to_index = []
+        for g in groups:
+            try:
+                groups_to_index.append(np.where(header == g)[0][0])
+            except:
+                groups_to_index.append(np.nan)
+        for g in ref_groups:
+            try:
+                ref_groups_to_index.append(np.where(header == g)[0][0])
+            except:
+                ref_groups_to_index.append(np.nan)
         df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
-        gamma_arr = np.zeros((len(groups), len(ref_groups), df.shape[1] - 2))
+        gamma_arr = np.nan*np.ones((len(groups), len(ref_groups), df.shape[1] - 2))
         for i, gid1 in enumerate(groups_to_index):
             for j, gid2 in enumerate(ref_groups_to_index):
-                gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
-        print(np.nan_to_num(gamma_arr, nan=0))
-        return np.nan_to_num(gamma_arr, nan=0)
+                if not np.isnan(gid2):
+                    gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+        
+        return gamma_arr
     else:
         print("Unsupported file format for gamma files")
+
+# def load_gamma(path, groups, ref_groups):
+#     if ".npy" in path:
+#         return np.load(path)
+#     elif ".coal" in path:
+#         with open(path) as f:
+#             header = f.readline().strip("\n").split(" ")
+#         header = np.array(header)
+#         if len(np.intersect1d(ref_groups, header)) != len(ref_groups):
+#             print(
+#                 "Groups in header do not match groups in input, groups in header are: "
+#                 + str(header)
+#             )
+#             raise ValueError
+#         groups_to_index = [np.where(header == g)[0][0] for g in groups]
+#         ref_groups_to_index = [np.where(header == g)[0][0] for g in ref_groups]
+#         df = pd.read_csv(path, sep="\s+", header=None, skiprows=[0, 1])
+#         gamma_arr = np.zeros((len(groups), len(ref_groups), df.shape[1] - 2))
+#         for i, gid1 in enumerate(groups_to_index):
+#             for j, gid2 in enumerate(ref_groups_to_index):
+#                 gamma_arr[i, j] = df[(df[0] == gid1) & (df[1] == gid2)].values[:, 2:]
+#         print(np.nan_to_num(gamma_arr, nan=0))
+#         return np.nan_to_num(gamma_arr, nan=0)
+#     else:
+#         print("Unsupported file format for gamma files")
 
 def load_props(path):
     if ".npy" in path:
