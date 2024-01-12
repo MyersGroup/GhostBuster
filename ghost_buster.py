@@ -382,7 +382,8 @@ def e_m_step(
     loglikelihood_per_comp = log_num_em + log_denom_em
     print("log-like time: " + str(time.time() - st))
 
-    if loglikehood_cov is not None:
+    ## no regress out on last epochs
+    if loglikehood_cov is not None and epoch < args.num_iters - 1:
         st = time.time()
         loglikehood_base = loglikelihood_per_comp[0].sum().copy()
         for k in range(1, args.num_clusters):
@@ -447,7 +448,7 @@ def e_m_step(
     tau = tau_update/np.sum(tau_update)
 
     own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
-    if loglikehood_cov is not None:
+    if loglikehood_cov is not None and epoch < args.num_iters - 1:
         log_likelihood_hmm += loglikehood_base
     
     print("HMM time: " + str(time.time() - st))
