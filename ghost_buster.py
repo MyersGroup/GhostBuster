@@ -42,12 +42,6 @@ warnings.filterwarnings("ignore")
 
 
 def input_assertions(args):
-    if (args.load_gamma == None and args.load_props != None) or (
-        args.load_props != None and args.load_gamma == None
-    ):
-        raise ValueError(
-            "Stop specifying gammas without proportions or proportions without gamma"
-        )
     if not args.evaluate_local_ancestry and not args.evaluate_gamma:
         raise ValueError(
             "If you don't want to evaluate the population sizes or local ancestry, what are you here for ?"
@@ -81,61 +75,14 @@ def load_trees(args):
     return ts_list
 
 
-def update_membership(
-    proportion_of_coalescing_in_tree,
-    epoch_index_in_tree,
-    denom,
-    gamma_arr,
-    tid,
-    ignore_first_epoch,
-    ignore_last_epoch,
-    n_epochs,
-):
-    log_num_em_j_i = 0
-    for i in range(len(proportion_of_coalescing_in_tree)):
-        if (
-            (
-                ignore_first_epoch
-                and not ignore_last_epoch
-                and epoch_index_in_tree[i] >= 1
-            )
-            or (
-                ignore_last_epoch
-                and not ignore_first_epoch
-                and epoch_index_in_tree[i] < n_epochs - 2
-            )
-            or (
-                ignore_first_epoch
-                and ignore_last_epoch
-                and epoch_index_in_tree[i] >= 1
-                and epoch_index_in_tree[i] < n_epochs - 2
-            )
-            or (not ignore_first_epoch and not ignore_last_epoch)
-        ):
-            log_num_em_j_i += np.log(
-                sum(
-                    gamma_arr[:, epoch_index_in_tree[i]]
-                    * proportion_of_coalescing_in_tree[i]
-                ),
-            )
-
-    if ignore_first_epoch and ignore_last_epoch:
-        log_denom_em_j = -sum(sum(gamma_arr[:, 1:-1] * denom[:, 1:-1, tid]))
-    elif ignore_first_epoch and not ignore_last_epoch:
-        log_denom_em_j = -sum(sum(gamma_arr[:, 1:] * denom[:, 1:, tid]))
-    elif ignore_last_epoch and not ignore_first_epoch:
-        log_denom_em_j = -sum(sum(gamma_arr[:, :-1] * denom[:, :-1, tid]))
-    else:
-        log_denom_em_j = -sum(sum(gamma_arr * denom[:, :, tid]))
-    return log_num_em_j_i, log_denom_em_j
-
-
 def update_membership_eventwise_denom(gamma_arr, denom, ignore_first_epoch, ignore_last_epoch, n_epochs):
     log_denom_em = np.zeros((gamma_arr.shape[0], denom.shape[0]), dtype="float64")
     start_end_mask = np.ones(n_epochs - 1, dtype=bool)
     start_end_mask[0] = False if ignore_first_epoch else True
     start_end_mask[-1] = False if ignore_last_epoch else True
     for j in range(gamma_arr.shape[0]):
+        ### Caution: This hack removes epochs which have any one reference population without coal. rate
+        ### We instead want to remove the reference population not the entire epoch
         nan_mask = np.isnan(gamma_arr[j]).sum(axis=0) == 0
         combined_mask = np.logical_and(start_end_mask, nan_mask)
         gamma_arr_nan_removed = gamma_arr[j][:, combined_mask]
@@ -165,15 +112,16 @@ def update_membership_eventwise_numba(
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
-                        log_num_em_j += (
-                            np.log(
-                                sum(
-                                    gamma_arr[j][:, epoch_index_in_tree[i]]
-                                    * proportion_of_coalescing_in_tree[i]
+                        if not (gamma_arr[j][:, epoch_index_in_tree[i]] == -9223372036854775808).any():
+                            log_num_em_j += (
+                                np.log(
+                                    sum(
+                                        gamma_arr[j][:, epoch_index_in_tree[i]]
+                                        * proportion_of_coalescing_in_tree[i]
+                                    )
+                                    / sum(proportion_of_coalescing_in_tree[i]),
                                 )
-                                / sum(proportion_of_coalescing_in_tree[i]),
-                            )
-                        ) / target_branch_length_in_tree[i]
+                            ) / target_branch_length_in_tree[i]
             log_num_em[j, n_site] = log_num_em_j
     return log_num_em
 
@@ -202,7 +150,7 @@ def update_membership_eventwise_numpy(
                             continue
                         log_num_em_j += (
                             np.log(
-                                np.nansum(
+                                np.sum(
                                     gamma_arr[j][:, epoch_index_in_tree[i]]
                                     * proportion_of_coalescing_in_tree[i]
                                 )
@@ -223,6 +171,7 @@ def combine_local_ancestry(arr, n):
 
 
 def regress_out_mean(y, C):
+    return y - np.mean(y, axis=0)
     # corr_bt = np.array(C > 0.3, dtype='int')
     # g = nx.from_numpy_array(corr_bt)
     # mean_lowvar = 0.0
@@ -237,17 +186,17 @@ def regress_out_mean(y, C):
     # print(np.linalg.norm(mean_lowvar))
     # return (y - mean_lowvar)
 
-    y = y.reshape(-1, 1)
-    X = np.ones_like(y)
-    try:
-        cov_inv = np.linalg.inv(C + 1e-8*np.eye(len(C)))
-    except:
-        pdb.set_trace()
-    X_transpose_cov_inv = np.dot(X.T, cov_inv)
-    X_cov_X_transpose_cov_inv = np.dot(X_transpose_cov_inv, X)
-    X_cov_X_transpose_cov_inv_inv = np.linalg.inv(X_cov_X_transpose_cov_inv)
-    g_mle = np.dot(X_cov_X_transpose_cov_inv_inv, np.dot(X_transpose_cov_inv, y))
-    return (y - np.dot(X, g_mle)).flatten()
+    # y = y.reshape(-1, 1)
+    # X = np.ones_like(y)
+    # try:
+    #     cov_inv = np.linalg.inv(C + 1e-8*np.eye(len(C)))
+    # except:
+    #     pdb.set_trace()
+    # X_transpose_cov_inv = np.dot(X.T, cov_inv)
+    # X_cov_X_transpose_cov_inv = np.dot(X_transpose_cov_inv, X)
+    # X_cov_X_transpose_cov_inv_inv = np.linalg.inv(X_cov_X_transpose_cov_inv)
+    # g_mle = np.dot(X_cov_X_transpose_cov_inv_inv, np.dot(X_transpose_cov_inv, y))
+    # return (y - np.dot(X, g_mle)).flatten()
 
 
 def e_m_step(
@@ -260,7 +209,7 @@ def e_m_step(
     epoch_index_all,
     denom,
     unique_groups,
-    n_epochs,
+    epoch_intervals,
     n_trees,
     n_samples,
     epoch,
@@ -271,78 +220,66 @@ def e_m_step(
     tree_right_bp_gen,
     loglikehood_cov=None,
 ):
-    ## caution ##
-    # num_sites_per_tree = np.zeros(n_trees, dtype='int')
-    # for i, (l, r) in enumerate(zip(tree_left_bp[0 : n_trees], tree_right_bp[0 : n_trees])):
-    #     num_sites_per_tree[i] = r//args.force_build - l//args.force_build
-    # denom_site  =  []
-    # for sample_no in range(n_samples):
-    #     denom_site.append(np.repeat(denom[sample_no], num_sites_per_tree, axis=0))
-    #     # proportion_of_coalescing_all_site.append(make_numba_nested_list(np.repeat(proportion_of_coalescing_all[sample_no], num_sites_per_tree, axis=0)))
-    #     # epoch_index_all_site.append(make_numba_nested_list(np.repeat(epoch_index_all[sample_no], num_sites_per_tree, axis=0)))
-    #     # target_branch_length_masked_site.append(make_numba_nested_list(np.repeat(target_branch_length_masked[sample_no], num_sites_per_tree, axis=0)))
-
     st = time.time()
+    n_epochs = len(epoch_intervals)
     masked_trees_index = np.arange(0, n_trees)
     n_unique_groups = len(unique_groups)
-    n = np.zeros(
-        (args.num_clusters, n_unique_groups, n_epochs - 1),
-        dtype="float64",
-    )
-    d = np.zeros(
-        (args.num_clusters, n_unique_groups, n_epochs - 1),
-        dtype="float64",
-    )
     n_sites = own_membership.shape[1] // n_samples
-    if prev_gamma is None:
-        prev_gamma = np.ones_like(n)
     
-    prev_gamma = np.nan_to_num(prev_gamma, nan=1)    
-    for sample_no in range(n_samples):
-        own_membership_sample = own_membership[
-            :, sample_no * n_sites : (sample_no + 1) * n_sites
-        ]
-        for j in range(len(own_membership_sample)):
-            n_j = compute_gamma_num(
-                own_membership_sample[j],
-                prev_gamma[j],
-                proportion_of_coalescing_all[sample_no],
-                epoch_index_all[sample_no],
-                n_unique_groups,
-                n_epochs,
-                target_branch_length_masked[sample_no],
-                args.ignore_first_epoch,
-                args.ignore_last_epoch,
-            )
-            d_j = compute_gamma_denom(
-                own_membership_sample[j],
-                denom[sample_no],
-            )
-            n[j] += n_j
-            d[j] += d_j
-    gamma_arr = n / d
-    print("M-step time: " + str(time.time() - st))
-
-    st = time.time()
-    ### manually fixing gamma in last epoch
-    # gamma_arr[:, :, -1] = np.mean(gamma_arr[:, :, -1])
-    if epoch == 0 and args.load_gamma != None:
+    if args.load_gamma != None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
-
-    if epoch == 0 and args.load_props != None:
+        ## CAUTION: recheck this, removing gamma_arr outside the range
+        for epoch_gamma in range(gamma_arr.shape[2]):
+            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch_gamma]:
+                gamma_arr[:,:,epoch_gamma] = np.nan
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch_gamma+1]:
+                gamma_arr[:,:,epoch_gamma] = np.nan
+    if args.load_gamma is None or epoch == args.num_iters - 1:
+        n = np.zeros(
+            (args.num_clusters, n_unique_groups, n_epochs - 1),
+            dtype="float64",
+        )
+        d = np.zeros(
+            (args.num_clusters, n_unique_groups, n_epochs - 1),
+            dtype="float64",
+        )
+        if prev_gamma is None:
+            prev_gamma = np.ones_like(n)
+        prev_gamma = np.nan_to_num(prev_gamma, nan=1)    
+        for sample_no in range(n_samples):
+            own_membership_sample = own_membership[
+                :, sample_no * n_sites : (sample_no + 1) * n_sites
+            ]
+            for j in range(len(own_membership_sample)):
+                n_j = compute_gamma_num(
+                    own_membership_sample[j],
+                    prev_gamma[j],
+                    proportion_of_coalescing_all[sample_no],
+                    epoch_index_all[sample_no],
+                    n_unique_groups,
+                    n_epochs,
+                    target_branch_length_masked[sample_no],
+                    args.ignore_first_epoch,
+                    args.ignore_last_epoch,
+                )
+                d_j = compute_gamma_denom(
+                    own_membership_sample[j],
+                    denom[sample_no],
+                )
+                n[j] += n_j
+                d[j] += d_j
+        if args.load_gamma is None:
+            gamma_arr = n / d
+    if args.load_props != None:
         print("Using initial props specified in file: " + str(args.load_props))        
         tau = load_props(
             args.load_props
         )  ### load taus only works for not(props_per_chrs)
 
-    # if tau[0] < tau[1]:
-    #     tau = [0.05, 0.95]  ## CAUTION: Fixing tau!!!
-    # else:
-    #     tau = [0.95, 0.05]
-    # tau = np.array(tau)
+    print("M-step time: " + str(time.time() - st))
+    st = time.time()
 
-    ### Comment this block if you wish to update the transition matrix automatically
     if args.t_admix_guess is not None:
         trans_prop = args.t_admix_guess
 
@@ -353,7 +290,7 @@ def e_m_step(
     log_denom_em = np.zeros((args.num_clusters, n_sites * n_samples), dtype="float64")
     count_masked_trees = 0
 
-    update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
+    update_membership_eventwise = update_membership_eventwise_numba
     for sample_no in range(n_samples):
         log_num_em_sam = update_membership_eventwise(
             proportion_of_coalescing_all[sample_no],
@@ -405,19 +342,6 @@ def e_m_step(
         loglikelihood_per_comp[0] = 0
         print("Time taken for regressing out: " + str(time.time() - st))
 
-    ### caution!!!
-    ### regress out the mean likelihood across samples from this
-    # mean_loglikelihood = loglikelihood_per_comp.reshape(
-    #     args.num_clusters, n_trees, n_samples
-    # ).mean(axis=2)
-    # mean_loglikelihood = np.repeat(mean_loglikelihood, n_samples, axis=1)
-    # for c in range(args.num_clusters):
-    #     loglikelihood_per_comp[c] -= (
-    #         mean_loglikelihood[c]
-    #         * (mean_loglikelihood[c].T @ loglikelihood_per_comp[c])
-    #         / (mean_loglikelihood[c].T @ mean_loglikelihood[c])
-    #     )
-
     ### HMM smoothing
     st = time.time()
     own_membership_hmm = np.zeros((args.num_clusters, n_sites*n_samples), dtype="float64")
@@ -446,12 +370,20 @@ def e_m_step(
 
     trans_prop = trans_num/trans_denom
     tau = tau_update/np.sum(tau_update)
+    tau = np.minimum(np.maximum(tau, 1e-11), 1-1e-11)
 
     own_membership_hmm = np.repeat(own_membership_hmm, args.num_subtrees, axis=1)
     if loglikehood_cov is not None and epoch < args.num_iters - 1:
         log_likelihood_hmm += loglikehood_base
     
+    print((tau, np.mean(own_membership_hmm, axis= 1)))
     print("HMM time: " + str(time.time() - st))
+    if np.isnan(log_likelihood_hmm):
+        pdb.set_trace()
+    
+    if epoch == args.num_iters - 1:
+        gamma_arr = n/d
+
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
 
 
@@ -537,7 +469,8 @@ def estimate_gt_ref(
             own_membership_trial = np.ones(
                 (args.num_clusters, n_trees), dtype="float64"
             )
-            update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
+            # update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
+            update_membership_eventwise = update_membership_eventwise_numba 
             log_num_em, log_denom_em = update_membership_eventwise(
                 proportion_of_coalescing_all1,
                 epoch_index_all1,
@@ -629,12 +562,17 @@ def random_sweep_iter(
     for i, (l, r) in enumerate(zip(tree_left_bp[0: n_trees], tree_right_bp[0: n_trees])):
         n_sites += int(r/args.force_build) - int(l/args.force_build)
 
+    epoch_intervals = np.log10(epoch_intervals_pow)
     
     n_unique_groups = len(unique_groups)
-    if args.load_gamma is not None and args.load_props is not None and n_iters == 0:
+    if args.load_gamma is not None:
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
-        tau = load_props(args.load_props)
-
+        ## CAUTION: recheck this, removing gamma_arr outside the range
+        for epoch in range(gamma_arr.shape[2]):
+            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+                gamma_arr[:,:,epoch] = np.nan
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+                gamma_arr[:,:,epoch] = np.nan
     else:
         if args.joint_fit:
             n_unique_groups = n_unique_groups + 1*(n_clusters - 1)
@@ -646,6 +584,11 @@ def random_sweep_iter(
             ),
         )
         gamma_arr = np.array(gamma_arr, dtype="float64")
+
+    if args.load_props is not None:  
+        tau = load_props(args.load_props)
+
+    else:
         tau = np.random.uniform(0.01, 0.99, n_clusters)
         tau /= np.sum(tau)
 
@@ -654,6 +597,7 @@ def random_sweep_iter(
         if args.t_admix_guess is None
         else args.t_admix_guess
     )
+    print((tau, trans_prop))
     masked_trees_index = np.arange(0, n_trees)
     n_samples = len(args.sample_id)
     if args.joint_fit:
@@ -753,7 +697,8 @@ def random_sweep_iter(
     log_denom_em = np.zeros((n_clusters, n_sites * n_samples), dtype="float64")
     count_masked_trees = 0
 
-    update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
+    # update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
+    update_membership_eventwise = update_membership_eventwise_numba
     for sample_no, sample in enumerate(args.sample_id):
         if args.joint_fit:
             # (
@@ -781,7 +726,7 @@ def random_sweep_iter(
             # denom.append(denom1)
             # proportion_of_coalescing_all.append(make_numba_nested_list(proportion_of_coalescing_all1))
             # epoch_index_all.append(make_numba_nested_list(epoch_index_all1))
-            epoch_intervals = np.log10(epoch_intervals_pow)
+            
             (
                 num1,
                 denom1,
@@ -857,7 +802,7 @@ def random_sweep_iter(
             epoch_index_all,
             denom,
             unique_groups,
-            n_epochs,
+            epoch_intervals,
             n_trees,
             n_samples,
             epoch,
@@ -1163,8 +1108,6 @@ def main(args):
                 open(args.load_gamma).readlines()[1].strip("\n").split(" ")[:-1]
             )
             epoch_intervals = np.array(np.log10(np.array(second_line, dtype="float64")).tolist() + [np.inf], dtype='float64')
-            args.start_time = epoch_intervals[1] + math.log(args.ypg, 10)
-            args.end_time = epoch_intervals[-2] + math.log(args.ypg, 10)
             args.num_epochs = len(epoch_intervals) - 1
 
     poplabels = pd.read_csv(args.poplabels, sep="\s+")
@@ -1248,7 +1191,7 @@ def main(args):
             ## also remove the ones that are close to the ones that are in the smaller cluster
             for i in range(len(membership)):
                 if membership.loc[i, "prob_" + str(smaller_cluster)] >= 0.5:
-                    mask_for_i = (membership['chr'] == membership.loc[i, 'chr']) & (np.abs(membership['genpos'] - membership.loc[i, 'genpos']) < 2e-1)
+                    mask_for_i = (membership['chr'] == membership.loc[i, 'chr']) & (np.abs(membership['genpos'] - membership.loc[i, 'genpos']) < 0.05)
                     membership.loc[mask_for_i, "prob_" + str(smaller_cluster)] = 0.51
             
             mask_df = membership[membership["prob_" + str(smaller_cluster)] < 0.5]
@@ -1260,6 +1203,7 @@ def main(args):
             mask_dodgy.append(mask_dodgy_sam)
         mask_dodgy = np.array(mask_dodgy)
         mask_dodgy = mask_dodgy.sum(axis=0) == len(mask_dodgy)
+        print("Number of locations removed total = " + str(1 - mask_dodgy.sum()/len(mask_dodgy)))
 
     elif args.load_mask is None:
         mask_dodgy = filter_recomb_rate(
@@ -1589,6 +1533,14 @@ def main(args):
 
     if args.load_gamma:
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
+        ## CAUTION: recheck this, removing gamma_arr outside the range
+        for epoch in range(gamma_arr.shape[2]):
+            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+                gamma_arr[:,:,epoch] = np.nan
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+                gamma_arr[:,:,epoch] = np.nan
+        
+        print(gamma_arr)
     else:
         gamma_arr = None
     if args.load_props:
@@ -1623,7 +1575,7 @@ def main(args):
                 epoch_index_all,
                 denom,
                 unique_groups,
-                len(epoch_intervals),
+                epoch_intervals,
                 num_trees,
                 len(args.sample_id),
                 epoch,
@@ -1658,6 +1610,7 @@ def main(args):
 
         print("HMM admix date = " + str(trans_prop))
         print("em iters: " + str(time.time() - st))
+        print("Final log-likelihood = " + str(log_likelihood_arr[-1]))
 
         if args.mode == "sim":
             write_calibration(args, own_membership, ground_truth_membership)

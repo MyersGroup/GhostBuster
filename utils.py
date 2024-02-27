@@ -652,6 +652,7 @@ def load_gamma(path, groups, ref_groups):
                 "Groups in header do not match groups in input, groups in header are: "
                 + str(header)
             )
+            import pdb; pdb.set_trace()
             raise ValueError
         groups_to_index = []
         ref_groups_to_index = []

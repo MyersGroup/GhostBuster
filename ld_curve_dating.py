@@ -131,54 +131,56 @@ if __name__ == "__main__":
     #     "../../hgdp_1gp/output/sindhi_all_overall_membership_0_1_2_3_4_5_6_7_8_9_10_11_12_13_14_15_16_17_18_19_20_21_22_23_24_25_26_27_28_29_30_31_32_33_34_35_36_37_38_39.csv",
     #     sep="\s+",
     # )
-    output_prefix = '../../SGDP/transfer/output_dating/nea_chr'
-    num_hap = 0
-    len_all = []
-    for chr in range(1, 6):
-        file_list = glob.glob(output_prefix + '{0}_all_overall_membership_*.csv'.format(chr))
-        sorted_hap_no = []
-        sorted_file_list = []
-        for file in file_list:
-            hap_no = int(file.split(output_prefix + '{0}_all_overall_membership_'.format(chr))[1].split('.csv')[0].split('sample_id_')[1])
-            sorted_hap_no.append(hap_no)
-        
-        num_hap += len(sorted_hap_no)
-        for hap_no in np.sort(sorted_hap_no):
-            file = glob.glob(output_prefix + '{0}_all_overall_membership_*'.format(chr) + str(hap_no) + '.csv')[0]
-            df_i = pd.read_csv(
-                file,
-                "\s+",
-            )
-            len_all.append(len(df_i))
-            try:
-                df = pd.concat([df, df_i], axis=0)
-            except:
-                df = df_i.copy()
-
-    print("Number of haplotypes = " + str(num_hap))
-    num_clusters = df.shape[1] - 3
-    prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
-
     means_all = []
-    len_all_cumsum = np.cumsum(len_all)
-    for sam in range(num_hap):
-        if sam >= 1:
-            df_sam = df.iloc[
-                len_all_cumsum[sam - 1] : len_all_cumsum[sam]
-            ]
-        else:
-            df_sam = df.iloc[0: len_all_cumsum[0]]
-        if sam % 2 == 0:
-            df_hap1 = df_sam
-        else:
-            for prob_col in prob_labels:
-                df_hap1[prob_col] += df_sam[prob_col]
-                df_hap1[prob_col] /= 2
-            print()
-            means, dist = get_coancestry_per_sample(
-                df_hap1, bin_size, bin_max, num_clusters
-            )
-            means_all.append(means)
+    for pop in ['mandenka']:
+        output_prefix =  '../../Bergstrom2018HGDP/all_reference_pops/4way_{0}_supervised_chr'.format(pop)
+        num_hap = 0
+        len_all = []
+        for chr in [2, 3, 4, 5]:
+            file_list = glob.glob(output_prefix + '{0}_overall_membership_*.csv'.format(chr))
+            sorted_hap_no = []
+            sorted_file_list = []
+            for file in file_list:
+                hap_no = int(file.split(output_prefix + '{0}_overall_membership_'.format(chr))[1].split('.csv')[0].split('sample_id_')[1])
+                sorted_hap_no.append(hap_no)
+            
+            num_hap += len(sorted_hap_no)
+            for hap_no in np.sort(sorted_hap_no):
+                file = glob.glob(output_prefix + '{0}_overall_membership_*'.format(chr) + str(hap_no) + '.csv')[0]
+                df_i = pd.read_csv(
+                    file,
+                    "\s+",
+                )
+                len_all.append(len(df_i))
+                try:
+                    df = pd.concat([df, df_i], axis=0)
+                except:
+                    df = df_i.copy()
+
+        print("Number of haplotypes = " + str(num_hap))
+        num_clusters = df.shape[1] - 3
+        prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
+
+        
+        len_all_cumsum = np.cumsum(len_all)
+        for sam in range(num_hap):
+            if sam >= 1:
+                df_sam = df.iloc[
+                    len_all_cumsum[sam - 1] : len_all_cumsum[sam]
+                ]
+            else:
+                df_sam = df.iloc[0: len_all_cumsum[0]]
+            if sam % 2 == 0:
+                df_hap1 = df_sam
+            else:
+                for prob_col in prob_labels:
+                    df_hap1[prob_col] += df_sam[prob_col]
+                    df_hap1[prob_col] /= 2
+                print()
+                means, dist = get_coancestry_per_sample(
+                    df_hap1, bin_size, bin_max, num_clusters
+                )
+                means_all.append(means)
 
     # for i in range(2):
     #     for j in range(2):
@@ -188,4 +190,4 @@ if __name__ == "__main__":
     admixtimes = get_admixtimes(initial_values, dist, means_all)
     print("Admixtime = " + str(admixtimes))
 
-    plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False)
+    plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=True)
