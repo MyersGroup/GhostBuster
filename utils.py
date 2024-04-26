@@ -179,7 +179,7 @@ def write_calibration(args, own_membership, ground_truth_membership):
 
 
 def filter_recomb_rate(
-    args,
+    masking_threshold,
     tree_left_bp,
     recomb_rates,
     chr_map,
@@ -203,7 +203,7 @@ def filter_recomb_rate(
         )
         mask_dodgy[chr_map == chr] *= mask_for_dodgy_trees(
             recomb_rates_chr,
-            1 - args.masking_threshold,
+            1 - masking_threshold,
         )
 
     mask_dodgy = np.array(mask_dodgy)
@@ -213,6 +213,47 @@ def filter_recomb_rate(
         + str(sum(mask_dodgy))
         + " average recomb. rate: "
         + str(np.mean(np.array(recomb_rates)[mask_dodgy]))
+    )
+    return mask_dodgy
+
+
+def filter_bstat(
+    masking_threshold,
+    tree_left_bp,
+    b_stat,
+    chr_map,
+):
+    b_stat = np.array(b_stat)
+    mask_dodgy = np.ones_like(b_stat, dtype='bool')
+    if masking_threshold is None:
+        return mask_dodgy
+    for chr in np.unique(chr_map):
+        b_stat_chr = b_stat[chr_map == chr]
+        for i, r in enumerate(b_stat_chr):
+            if np.isnan(r):
+                b_stat_chr[
+                    np.abs(np.array(tree_left_bp)[chr_map == chr] - np.array(tree_left_bp)[chr_map == chr][i]) < 500000
+                ] = np.inf
+        b_stat_chr = np.nan_to_num(b_stat_chr, posinf=np.nan)
+        mask_dodgy[chr_map == chr] = ~np.isnan(b_stat_chr)
+
+        bstat_0_thresh = np.sum(np.array(b_stat_chr) <= 0) / len(b_stat_chr)
+        mask_dodgy[chr_map == chr]  *= ~mask_for_dodgy_trees(
+            b_stat_chr,
+            bstat_0_thresh,
+        )
+        mask_dodgy[chr_map == chr] *= mask_for_dodgy_trees(
+            b_stat_chr,
+            1 - masking_threshold,
+        )
+
+    mask_dodgy = np.array(mask_dodgy)
+
+    print(
+        "Filtering based on b-statistic, trees remaining: "
+        + str(sum(mask_dodgy))
+        + " average b-stat: "
+        + str(np.mean(np.array(b_stat)[mask_dodgy]))
     )
     return mask_dodgy
 
@@ -723,7 +764,7 @@ def get_target_branch_length(
     Calculates the branch length of the target population
     """
     target_branch_length = []
-    for sample in sample_list:
+    for sample_no, sample in enumerate(sample_list):
         count_all_tree, count_all_tree2 = 0, 0
         target_branch_length_sample = List()
         leave_one_sample_out = list(set(sample_list) - set([sample]))
@@ -761,7 +802,7 @@ def get_target_branch_length(
                         tree.interval[1] // args.force_build - tree.interval[0] // args.force_build
                         > 0
                     ):
-                        if mask_dodgy[count_all_tree]:
+                        if mask_dodgy[sample_no][count_all_tree]:
                             tree_left_bp_chr.append(tree.interval[0])
                             tree_right_bp_chr.append(tree.interval[1])
                         count_all_tree += 1
@@ -784,7 +825,7 @@ def get_target_branch_length(
                         tree.interval[1] // args.force_build - tree.interval[0] // args.force_build
                         > 0
                     ):
-                        if mask_dodgy[count_all_tree2]:
+                        if mask_dodgy[sample_no][count_all_tree2]:
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             parent = copy.deepcopy(sample)
                             while parent != tree.root:

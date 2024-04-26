@@ -14,6 +14,7 @@ import msprime
 import copy
 import pdb
 import os
+import bisect
 
 
 def lineage_nodes(tree, sample_ids):
@@ -93,6 +94,7 @@ def compute_tree_stats(
     num_branches_on_target = []
     snps_not_mapping = []
     snps_flipped = []
+    b_values = []
     # mutrate_logpmf_target = []
     # mutrate_opportunity_target = []
     chr_map = []
@@ -103,8 +105,13 @@ def compute_tree_stats(
     cent_telo_hla = pd.read_csv(
         os.path.dirname(os.path.abspath(__file__)) + "/real_data_mask.txt", sep="\t"
     )
+    
+
 
     for chr_no, chr in enumerate(chrs):
+        if args.bmap is not None:
+            bmap = pd.read_csv(args.bmap + '{0}.bmap.txt'.format(int(chr)), '\s+')
+
         if os.path.isfile(rec + str(chr) + ".txt"):
             recomb_map = pd.read_csv(
                 rec + str(chr) + ".txt",
@@ -123,7 +130,7 @@ def compute_tree_stats(
         recomb_map["Start Position(bp)"] = np.array(
             [recomb_map_arr[0, 0]] + recomb_map_arr[:-1, 0].tolist()
         )
-        tree_left_bp_chr, tree_right_bp_chr = [], []
+        tree_left_bp_chr, tree_right_bp_chr, bvalues_chr = [], [], []
         if allmuts is not None:
             relate_allmuts_file = pd.read_csv(
                 allmuts + str(chr) + ".allmuts",
@@ -167,6 +174,14 @@ def compute_tree_stats(
                         )
                     )
                 ]
+
+                if args.bmap is not None:
+                    idx1 = bisect.bisect_left(bmap['start'].values, (tree.interval[0]+tree.interval[1])/2)
+                    idx2 = bisect.bisect_left(bmap['end'].values, (tree.interval[0]+tree.interval[1])/2)
+                    if idx2 == idx1 - 1:
+                        b_values.append(bmap['b-value'].values[idx2])
+                    else:
+                        b_values.append(np.nan)
                 if (
                     args.mode == "real"
                     and (
@@ -260,6 +275,7 @@ def compute_tree_stats(
         mutrate_logpmf_target = np.zeros(len(recomb_rates)).tolist()
         mutrate_opportunity_target = np.zeros(len(recomb_rates)).tolist()
 
+
     return (
         tree_size,
         tree_left_bp,
@@ -280,6 +296,7 @@ def compute_tree_stats(
         chr_map,
         snps_not_mapping,
         snps_flipped,
+        b_values
     )
 
 
@@ -331,6 +348,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
     frac_branches_with_snp_target_all = []
     mutrate_logpmf_target_all = []
     num_snps_on_lineage_all = []    
+    b_values_all = []
 
     for chrom_no, chrom in enumerate(chrs):
         if tree_stats_file_prefix is not None:
@@ -359,6 +377,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
                 chr_map,
                 snps_not_mapping,
                 snps_flipped,
+                b_values
             ) = pickle.load(f_pkl)
             f_pkl.close()
             print("Done loading tree statistics from: " + str(tree_stats_file_name))
@@ -385,6 +404,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
                 chr_map,
                 snps_not_mapping,
                 snps_flipped,
+                b_values
             ) = compute_tree_stats(
                 args,
                 poplabels,
@@ -419,6 +439,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
                     chr_map,
                     snps_not_mapping,
                     snps_flipped,
+                    b_values
                 ],
                 f_pkl,
             )
@@ -434,6 +455,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
         frac_branches_with_snp_target_all.extend(frac_branches_with_snp_target)
         mutrate_logpmf_target_all.extend(mutrate_logpmf_target)
         num_snps_on_lineage_all.extend(num_snps_on_lineage)
+        b_values_all.extend(b_values)
 
 
     return (
@@ -447,4 +469,5 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
         frac_branches_with_snp_target_all,
         mutrate_logpmf_target_all,
         num_snps_on_lineage_all,
+        b_values_all
     )
