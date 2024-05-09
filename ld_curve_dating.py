@@ -95,7 +95,7 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters, normaliz
 
         # Replace regions where the closest index is more than 1kb away as NaN
         for i in range(len(interp_genpos)):
-            if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.001:
+            if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.1:
                 prob_values[i] = np.nan
 
         print(np.isnan(prob_values).sum() / prob_values.size)
@@ -120,8 +120,8 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters, normaliz
 
 if __name__ == "__main__":
     bin_size = 0.05
-    bin_max = 5
-    jn_blocks = 20
+    bin_max = 10
+    jn_blocks = 19
     initial_values = (
         np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000))))
         # if args.t_admix_guess is None
@@ -136,14 +136,15 @@ if __name__ == "__main__":
 
 
     
-    # for pop in ['mandenka', 'san', 'yoruba', 'mbuti', 'biaka', 'bantukenya', 'bantusafrica']:
+    # for pop in ['relate_wg']:
     # for pop in ['mozabite', 'hazara', 'yakut', 'maya', 'tuscan', 'bedouin', 'mbuti', 'biaka']:
-    for pop in ['relate_wg']:
+    for pop in ['san', 'mandenka', 'yoruba', 'mbuti', 'biaka', 'bantukenya', 'bantusafrica']:
         for jn_block in range(jn_blocks):
             means_all = []
             # output_prefix =  '../../Bergstrom2018HGDP/ghost_with_eurasian/{0}_wg'.format(pop)
             # output_prefix =  '../../Bergstrom2018HGDP/recent_admix/{0}'.format(pop)
-            output_prefix = '../../denisovan_sim/output_ghost/{0}'.format(pop)
+            # output_prefix = '../../denisovan_sim/output_ghost/{0}'.format(pop)
+            output_prefix = '../../Bergstrom2018HGDP/all_reference_pops/ro_eurasian_{0}_supervised'.format(pop)
             
             num_hap = 0
             len_all = []
@@ -160,10 +161,16 @@ if __name__ == "__main__":
             for hap_no in np.sort(sorted_hap_no):
                 file = glob.glob(output_prefix + '_overall_membership_*' + str(hap_no) + '.csv')[0]
                 dfc = pd.read_csv(file, '\s+')
-                ## remove jack-knife block (removing 5% from each chromosome)
-                for chr in dfc.chr.unique():
-                    dfc.loc[dfc.chr == chr, 'block'] = pd.cut(dfc[dfc.chr == chr].pos, bins=jn_blocks, labels=False)
-                    dfc = dfc.drop(dfc[(dfc.chr == chr) & (dfc.block == jn_block)].index)
+                dfc['genpos'] = 100 * dfc['genpos'] ## converting M to cM
+
+                # ## remove jack-knife block (removing 5% from each chromosome)
+                # for chr in dfc.chr.unique():
+                #     dfc.loc[dfc.chr == chr, 'block'] = pd.cut(dfc[dfc.chr == chr].pos, bins=jn_blocks, labels=False)
+                #     dfc = dfc.drop(dfc[(dfc.chr == chr) & (dfc.block == jn_block)].index)
+
+
+                ### block-jackknife, remove 1 chromosome at a time
+                dfc = dfc.drop(dfc[dfc.chr == dfc.chr.unique()[jn_block]].index)
 
                 # dfc = pd.DataFrame()
                 # for chr in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 22]:

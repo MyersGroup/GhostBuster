@@ -255,8 +255,7 @@ def Forward_backward(init_start, t_admix, probabilities, gen_grid):
 def Decode_grid(
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid,
     t_admix,
     probabilities,
     tau,
@@ -271,14 +270,13 @@ def Decode_grid(
     starting_probabilities = np.log(tau)
 
     ## transfor probabilities to per-kb + scaling
-    gen_grid, bp_grid = trees_to_bp(
-        tree_left_bp,
-        tree_right_bp,
-        tree_left_bp_gen,
-        tree_right_bp_gen,
-        window_size=window_size,
-    )
-
+    # gen_grid, bp_grid = trees_to_bp(
+    #     tree_left_bp,
+    #     tree_right_bp,
+    #     tree_left_bp_gen,
+    #     tree_right_bp_gen,
+    #     window_size=window_size,
+    # )
     # Posterior decode the file
     post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob = Forward_backward(
         starting_probabilities, t_admix, probabilities, gen_grid

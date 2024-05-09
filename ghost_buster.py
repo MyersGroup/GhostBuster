@@ -227,8 +227,7 @@ def e_m_step(
     target_branch_length_masked,
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid_all,
     loglikehood_cov=None,
     regressors=None
 ):
@@ -246,9 +245,9 @@ def e_m_step(
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch_gamma in range(gamma_arr.shape[2]):
-            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch_gamma]:
+            if (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch_gamma]:
                 gamma_arr[:,:,epoch_gamma] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch_gamma+1]:
+            if (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch_gamma+1]:
                 gamma_arr[:,:,epoch_gamma] = np.nan
     if args.load_gamma is None or epoch == args.num_iters - 1:
         n = np.zeros(
@@ -386,8 +385,7 @@ def e_m_step(
         own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
             tree_left_bp[sample_no],
             tree_right_bp[sample_no],
-            tree_left_bp_gen[sample_no],
-            tree_right_bp_gen[sample_no],
+            gen_grid_all[sample_no],
             trans_prop,
             loglikelihood_per_comp[:, start:end],
             tau,
@@ -437,8 +435,7 @@ def estimate_gt_ref(
     target_branch_length_masked,
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid_all
 ):
     ## random init gt_ref & unique_groups
 
@@ -544,8 +541,7 @@ def estimate_gt_ref(
             own_membership_trial, trans_prop, tau, _ = Decode_grid(
                 tree_left_bp,
                 tree_right_bp,
-                tree_left_bp_gen,
-                tree_right_bp_gen,
+                gen_grid_all,
                 t_admix,
                 loglikelihood_per_comp,
                 tau,
@@ -590,8 +586,7 @@ def random_sweep_iter(
     target_branch_length_masked,
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid_all,
     chr_map,
     loglikehood_cov=None,
     regressors_all=None
@@ -610,9 +605,9 @@ def random_sweep_iter(
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch in range(gamma_arr.shape[2]):
-            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+            if (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
                 gamma_arr[:,:,epoch] = np.nan
     else:
         if args.joint_fit:
@@ -805,8 +800,7 @@ def random_sweep_iter(
         own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
             tree_left_bp[sample_no],
             tree_right_bp[sample_no],
-            tree_left_bp_gen[sample_no],
-            tree_right_bp_gen[sample_no],
+            gen_grid_all[sample_no],
             trans_prop,
             log_num_em_sam + log_denom_em_sam,
             tau,
@@ -851,8 +845,7 @@ def random_sweep_iter(
             target_branch_length_masked,
             tree_left_bp,
             tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
+            gen_grid_all,
             regressors=regressors_all
             # loglikehood_cov=loglikehood_cov
         )
@@ -907,8 +900,7 @@ def random_sweep(
     target_branch_length_masked,
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid_all,
     chr_map,
     loglikehood_cov=None,
     regressors_all=None
@@ -962,8 +954,7 @@ def random_sweep(
             target_branch_length_masked,
             tree_left_bp,
             tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
+            gen_grid_all,
             chr_map,
             # loglikehood_cov
             regressors_all=regressors_all
@@ -1027,8 +1018,7 @@ def write_membership_grid(
     mask_dodgy,
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid_all,
     n_clusters,
     sample_name_list,
     sample_id_list,
@@ -1042,28 +1032,26 @@ def write_membership_grid(
         res = []
         for i, (c, l, r) in enumerate(zip(chr_map_, tree_left_bp[k], tree_right_bp[k])):
             for j in range(int(l / window_size), int(r / window_size)):
-                recomb_rate = (tree_right_bp_gen[k][i] - tree_left_bp_gen[k][i]) / (
-                    tree_right_bp[k][i] - tree_left_bp[k][i]
-                )
-                gen_pos = tree_left_bp_gen[k][i] + recomb_rate * (j * window_size - l)
                 res.append(
-                    [c, j * window_size, 100 * gen_pos] +  own_membership[:, count_i].tolist()
+                    [c, j * window_size] +  own_membership[:, count_i].tolist()
                 )
                 count_i += 1
         df = pd.DataFrame(
             data=np.array(res),
-            columns=["chr", "pos", "genpos"]
+            columns=["chr", "pos"]
             + ["prob_" + str(i) for i in range(n_clusters)],
         )
-        ## correct the genpos
-        for chr in df.chr.unique():
-            if os.path.isfile(args.rec + str(int(chr)) + ".txt"):
-                recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(int(chr)) + ".txt")
-            elif os.path.isfile(args.rec + str(int(chr)) + ".txt.gz"):
-                recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(int(chr)) + ".txt.gz")
-            else:
-                raise "Recomb map format not identified"   
-            df.loc[df.chr == chr, 'genpos'] = 100*recomb_map_msprime.get_cumulative_mass(df.loc[df.chr==chr,'pos'].values)
+
+        df['genpos'] = gen_grid_all[k] ## unit in morgans 
+        # ## correct the genpos
+        # for chr in df.chr.unique():
+        #     if os.path.isfile(args.rec + str(int(chr)) + ".txt"):
+        #         recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(int(chr)) + ".txt")
+        #     elif os.path.isfile(args.rec + str(int(chr)) + ".txt.gz"):
+        #         recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(int(chr)) + ".txt.gz")
+        #     else:
+        #         raise "Recomb map format not identified"   
+        #     df.loc[df.chr == chr, 'genpos'] = 100*recomb_map_msprime.get_cumulative_mass(df.loc[df.chr==chr,'pos'].values)
 
         df.to_csv(
             output + "_overall_membership_" + str(sample_name) + "_sample_id_" + str(sample_id) + ".csv",
@@ -1081,8 +1069,7 @@ def write_membership_gamma(
     chr_map,
     tree_left_bp,
     tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
+    gen_grid_all,
     epoch_intervals,
     unique_groups,
     sample_id_label,
@@ -1103,8 +1090,7 @@ def write_membership_gamma(
         mask_dodgy,
         tree_left_bp,
         tree_right_bp,
-        tree_left_bp_gen,
-        tree_right_bp_gen,
+        gen_grid_all,
         args.num_clusters,
         sample_name_list,
         args.sample_id,
@@ -1311,6 +1297,27 @@ def main(args):
     tree_right_bp_gen = np.array(
         [np.array(tree_right_bp_gen)[mask_dodgy[sam]].tolist() for sam in range(len(args.sample_id))]
     )
+
+    ## generate gen_grid for each sample 
+    gen_grid_kb = {}
+    for chr in list(map(int, args.chrs.split(","))):
+        if os.path.isfile(args.rec + str(chr) + ".txt"):
+            recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(chr) + ".txt")
+        elif os.path.isfile(args.rec + str(chr) + ".txt.gz"):
+            recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(chr) + ".txt.gz")
+        else:
+            raise "Recomb map format not identified"   
+        
+        gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.arange(0, int(tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max()), args.force_build))
+
+
+    gen_grid_all = []
+    for sample_no in range(len(args.sample_id)):
+        gen_grid_sam = []
+        for i, (c, l, r) in enumerate(zip(np.array(chr_map)[mask_dodgy[sample_no]], tree_left_bp[sample_no], tree_right_bp[sample_no])):
+            for j in range(int(l/args.force_build), int(r/args.force_build)):
+                gen_grid_sam.append(gen_grid_kb[c][j])
+        gen_grid_all.append(np.array(gen_grid_sam))
 
     ### record the sites per sample 
     ### Compute recombination rate and b-statistcs at that locations 
@@ -1579,8 +1586,7 @@ def main(args):
             target_branch_length_masked,
             tree_left_bp,
             tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
+            gen_grid_all,
             chr_map,
             regressors_all=regressors_all
         )
@@ -1658,9 +1664,9 @@ def main(args):
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch in range(gamma_arr.shape[2]):
-            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+            if (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
                 gamma_arr[:,:,epoch] = np.nan
         
         print(gamma_arr)
@@ -1711,8 +1717,7 @@ def main(args):
                 target_branch_length_masked,
                 tree_left_bp,
                 tree_right_bp,
-                tree_left_bp_gen,
-                tree_right_bp_gen,
+                gen_grid_all,
                 regressors=regressors_all
                 # loglikehood_cov=loglikehood_cov if args.regress_out else None,
             )
@@ -1760,8 +1765,7 @@ def main(args):
             chr_map,
             tree_left_bp,
             tree_right_bp,
-            tree_left_bp_gen,
-            tree_right_bp_gen,
+            gen_grid_all,
             epoch_intervals,
             unique_groups,
             sample_id_label,

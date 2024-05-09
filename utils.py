@@ -224,7 +224,7 @@ def filter_bstat(
     chr_map,
 ):
     b_stat = np.array(b_stat)
-    mask_dodgy = np.ones_like(b_stat, dtype='bool')
+    mask_dodgy = np.ones_like(chr_map, dtype='bool')
     if masking_threshold is None:
         return mask_dodgy
     for chr in np.unique(chr_map):
