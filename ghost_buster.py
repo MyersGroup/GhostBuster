@@ -244,11 +244,11 @@ def e_m_step(
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
-        for epoch_gamma in range(gamma_arr.shape[2]):
-            if (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch_gamma]:
-                gamma_arr[:,:,epoch_gamma] = np.nan
-            if (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch_gamma+1]:
-                gamma_arr[:,:,epoch_gamma] = np.nan
+        for epoch in range(gamma_arr.shape[2]):
+            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+                gamma_arr[:,:,epoch] = np.nan
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+                gamma_arr[:,:,epoch] = np.nan
     if args.load_gamma is None or epoch == args.num_iters - 1:
         n = np.zeros(
             (args.num_clusters, n_unique_groups, n_epochs - 1),
@@ -301,6 +301,8 @@ def e_m_step(
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
+    if np.isnan(gamma_arr).any():
+        print(gamma_arr)
 
     log_num_em = np.zeros((args.num_clusters, np.sum(n_sites)), dtype="float64")
     log_denom_em = np.zeros((args.num_clusters, np.sum(n_sites)), dtype="float64")
@@ -605,9 +607,9 @@ def random_sweep_iter(
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch in range(gamma_arr.shape[2]):
-            if (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
                 gamma_arr[:,:,epoch] = np.nan
     else:
         if args.joint_fit:
@@ -1664,9 +1666,9 @@ def main(args):
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch in range(gamma_arr.shape[2]):
-            if (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
                 gamma_arr[:,:,epoch] = np.nan
         
         print(gamma_arr)
