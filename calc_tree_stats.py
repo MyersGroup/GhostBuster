@@ -102,11 +102,22 @@ def compute_tree_stats(
     num_nodes = len(list(ts_list[0].first().nodes()))
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
 
-    cent_telo_hla = pd.read_csv(
-        os.path.dirname(os.path.abspath(__file__)) + "/real_data_mask.txt", sep="\t"
-    )
-    
-
+    if args.genome_build in ['hg37', 'hg38']:
+        cent_telo_hla = pd.read_csv(
+            os.path.dirname(os.path.abspath(__file__)) + "/" + str(args.genome_build) + "_real_data_mask.txt", sep="\t"
+        )
+    elif args.genome_build is 'hg19':
+        cent_telo_hla = pd.read_csv(
+            os.path.dirname(os.path.abspath(__file__)) + "/hg37_real_data_mask.txt", sep="\t"
+        )    
+    elif args.genome_build is None:
+        print("Caution: Not using any filter to remove HLA/Centromere/Telomere regions")
+        cent_telo_hla = pd.DataFrame(columns=['chr', 'start', 'end', 'description'])
+    else:
+        print("Make sure to use genome_build either hg37 or hg38")
+        cent_telo_hla = pd.read_csv(
+            os.path.dirname(os.path.abspath(__file__)) + "/real_data_mask.txt", sep="\t"
+        )
 
     for chr_no, chr in enumerate(chrs):
         if args.bmap is not None:
@@ -187,11 +198,11 @@ def compute_tree_stats(
                     and (
                         (
                             tree.interval[0]
-                            >= cent_telo_hla[cent_telo_hla.chr == str(chr)].start
+                            >= cent_telo_hla[cent_telo_hla.chr == str(chr)].start - 500000
                         )
                         & (
                             tree.interval[1]
-                            < cent_telo_hla[cent_telo_hla.chr == str(chr)].end
+                            < cent_telo_hla[cent_telo_hla.chr == str(chr)].end + 500000
                         )
                     ).any()
                 ):

@@ -172,16 +172,19 @@ def fixed_parameters(
                                                     m, int(unique_groups[k])
                                                 ] = v
                                         else:
-                                            lineage_content[
-                                                m,
-                                                int(
-                                                    gt_ref[
-                                                        m,
-                                                        count_mut_trees // num_subtrees,
-                                                    ]
-                                                ),
-                                            ] = 1
-
+                                            if np.isnan(gt_ref[m, count_mut_trees // num_subtrees]):
+                                                lineage_content[m] = 0
+                                            else:
+                                                lineage_content[
+                                                    m,
+                                                    int(
+                                                        gt_ref[
+                                                            m,
+                                                            count_mut_trees // num_subtrees,
+                                                        ]
+                                                    ),
+                                                ] = 1
+                                        
                                 for t in sample_list_tree:
                                     lineage_content[
                                         t

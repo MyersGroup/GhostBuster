@@ -424,19 +424,13 @@ def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, chr_map):
         membership_mask_chr = membership_mask[membership_mask[membership_mask.columns[0]] == chr]
         membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]] // args.force_build
         membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]].astype(int)
-
+        membership_mask_chr = membership_mask_chr.sort_values(by=membership_mask.columns[1])
         for tree_left_i, tree_right_i in zip(np.array(tree_left_bp)[chr_map == chr], np.array(tree_right_bp)[chr_map == chr]):
-            for tree_pos in range(int(tree_left_i // args.force_build), int(tree_right_i // args.force_build)):
-                if (
-                    tree_pos
-                    in membership_mask_chr[membership_mask.columns[1]].values.tolist()
-                ):
-                    mask_dodgy[count] = True
-            
+            if membership_mask_chr[(membership_mask_chr[membership_mask.columns[1]] > (tree_left_i // args.force_build)) & (membership_mask_chr[membership_mask.columns[1]] <= (tree_right_i // args.force_build))].shape[0] > 0:
+                mask_dodgy[count] = True
             count += 1
     print("Number of trees = " + str(np.sum(mask_dodgy)))
     return mask_dodgy
-
 
 def get_epoch_interval(args, ts_list):
     coal_times = []
@@ -697,11 +691,14 @@ def load_gamma(path, groups, ref_groups):
             raise ValueError
         groups_to_index = []
         ref_groups_to_index = []
-        for g in groups:
-            try:
-                groups_to_index.append(np.where(header == g)[0][0])
-            except:
-                groups_to_index.append(np.nan)
+        if groups is None:
+            groups_to_index = np.arange(len(header))
+        else:
+            for g in groups:
+                try:
+                    groups_to_index.append(np.where(header == g)[0][0])
+                except:
+                    groups_to_index.append(np.nan)
         for g in ref_groups:
             try:
                 ref_groups_to_index.append(np.where(header == g)[0][0])
@@ -759,13 +756,14 @@ def get_target_branch_length(
     chrs,
     mask_dodgy,
     sample_list,
+    gt_ref=None
 ):
     """
     Calculates the branch length of the target population
     """
     target_branch_length = []
     for sample_no, sample in enumerate(sample_list):
-        count_all_tree, count_all_tree2 = 0, 0
+        count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
         target_branch_length_sample = List()
         leave_one_sample_out = list(set(sample_list) - set([sample]))
         for chr_no, chr in enumerate(chrs):
@@ -826,6 +824,13 @@ def get_target_branch_length(
                         > 0
                     ):
                         if mask_dodgy[sample_no][count_all_tree2]:
+                            if gt_ref is not None:
+                                poplabels_included_pos = np.where(~np.isnan(gt_ref[:, count_all_tree3]))[0]
+                                poplabels_included_pos = np.intersect1d(poplabels_included_pos, poplabels_included)
+                                count_all_tree3 += 1
+                            else:
+                                poplabels_included_pos = poplabels_included.copy()
+
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             parent = copy.deepcopy(sample)
                             while parent != tree.root:
@@ -839,7 +844,7 @@ def get_target_branch_length(
                                     if (
                                         np.intersect1d(
                                             tree_leaves_left,
-                                            poplabels_included,
+                                            poplabels_included_pos,
                                         ).size
                                         - np.intersect1d(
                                             tree_leaves_left,
@@ -849,7 +854,7 @@ def get_target_branch_length(
                                     ) and (
                                         np.intersect1d(
                                             tree_leaves_right,
-                                            poplabels_included,
+                                            poplabels_included_pos,
                                         ).size
                                         - np.intersect1d(
                                             tree_leaves_right,
