@@ -24,32 +24,6 @@ def add_in_log_space(y):
 
     return result
 
-@jit(nopython=True)
-def trees_to_bp(
-    tree_left_bp,
-    tree_right_bp,
-    tree_left_bp_gen,
-    tree_right_bp_gen,
-    window_size=1e3,
-):
-    assert len(tree_left_bp) == len(tree_right_bp)
-    num_sites = 0
-    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
-        num_sites += int(r/window_size) - int(l/window_size)
-    gen_grid = np.zeros(num_sites)
-    bp_grid = np.zeros(num_sites)
-    n_site = 0
-    for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
-        for j in range(int(l / window_size), int(r / window_size)):
-            recomb_rate = (tree_right_bp_gen[i] - tree_left_bp_gen[i]) / (
-                tree_right_bp[i] - tree_left_bp[i]
-            )
-            gen_grid[n_site] = tree_left_bp_gen[i] + recomb_rate * (j * window_size - l)
-            bp_grid[n_site] = j * window_size
-            n_site += 1
-    return gen_grid, bp_grid
-
-
 def bp_to_trees(probability, tree_left_bp, tree_right_bp, window_size=1e3):
     assert len(tree_left_bp) == len(tree_right_bp)
     res = np.zeros((len(probability), len(tree_left_bp)))
@@ -268,15 +242,6 @@ def Decode_grid(
     """
     # infered proportions
     starting_probabilities = np.log(tau)
-
-    ## transfor probabilities to per-kb + scaling
-    # gen_grid, bp_grid = trees_to_bp(
-    #     tree_left_bp,
-    #     tree_right_bp,
-    #     tree_left_bp_gen,
-    #     tree_right_bp_gen,
-    #     window_size=window_size,
-    # )
     # Posterior decode the file
     post_seq, t_admix_update_num, t_admix_update_denom, pi_update, forward_prob = Forward_backward(
         starting_probabilities, t_admix, probabilities, gen_grid
