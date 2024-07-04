@@ -23,6 +23,7 @@ def fixed_parameters(
     target_branch_length_masked,
     force_build=1,
     ignore_first_epoch=False,
+    gt_ref=None
 ):
     assert [
         s in poplabels_orig[poplabels_orig.INCLUDE == 1].index.tolist()
@@ -113,7 +114,23 @@ def fixed_parameters(
                         count_mut_trees += 1
                         num_sites_per_tree[count_mut_trees] = (tree.interval[1] // force_build - tree.interval[0] // force_build)
                         poplabels = poplabels_orig.copy()
-                        lineage_content = lineage_content_init.copy()
+                        if gt_ref is None:
+                            lineage_content = lineage_content_init.copy()
+                        else:
+                            lineage_content = np.zeros(
+                                (2 * num_samples - 1, len(unique_groups)),
+                                dtype="float64",
+                            )
+                            for m in range(len(poplabels)):
+                                ## Only count lineage content for included samples
+                                if poplabels.INCLUDE.iloc[m]:
+                                    if np.isnan(gt_ref[m, count_mut_trees]):
+                                        lineage_content[m] = 0
+                                    else:
+                                        lineage_content[m, int(gt_ref[m,count_mut_trees])] = 1
+                            for t in sample_list:
+                                lineage_content[t] = 0.0
+
                         prev_branch_length = np.sum(
                             lineage_content, axis=0
                         )  # np.sum(lineage_content[:,1])
@@ -323,32 +340,28 @@ def fixed_parameters(
                     if poplabels.SAMPLING_TIME.iloc[m] > epoch_intervals_pow[epoch]:
                         for tid, denom_tree in enumerate(denom_all):
                             for denom_coal in denom_tree:
-                                if (
-                                    denom_coal[
-                                        group_id[poplabels.GROUP.iloc[m]],
-                                        epoch,
-                                    ]
-                                    > min(
-                                        poplabels.SAMPLING_TIME.iloc[m],
-                                        epoch_intervals_pow[epoch + 1],
-                                    )
-                                    - epoch_intervals_pow[epoch]
-                                ):
-                                    denom_coal[
-                                        group_id[poplabels.GROUP.iloc[m]],
-                                        epoch,
-                                    ] -= (
-                                        min(
-                                            poplabels.SAMPLING_TIME.iloc[m],
-                                            epoch_intervals_pow[epoch + 1],
-                                        )
+                                if gt_ref is None:
+                                    if (denom_coal[group_id[poplabels.GROUP.iloc[m]],epoch]
+                                        > min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
                                         - epoch_intervals_pow[epoch]
-                                    )
+                                    ):
+                                        denom_coal[group_id[poplabels.GROUP.iloc[m]],epoch] -= (
+                                            min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
+                                            - epoch_intervals_pow[epoch]
+                                        )
+                                    else:
+                                        denom_coal[group_id[poplabels.GROUP.iloc[m]],epoch] = 0
                                 else:
-                                    denom_coal[
-                                        group_id[poplabels.GROUP.iloc[m]],
-                                        epoch,
-                                    ] = 0
+                                    if (denom_coal[int(gt_ref[m, tid]),epoch]
+                                        > min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
+                                        - epoch_intervals_pow[epoch]
+                                    ):
+                                        denom_coal[int(gt_ref[m, tid]),epoch] -= (
+                                            min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
+                                            - epoch_intervals_pow[epoch]
+                                        )
+                                    else:
+                                        denom_coal[int(gt_ref[m, tid]),epoch] = 0
 
 
 
@@ -371,7 +384,7 @@ def fixed_parameters(
     )
 
 
-def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked, unique_groups=None):
+def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked, gt_ref=None, unique_groups=None):
     chrs = list(map(int, args.chrs.split(",")))
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP) if unique_groups is None else unique_groups
     epoch_intervals_pow = np.power(10, epoch_intervals)
@@ -388,18 +401,30 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
 
         try:
             f_pkl = open(fixed_params_file_name, "rb")
-            (force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index) = pickle.load(f_pkl)
+            (force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file) = pickle.load(f_pkl)
             f_pkl.close()
-            if (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
-                ##convert to numba list
-                denom_all.extend(denom)
-                proportion_of_coalescing_all.extend(proportion_of_coalescing)
-                epoch_index_all.extend(epoch_index)
-                print("Loaded fixed parameters from: " + str(fixed_params_file_name))
-                continue
-            else:
-                print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
-                raise Exception
+            if gt_ref is not None and gt_ref_file is None:
+                if (gt_ref_file == gt_ref).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                    ##convert to numba list
+                    denom_all.extend(denom)
+                    proportion_of_coalescing_all.extend(proportion_of_coalescing)
+                    epoch_index_all.extend(epoch_index)
+                    print("Loaded fixed parameters from: " + str(fixed_params_file_name))
+                    continue
+                else:
+                    print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
+                    raise Exception
+            elif gt_ref is None and gt_ref_file is None:
+                if (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                    ##convert to numba list
+                    denom_all.extend(denom)
+                    proportion_of_coalescing_all.extend(proportion_of_coalescing)
+                    epoch_index_all.extend(epoch_index)
+                    print("Loaded fixed parameters from: " + str(fixed_params_file_name))
+                    continue
+                else:
+                    print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
+                    raise Exception
 
         except:
             print("Fixed parameters file not found, calculating fixed parameters..")
@@ -435,9 +460,10 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 target_branch_length_masked_chr,
                 args.force_build,
                 ignore_first_epoch=args.ignore_first_epoch,
+                gt_ref=gt_ref,
             )
             f_pkl = open(fixed_params_file_name, "wb")
-            pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index], f_pkl)
+            pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref, unique_groups], f_pkl)
             f_pkl.close()
             denom_all.extend(denom)
             proportion_of_coalescing_all.extend(proportion_of_coalescing)

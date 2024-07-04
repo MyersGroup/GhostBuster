@@ -212,7 +212,7 @@ def e_m_step(
             args.load_props
         )  ### load taus only works for not(props_per_chrs)
 
-    print("M-step time: " + str(time.time() - st))
+    # print("M-step time: " + str(time.time() - st))
     st = time.time()
 
     if args.t_admix_guess is not None:
@@ -253,7 +253,7 @@ def e_m_step(
             :, start:end
         ] = log_denom_em_sam
     loglikelihood_per_comp = log_num_em + log_denom_em
-    print("log-like time: " + str(time.time() - st))
+    # print("log-like time: " + str(time.time() - st))
 
     ### HMM smoothing
     st = time.time()
@@ -286,8 +286,9 @@ def e_m_step(
     tau = tau_update/np.sum(tau_update)
     tau = np.minimum(np.maximum(tau, 1e-11), 1-1e-11)
 
-    print((tau, np.mean(own_membership_hmm, axis= 1)))
-    print("HMM time: " + str(time.time() - st))
+    print("props: " + str(np.mean(own_membership_hmm, axis= 1)))
+    print("admix time: " + str(trans_prop))
+    # print("HMM time: " + str(time.time() - st))
     if np.isnan(log_likelihood_hmm):
         pdb.set_trace()
     
@@ -471,6 +472,7 @@ def random_sweep(
     tree_right_bp,
     gen_grid_all,
     chr_map,
+    gt_ref=None,
 ):
     print("Performing a random sweep for better initialization")
     best_loglikelihood = -np.inf
@@ -484,7 +486,7 @@ def random_sweep(
             denom1,
             proportion_of_coalescing_all1,
             epoch_index_all1,
-        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no])
+        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], gt_ref, unique_groups)
         num.append(num1)
         denom.append(denom1)
         proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
@@ -753,7 +755,6 @@ def main(args):
         for sample_id in args.sample_id:
             mask_dodgy.append(load_mask)
 
-    ### Use ground-truth local ancestry for reference samples
     num_trees_per_sample = [np.sum(mask_dodgy[sam]) for sam in range(len(args.sample_id))]
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
     tree_left_bp = np.array(
@@ -790,9 +791,29 @@ def main(args):
                 gen_grid_sam.append(gen_grid_kb[c][j])
         gen_grid_all.append(np.array(gen_grid_sam))
 
+    ### Load gt_ref is specified
+    if args.gt_ref is not None:
+        ## Currently assuming all target samples have same masking
+        print("Loading the local ancestry information of the reference panel")
+        with open(args.gt_ref) as f:
+            unique_groups = f.readline().strip('\n').split(' ')        
+        gt_ref_df = pd.read_csv(args.gt_ref, sep=" ", skiprows=[0], header=None)
+        gt_ref_df = gt_ref_df.rename(columns={0:'chr', 1:'pos'})
+
+        ## convert from bp to trees
+        gt_ref = np.zeros((len(poplabels.GROUP), num_trees_per_sample[0]), dtype="float")
+        for n_t in range(num_trees_per_sample[0]):
+            chr_ = np.array(chr_map)[mask_dodgy[0]][n_t]
+            tree_pos = (tree_left_bp[0][n_t] + tree_right_bp[0][n_t])/2
+            gt_ref_chr = gt_ref_df[gt_ref_df['chr'] == chr_]
+            gt_ref_nt = gt_ref_chr.iloc[(gt_ref_chr['pos']-tree_pos).abs().argsort()[:1]][gt_ref_chr.columns[2:]].values[0]
+            gt_ref[:, n_t] = gt_ref_nt
+    else:
+        gt_ref = None
+
     st = time.time()
     target_branch_length_masked = get_target_branch_length(
-        args, poplabels, ts_list, chrs, mask_dodgy, args.sample_id
+        args, poplabels, ts_list, chrs, mask_dodgy, args.sample_id, gt_ref=gt_ref
     )
     print("target branch length: " + str(time.time() - st))
 
@@ -822,6 +843,7 @@ def main(args):
         tree_right_bp,
         gen_grid_all,
         chr_map,
+        gt_ref=gt_ref
     )
     
     if args.load_gamma:
@@ -1000,7 +1022,7 @@ if __name__ == "__main__":
         "--num_iters",
         help="Number of iterations for EM",
         type=int,
-        default=100,
+        default=200,
     )
     parser.add_argument(
         "-k",
@@ -1070,6 +1092,7 @@ if __name__ == "__main__":
     parser.add_argument("--fixed_params_file_prefix", type=str, default=None, help="file prefix for the fixed params file")
     parser.add_argument("--load_membership", help = "Load the membership from a .npy file", type=str, default=None)
     parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
+    parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
     args = parser.parse_args()
     if not args.hmm:
         args.t_admix_guess = 10.0**30

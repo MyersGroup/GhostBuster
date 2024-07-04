@@ -320,9 +320,13 @@ def get_target_branch_length(
                 branch_persistence_file_name = args.output + "_branch_persistence_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
             try:
                 f_pkl = open(branch_persistence_file_name, "rb")
-                (force_build_file, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, target_branch_length_sample_chr) = pickle.load(f_pkl)
+                (force_build_file, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, target_branch_length_sample_chr, gt_ref_na_sum) = pickle.load(f_pkl)
                 f_pkl.close()
                 if (force_build_file == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]):
+                    if gt_ref is not None: 
+                        if gt_ref_na_sum != np.sum(np.isnan(gt_ref)):
+                            print("Branch persistence statistics file does not match the current settings, recomputing...")
+                            raise Exception
                     ##convert to numba list
                     for i in target_branch_length_sample_chr:
                         numba_i = List().empty_list(nb.types.float64)
@@ -371,64 +375,64 @@ def get_target_branch_length(
                         > 0
                     ):
                         if mask_dodgy[sample_no][count_all_tree2]:
-                            if gt_ref is not None:
-                                poplabels_included_pos = np.where(~np.isnan(gt_ref[:, count_all_tree3]))[0]
-                                poplabels_included_pos = np.intersect1d(poplabels_included_pos, poplabels_included)
-                                count_all_tree3 += 1
-                            else:
-                                poplabels_included_pos = poplabels_included.copy()
-
+                            
+                            poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             parent = copy.deepcopy(sample)
+                            if gt_ref is not None:
+                                gt_ref_nt = gt_ref[:, count_all_tree3]
+                                new_mask = (poplabels.INCLUDE == 1) & (~np.isnan(gt_ref_nt))
+                                poplabels_included_pos = poplabels[new_mask].index.values.copy()
+                                count_all_tree3 += 1
+
                             while parent != tree.root:
                                 edge_id = tree.edge(parent)
                                 edge = ts_edges[edge_id]
                                 parent = tree.parent(parent)
-                                if True:
-                                    tree_childrens = tree.children(parent)
-                                    tree_leaves_left = list(tree.leaves(tree_childrens[0]))
-                                    tree_leaves_right = list(tree.leaves(tree_childrens[1]))
-                                    if (
-                                        np.intersect1d(
-                                            tree_leaves_left,
-                                            poplabels_included_pos,
-                                        ).size
-                                        - np.intersect1d(
-                                            tree_leaves_left,
-                                            leave_one_sample_out,
-                                        ).size
-                                        > 0
-                                    ) and (
-                                        np.intersect1d(
-                                            tree_leaves_right,
-                                            poplabels_included_pos,
-                                        ).size
-                                        - np.intersect1d(
-                                            tree_leaves_right,
-                                            leave_one_sample_out,
-                                        ).size
-                                        > 0
-                                    ):
-                                        if args.hmm:
-                                            edge_right = max(
-                                                float(edge.metadata.decode().split(" ")[1])
-                                                // args.force_build,
-                                                tree.interval[1] // args.force_build,
-                                            )
-                                            edge_left = min(
-                                                float(edge.metadata.decode().split(" ")[0])
-                                                // args.force_build,
-                                                tree.interval[0] // args.force_build,
-                                            )
-                                            number_of_overlaps = np.sum(
-                                                (edge_right > bp_grid)
-                                                & (edge_left <= bp_grid)
-                                            )
-                                            number_window_list.append(
-                                                np.float64(2.0 * number_of_overlaps)
-                                            )
-                                        else:
-                                            number_window_list.append(np.float64(1.0))
+                                tree_childrens = tree.children(parent)
+                                tree_leaves_left = list(tree.leaves(tree_childrens[0]))
+                                tree_leaves_right = list(tree.leaves(tree_childrens[1]))
+                                if (
+                                    np.intersect1d(
+                                        tree_leaves_left,
+                                        poplabels_included_pos,
+                                    ).size
+                                    - np.intersect1d(
+                                        tree_leaves_left,
+                                        leave_one_sample_out,
+                                    ).size
+                                    > 0
+                                ) and (
+                                    np.intersect1d(
+                                        tree_leaves_right,
+                                        poplabels_included_pos,
+                                    ).size
+                                    - np.intersect1d(
+                                        tree_leaves_right,
+                                        leave_one_sample_out,
+                                    ).size
+                                    > 0
+                                ):
+                                    if args.hmm:
+                                        edge_right = max(
+                                            float(edge.metadata.decode().split(" ")[1])
+                                            // args.force_build,
+                                            tree.interval[1] // args.force_build,
+                                        )
+                                        edge_left = min(
+                                            float(edge.metadata.decode().split(" ")[0])
+                                            // args.force_build,
+                                            tree.interval[0] // args.force_build,
+                                        )
+                                        number_of_overlaps = np.sum(
+                                            (edge_right > bp_grid)
+                                            & (edge_left <= bp_grid)
+                                        )
+                                        number_window_list.append(
+                                            np.float64(2.0 * number_of_overlaps)
+                                        )
+                                    else:
+                                        number_window_list.append(np.float64(1.0))
 
                             target_branch_length_sample_chr.append(number_window_list)
                             
@@ -437,7 +441,7 @@ def get_target_branch_length(
 
                 target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
                 f_pkl = open(branch_persistence_file_name, "wb")
-                pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr], f_pkl)
+                pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, gt_ref.isna().sum() if gt_ref is not None else None], f_pkl)
                 f_pkl.close()                
                 ##convert to numba list
                 for i in target_branch_length_sample_chr:
