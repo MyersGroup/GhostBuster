@@ -155,12 +155,12 @@ def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, chr_map):
     mask_dodgy = np.zeros(len(tree_left_bp), dtype="bool")
     count = 0
     for chr_count, chr in enumerate(np.unique(chr_map)):
-        membership_mask_chr = membership_mask[membership_mask[membership_mask.columns[0]] == chr]
-        membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]] // args.force_build
-        membership_mask_chr[membership_mask.columns[1]] = membership_mask_chr[membership_mask.columns[1]].astype(int)
-        membership_mask_chr = membership_mask_chr.sort_values(by=membership_mask.columns[1])
+        membership_mask_chr = membership_mask[membership_mask['chr'] == chr]
+        membership_mask_chr['pos'] = membership_mask_chr['pos']
+        membership_mask_chr['pos'] = membership_mask_chr['pos'].astype(int)
+        membership_mask_chr = membership_mask_chr.sort_values(by='pos')
         for tree_left_i, tree_right_i in zip(np.array(tree_left_bp)[chr_map == chr], np.array(tree_right_bp)[chr_map == chr]):
-            if membership_mask_chr[(membership_mask_chr[membership_mask.columns[1]] > (tree_left_i // args.force_build)) & (membership_mask_chr[membership_mask.columns[1]] <= (tree_right_i // args.force_build))].shape[0] > 0:
+            if membership_mask_chr[(membership_mask_chr['pos'] >= tree_left_i) & (membership_mask_chr['pos'] < tree_right_i)].shape[0] > 0:
                 mask_dodgy[count] = True
             count += 1
     print("Number of trees = " + str(np.sum(mask_dodgy)))
@@ -303,79 +303,93 @@ def get_target_branch_length(
     chrs,
     mask_dodgy,
     sample_list,
-    gt_ref=None
+    gt_ref=None,
+    exact_pos=None
 ):
     """
-    Calculates the branch length of the target population
-    """
+    Calculates the branch length of the target population.
+    exact_pos is a dataframe with chr, pos where we want the target branch length exactly.
+    """    
     target_branch_length = []
+    
     for sample_no, sample in enumerate(sample_list):
         count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
         target_branch_length_sample = List()
         leave_one_sample_out = list(set(sample_list) - set([sample]))
+        
         for chr_no, chr in enumerate(chrs):
             if args.branch_persistence_file_prefix is not None:
                 branch_persistence_file_name = args.branch_persistence_file_prefix + "_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
             else:
                 branch_persistence_file_name = args.output + "_branch_persistence_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
+                
             try:
-                f_pkl = open(branch_persistence_file_name, "rb")
-                (force_build_file, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, target_branch_length_sample_chr, gt_ref_na_sum) = pickle.load(f_pkl)
-                f_pkl.close()
-                if (force_build_file == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]):
+                with open(branch_persistence_file_name, "rb") as f_pkl:
+                    (
+                        force_build_file, start_time, end_time, ignore_first_epoch,
+                        ignore_last_epoch, masking_threshold, poplabels_file,
+                        target_branch_length_sample_chr, gt_ref_na_sum, exact_pos_file
+                    ) = pickle.load(f_pkl)
+                
+                if (
+                    (force_build_file == args.force_build) &
+                    (start_time == args.start_time) &
+                    (end_time == args.end_time) &
+                    (ignore_first_epoch == args.ignore_first_epoch) &
+                    (ignore_last_epoch == args.ignore_last_epoch) &
+                    (masking_threshold == args.masking_threshold) &
+                    np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))])
+                ):
                     if gt_ref is not None: 
                         if gt_ref_na_sum != np.sum(np.isnan(gt_ref)):
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
-                    ##convert to numba list
+                    if exact_pos is not None:
+                        if (exact_pos.values != exact_pos_file).any():
+                            print("Branch persistence statistics file does not match the current settings, recomputing...")
+                            raise Exception
                     for i in target_branch_length_sample_chr:
                         numba_i = List().empty_list(nb.types.float64)
                         for j in i:
                             numba_i.append(j)
                         target_branch_length_sample.append(numba_i)
-                    print("Loaded branch persistence statistics from: " + str(branch_persistence_file_name))
+                    print(f"Loaded branch persistence statistics from: {branch_persistence_file_name}")
                     continue
                 else:
                     print("Branch persistence statistics file does not match the current settings, recomputing...")
                     raise Exception
             except:
-                print("Saving branch persistence statistics to: " + str(branch_persistence_file_name))
+                print(f"Saving branch persistence statistics to: {branch_persistence_file_name}")
                 target_branch_length_sample_chr = []
                 ts = ts_list[chr_no]
                 ts_edges = ts.edges()
 
-                ## calculate tree_left and tree_right for masked trees
                 tree_left_bp_chr, tree_right_bp_chr = [], []
                 for tree in ts.trees():
-                    if (
-                        tree.interval[1] // args.force_build - tree.interval[0] // args.force_build
-                        > 0
-                    ):
+                    if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree]:
                             tree_left_bp_chr.append(tree.interval[0])
                             tree_right_bp_chr.append(tree.interval[1])
                         count_all_tree += 1
 
-                ## calculate bp_grid for masked trees
                 bp_grid = []
                 num_sites_per_tree = []
                 for i, (l, r) in enumerate(zip(tree_left_bp_chr, tree_right_bp_chr)):
-                    num_sites_per_tree.append(r // args.force_build - l // args.force_build)
+                    if exact_pos is not None:
+                        num_sites = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
+                    else:
+                        num_sites = r // args.force_build - l // args.force_build
+                    num_sites_per_tree.append(num_sites)
                     for j in range(int(l / args.force_build), int(r / args.force_build)):
                         bp_grid.append(j)
                 bp_grid = np.array(bp_grid)
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
-                ## calculate the target branch persistence
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
                 for tid in tqdm(range(ts.num_trees)):
-                    if (
-                        tree.interval[1] // args.force_build - tree.interval[0] // args.force_build
-                        > 0
-                    ):
+                    if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
-                            
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             parent = copy.deepcopy(sample)
@@ -393,44 +407,23 @@ def get_target_branch_length(
                                 tree_leaves_left = list(tree.leaves(tree_childrens[0]))
                                 tree_leaves_right = list(tree.leaves(tree_childrens[1]))
                                 if (
-                                    np.intersect1d(
-                                        tree_leaves_left,
-                                        poplabels_included_pos,
-                                    ).size
-                                    - np.intersect1d(
-                                        tree_leaves_left,
-                                        leave_one_sample_out,
-                                    ).size
-                                    > 0
+                                    np.intersect1d(tree_leaves_left, poplabels_included_pos).size -
+                                    np.intersect1d(tree_leaves_left, leave_one_sample_out).size > 0
                                 ) and (
-                                    np.intersect1d(
-                                        tree_leaves_right,
-                                        poplabels_included_pos,
-                                    ).size
-                                    - np.intersect1d(
-                                        tree_leaves_right,
-                                        leave_one_sample_out,
-                                    ).size
-                                    > 0
+                                    np.intersect1d(tree_leaves_right, poplabels_included_pos).size -
+                                    np.intersect1d(tree_leaves_right, leave_one_sample_out).size > 0
                                 ):
                                     if args.hmm:
-                                        edge_right = max(
-                                            float(edge.metadata.decode().split(" ")[1])
-                                            // args.force_build,
-                                            tree.interval[1] // args.force_build,
-                                        )
-                                        edge_left = min(
-                                            float(edge.metadata.decode().split(" ")[0])
-                                            // args.force_build,
-                                            tree.interval[0] // args.force_build,
-                                        )
-                                        number_of_overlaps = np.sum(
-                                            (edge_right > bp_grid)
-                                            & (edge_left <= bp_grid)
-                                        )
-                                        number_window_list.append(
-                                            np.float64(2.0 * number_of_overlaps)
-                                        )
+                                        if exact_pos is not None:
+                                            edge_right = max(float(edge.metadata.decode().split(" ")[1]), tree.interval[1])
+                                            edge_left = min(float(edge.metadata.decode().split(" ")[1]), tree.interval[0])
+                                            positions_in_tree = exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= edge_left) & (exact_pos['pos'] < edge_right)]
+                                            number_of_overlaps = len(positions_in_tree)
+                                        else:
+                                            edge_right = max(float(edge.metadata.decode().split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
+                                            edge_left = min(float(edge.metadata.decode().split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
+                                            number_of_overlaps = np.sum((edge_right > bp_grid) & (edge_left <= bp_grid))
+                                        number_window_list.append(np.float64(2.0 * number_of_overlaps))
                                     else:
                                         number_window_list.append(np.float64(1.0))
 
@@ -440,10 +433,9 @@ def get_target_branch_length(
                     tree.next()
 
                 target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
-                f_pkl = open(branch_persistence_file_name, "wb")
-                pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, gt_ref.isna().sum() if gt_ref is not None else None], f_pkl)
-                f_pkl.close()                
-                ##convert to numba list
+                with open(branch_persistence_file_name, "wb") as f_pkl:
+                    pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, gt_ref.isna().sum() if gt_ref is not None else None, exact_pos.values], f_pkl)
+                
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)
                     for j in i:
