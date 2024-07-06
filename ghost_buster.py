@@ -204,7 +204,7 @@ def e_m_step(
                 )
                 n[j] += n_j
                 d[j] += d_j
-        if args.load_gamma is None or iter > args.use_load_gamma_until:
+        if args.load_gamma is None:
             gamma_arr = n / d
     if args.load_props != None:
         print("Using initial props specified in file: " + str(args.load_props))        
