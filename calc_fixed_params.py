@@ -58,7 +58,7 @@ def fixed_parameters(
         group_id[np.unique(poplabels_orig[poplabels_orig.INCLUDE == 1].GROUP)[u]] = u
 
     lineage_content_init = np.zeros(
-        (2 * num_samples - 1, len(unique_groups)),
+        (2 * num_samples - 1, len(np.unique(poplabels_orig[poplabels_orig.INCLUDE == 1].GROUP))),
         dtype="float32",
     )
     for m in range(len(poplabels_orig)):
@@ -478,7 +478,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 exact_pos=exact_pos
             )
             f_pkl = open(fixed_params_file_name, "wb")
-            pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values], f_pkl)
+            pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
             f_pkl.close()
             denom_all.extend(denom)
             proportion_of_coalescing_all.extend(proportion_of_coalescing)

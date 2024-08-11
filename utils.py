@@ -434,7 +434,7 @@ def get_target_branch_length(
 
                 target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
                 with open(branch_persistence_file_name, "wb") as f_pkl:
-                    pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, gt_ref.isna().sum() if gt_ref is not None else None, exact_pos.values], f_pkl)
+                    pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl)
                 
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)

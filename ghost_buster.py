@@ -588,7 +588,7 @@ def write_membership_grid(
             for i, (c, l, r) in enumerate(zip(chr_map_, tree_left_bp[k], tree_right_bp[k])):
                 for j in range(int(l / window_size), int(r / window_size)):
                     res.append(
-                        [c, j * window_size] +  own_membership[:, count_i].tolist()
+                        [c, (j+1) * window_size] +  own_membership[:, count_i].tolist()
                     )
                     count_i += 1
             df = pd.DataFrame(
@@ -598,7 +598,7 @@ def write_membership_grid(
             )
         else:
             df = exact_pos.copy()
-            df[["prob_" + str(i) for i in range(n_clusters)]] = own_membership.T
+            df[["prob_" + str(i) for i in range(n_clusters)]] = own_membership[:, k*len(df):(k+1)*len(df)].T
         
         df['genpos'] = gen_grid_all[k] ## unit in morgans 
         df.to_csv(
@@ -670,7 +670,8 @@ def write_membership_gamma(
 
 def main(args):
     if args.load_mask is not None:
-        assert args.force_build == 1, "Exact positions can only be used with force_build=1"
+        args.force_build = 1
+        print("Exact positions can only be used with force_build=1")
 
     epoch_intervals = np.array(
         [-np.inf]
@@ -814,10 +815,16 @@ def main(args):
         if args.load_mask is None: 
             for i, (c, l, r) in enumerate(zip(np.array(chr_map)[mask_dodgy[sample_no]], tree_left_bp[sample_no], tree_right_bp[sample_no])):
                 for j in range(int(l/args.force_build), int(r/args.force_build)):
-                    gen_grid_sam.append(gen_grid_kb[c][j])
+                    if args.hmm is False:
+                        gen_grid_sam.append(j*1e3)
+                    else:
+                        gen_grid_sam.append(gen_grid_kb[c][j])
         else:
             for c in list(map(int, args.chrs.split(","))):
-                gen_grid_sam.extend(gen_grid_kb[c])
+                if args.hmm is False:
+                    gen_grid_sam.extend(np.arange(0, len(gen_grid_kb[c]))*1e3)
+                else:
+                    gen_grid_sam.extend(gen_grid_kb[c])
         gen_grid_all.append(np.array(gen_grid_sam))
 
     ### Load gt_ref is specified
@@ -1129,8 +1136,6 @@ if __name__ == "__main__":
     parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
 
     args = parser.parse_args()
-    if not args.hmm:
-        args.t_admix_guess = 10.0**30
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)
     print(args)
