@@ -124,17 +124,7 @@ if __name__ == "__main__":
     jn_blocks = 19
     initial_values = (
         np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000))))
-        # if args.t_admix_guess is None
-        # else [args.t_admix_guess]
     )
-    # df = pd.read_csv(
-    #     "../../hgdp_1gp/output/sindhi_all_overall_membership_0_1_2_3_4_5_6_7_8_9_10_11_12_13_14_15_16_17_18_19_20_21_22_23_24_25_26_27_28_29_30_31_32_33_34_35_36_37_38_39.csv",
-    #     sep="\s+",
-    # )
-
-
-
-
     
     # for pop in ['relate_wg']:
     # for pop in ['mozabite', 'hazara', 'yakut', 'maya', 'tuscan', 'bedouin', 'mbuti', 'biaka']:
@@ -184,8 +174,6 @@ if __name__ == "__main__":
                 len_all.append(len(dfc))
                 df = pd.concat([df, dfc], axis=0)
 
-            # print(df)
-            # print("Number of haplotypes = " + str(num_hap))
             num_clusters = df.shape[1] - 4
             prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
             len_all_cumsum = np.cumsum(len_all)
@@ -224,16 +212,8 @@ if __name__ == "__main__":
                     for cluster1 in range(num_clusters):
                         for cluster2 in range(num_clusters):
                             means_whole_genome[cluster1, cluster2] /= props_whole_genome[cluster1] * props_whole_genome[cluster2]
-                            # means_whole_genome[cluster1, cluster2] -= props_whole_genome[cluster1] * props_whole_genome[cluster2]
-                            # means_whole_genome[cluster1, cluster2] /= props_whole_genome[cluster1] * (1 - props_whole_genome[cluster1])
-                            # means_whole_genome[cluster1, cluster2] += 1
 
                     means_all.append(means_whole_genome)
-
-            # for i in range(2):
-            #     for j in range(2):
-            #         means[i,j] = np.exp(-dist * 500 / 100) + np.random.normal(0, 0.05, size=dist.shape)
-            # means_all = [means]
 
             admixtimes = get_admixtimes(initial_values, dist, means_all)
             print(str(pop) +  " " + str(admixtimes))
