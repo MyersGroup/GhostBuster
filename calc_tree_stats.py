@@ -123,10 +123,10 @@ def compute_tree_stats(
         del tree
         del ts
         tree_left_bp_gen.extend(
-            recomb_map_msprime.get_cumulative_mass(tree_left_bp_chr).tolist()
+            recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(tree_left_bp_chr, recomb_map_msprime.position.min()), recomb_map_msprime.position.max())).tolist()
         )
         tree_right_bp_gen.extend(
-            recomb_map_msprime.get_cumulative_mass(tree_right_bp_chr).tolist()
+            recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(tree_right_bp_chr, recomb_map_msprime.position.min()), recomb_map_msprime.position.max())).tolist()
         )
         tree_left_bp.extend(tree_left_bp_chr)
         tree_right_bp.extend(tree_right_bp_chr)
