@@ -657,13 +657,13 @@ def write_membership_gamma(
     )
 
     with open(
-        args.output + "_gamma_" + sample_id_label + ".npy",
+        args.output + "_gamma.npy",
         "wb",
     ) as f:
         np.save(f, gamma_arr)
 
     with open(
-        args.output + "_props_" + sample_id_label + ".npy",
+        args.output + "_props.npy",
         "wb",
     ) as f:
         np.save(f, tau)
@@ -683,6 +683,12 @@ def main(args):
         + [np.inf],
         dtype="float64",
     )
+    if args.load_gamma is not None and args.load_props is not None and (args.t_admix_guess is not None or args.hmm is False):
+        args.num_iters = 1
+        args.sweep_num_iters = 0
+        args.n_repeats = 1
+        print("Setting num_iters, num_iters and n_repeats to 1 as initial gamma and props are provided")
+        
     if args.load_gamma is not None:
         if ".coal" in args.load_gamma:
             second_line = (

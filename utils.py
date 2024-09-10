@@ -140,6 +140,12 @@ def filter_recomb_rate(
             recomb_rates_chr,
             1 - masking_threshold,
         )
+        ### removing coldspots
+        # mask_dodgy[chr_map == chr] *= ~mask_for_dodgy_trees(
+        #     recomb_rates_chr,
+        #     0.1,
+        # )
+        
 
     mask_dodgy = np.array(mask_dodgy)
 
@@ -296,6 +302,20 @@ def load_props(path):
     else:
         return np.array(path.split(" "), dtype="float")
 
+def scale_number_window_list(number_window_list, num_muts_list):
+    ### caution!!!!!!
+    number_window_list = np.array(number_window_list)#*(1-1/math.e)
+    prev_node_with_mutation = 0
+    for i in range(len(number_window_list)):
+        if num_muts_list[i] > 0:
+            number_window_list[prev_node_with_mutation:i+1] *= (i + 1 - prev_node_with_mutation)
+            prev_node_with_mutation = i+1
+        if i == len(number_window_list) - 1:
+            number_window_list[prev_node_with_mutation:] *= (i + 1 - prev_node_with_mutation)
+    return number_window_list.tolist()
+
+
+
 def get_target_branch_length(
     args,
     poplabels,
@@ -381,7 +401,7 @@ def get_target_branch_length(
                         num_sites = r // args.force_build - l // args.force_build
                     num_sites_per_tree.append(num_sites)
                     for j in range(int(l / args.force_build), int(r / args.force_build)):
-                        bp_grid.append(j)
+                        bp_grid.append(j+1)
                 bp_grid = np.array(bp_grid)
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
@@ -392,6 +412,7 @@ def get_target_branch_length(
                         if mask_dodgy[sample_no][count_all_tree2]:
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
+                            num_muts_list = []
                             parent = copy.deepcopy(sample)
                             if gt_ref is not None:
                                 gt_ref_nt = gt_ref[:, count_all_tree3]
@@ -413,25 +434,29 @@ def get_target_branch_length(
                                     np.intersect1d(tree_leaves_right, poplabels_included_pos).size -
                                     np.intersect1d(tree_leaves_right, leave_one_sample_out).size > 0
                                 ):
+                                    num_muts_list.append(int(edge.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
                                         if exact_pos is not None:
-                                            edge_right = max(float(edge.metadata.decode().split(" ")[1]), tree.interval[1])
-                                            edge_left = min(float(edge.metadata.decode().split(" ")[1]), tree.interval[0])
+                                            edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
+                                            edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
+                                            ## check if the next line is correct - 
                                             positions_in_tree = exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= edge_left) & (exact_pos['pos'] < edge_right)]
                                             number_of_overlaps = len(positions_in_tree)
                                         else:
-                                            edge_right = max(float(edge.metadata.decode().split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
-                                            edge_left = min(float(edge.metadata.decode().split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
-                                            number_of_overlaps = np.sum((edge_right > bp_grid) & (edge_left <= bp_grid))
-                                        number_window_list.append(np.float64(2.0 * number_of_overlaps))
+                                            edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
+                                            edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
+                                            number_of_overlaps = np.sum((edge_right >= bp_grid) & (edge_left < bp_grid))
+                                        number_window_list.append(np.float64(1.0 * number_of_overlaps))
                                     else:
                                         number_window_list.append(np.float64(1.0))
 
+                            ## scale number_window_list by the number of mutations in the tree
+                            number_window_list = scale_number_window_list(number_window_list, num_muts_list)
                             target_branch_length_sample_chr.append(number_window_list)
                             
                         count_all_tree2 += 1
                     tree.next()
-
+                                
                 target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
                 with open(branch_persistence_file_name, "wb") as f_pkl:
                     pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl)
