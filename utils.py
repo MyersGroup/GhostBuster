@@ -16,6 +16,7 @@ from numba import jit
 from numba.typed import List
 import pickle
 import time 
+from infer_node_persistence import get_coal_descendants, get_approx_node_persistence
 
 def boolean(v):
     if isinstance(v, bool):
@@ -385,6 +386,9 @@ def get_target_branch_length(
                 ts_edges = ts.edges()
 
                 tree_left_bp_chr, tree_right_bp_chr = [], []
+                # df_coal_time_matrix = get_coal_times(ts, sample)
+                mut_edges = new_get_num_muts_for_edges(ts)
+                df_coal_descendants = get_coal_descendants(ts, sample)
                 for tree in ts.trees():
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree]:
@@ -410,6 +414,7 @@ def get_target_branch_length(
                 for tid in tqdm(range(ts.num_trees)):
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
+                            edge_left_list, edge_right_list, num_muts_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples)
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             num_muts_list = []
@@ -420,6 +425,7 @@ def get_target_branch_length(
                                 poplabels_included_pos = poplabels[new_mask].index.values.copy()
                                 count_all_tree3 += 1
 
+                            edge_count = 0
                             while parent != tree.root:
                                 edge_id = tree.edge(parent)
                                 edge = ts_edges[edge_id]
@@ -437,21 +443,27 @@ def get_target_branch_length(
                                     num_muts_list.append(int(edge.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
                                         if exact_pos is not None:
-                                            edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
-                                            edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
+                                            # edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
+                                            # edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
+                                            edge_right = max(edge_right_list[edge_count], tree.interval[1])
+                                            edge_left = min(edge_left_list[edge_count], tree.interval[0])
                                             ## check if the next line is correct - 
                                             positions_in_tree = exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= edge_left) & (exact_pos['pos'] < edge_right)]
                                             number_of_overlaps = len(positions_in_tree)
                                         else:
-                                            edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
-                                            edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
+                                            # edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
+                                            # edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
+                                            edge_right = max(edge_right_list[edge_count] // args.force_build, tree.interval[1] // args.force_build)
+                                            edge_left = min(edge_left_list[edge_count] // args.force_build, tree.interval[0] // args.force_build)
                                             number_of_overlaps = np.sum((edge_right >= bp_grid) & (edge_left < bp_grid))
                                         number_window_list.append(np.float64(1.0 * number_of_overlaps))
                                     else:
                                         number_window_list.append(np.float64(1.0))
+                                edge_count += 1
 
                             ## scale number_window_list by the number of mutations in the tree
-                            number_window_list = scale_number_window_list(number_window_list, num_muts_list)
+                            ## removing this for true trees as trees are accurate
+                            # number_window_list = scale_number_window_list(number_window_list, num_muts_list)
                             target_branch_length_sample_chr.append(number_window_list)
                             
                         count_all_tree2 += 1
