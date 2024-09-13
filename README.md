@@ -1,5 +1,4 @@
 # GhostBuster
-Hrushikesh Loya, Leo Speidel, Simon Myers
 
 ## About the code
 * `ghost_buster.py`: Main script to run the EM and find ghost populations
