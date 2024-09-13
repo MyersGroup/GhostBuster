@@ -455,23 +455,20 @@ def get_target_branch_length(
                                             edge_right = max(edge_right_list[edge_count] // args.force_build, tree.interval[1] // args.force_build)
                                             edge_left = min(edge_left_list[edge_count] // args.force_build, tree.interval[0] // args.force_build)
                                             number_of_overlaps = np.sum((edge_right >= bp_grid) & (edge_left < bp_grid))
-                                        number_window_list.append(np.float64(1.0 * number_of_overlaps))
+                                        number_window_list.append(1.0 * number_of_overlaps)
                                     else:
-                                        number_window_list.append(np.float64(1.0))
+                                        number_window_list.append(1.0)
                                 edge_count += 1
-
                             ## scale number_window_list by the number of mutations in the tree
                             ## removing this for true trees as trees are accurate
                             # number_window_list = scale_number_window_list(number_window_list, num_muts_list)
                             target_branch_length_sample_chr.append(number_window_list)
-                            
                         count_all_tree2 += 1
                     tree.next()
                                 
-                target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
+                target_branch_length_sample_chr = [sublist for sublist, count in zip(target_branch_length_sample_chr, num_sites_per_tree) for _ in range(count)]
                 with open(branch_persistence_file_name, "wb") as f_pkl:
-                    pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl)
-                
+                    pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)
                     for j in i:

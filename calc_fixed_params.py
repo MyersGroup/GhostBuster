@@ -370,10 +370,10 @@ def fixed_parameters(
 
 
 
-    proportion_of_coalescing_all = np.repeat(proportion_of_coalescing_all, num_sites_per_tree, axis=0)
-    epoch_index_all = np.repeat(epoch_index_all, num_sites_per_tree, axis=0)
-    denom_all = np.repeat(denom_all, num_sites_per_tree, axis=0)
-    coal_count = np.repeat(coal_count, num_sites_per_tree, axis=0)
+    proportion_of_coalescing_all = [sublist for sublist, count in zip(proportion_of_coalescing_all, num_sites_per_tree) for _ in range(count)]
+    epoch_index_all = [sublist for sublist, count in zip(epoch_index_all, num_sites_per_tree) for _ in range(count)]
+    denom_all = [sublist for sublist, count in zip(denom_all, num_sites_per_tree) for _ in range(count)]
+    coal_count = [sublist for sublist, count in zip(coal_count, num_sites_per_tree) for _ in range(count)]
 
     denom_epochwise = np.zeros((len(denom_all), len(denom_all[0][0]), len(denom_all[0][0][0])), dtype='float64')
     for n_t in range(len(denom_all)):
@@ -456,7 +456,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             
 
             chr_map_masked = np.array(chr_map)[mask_dodgy]
-            chr_map_masked = np.repeat(chr_map_masked, num_sites_per_tree, axis=0)
+            chr_map_masked = [sublist for sublist, count in zip(chr_map_masked, num_sites_per_tree) for _ in range(count)]
             for t in range(len(target_branch_length_masked)):
                 if chr_map_masked[t] == chr:
                     target_branch_length_masked_chr.append(target_branch_length_masked[t])
