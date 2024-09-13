@@ -387,7 +387,6 @@ def get_target_branch_length(
 
                 tree_left_bp_chr, tree_right_bp_chr = [], []
                 # df_coal_time_matrix = get_coal_times(ts, sample)
-                mut_edges = new_get_num_muts_for_edges(ts)
                 df_coal_descendants = get_coal_descendants(ts, sample)
                 for tree in ts.trees():
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
