@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import copy
+import scipy.stats as stats
 
 def new_get_num_muts_for_edges(ts):
     ## https://github.com/tskit-dev/tskit/discussions/1307
@@ -29,7 +30,7 @@ def get_coal_times(ts, target):
     df['right'] = df['interval'].apply(lambda x: x[1])
     return df
 
-def get_true_node_persistence(df, pos, tree_window=1000):
+def get_true_node_persistence(df, pos, bp_grid, tree_window=1000):
     """
     Find the min and max persistence intervals for each branch in the target lineage within a subset of trees.
     
@@ -44,28 +45,26 @@ def get_true_node_persistence(df, pos, tree_window=1000):
     """
     left_array = df['left'].values
     right_array = df['right'].values
-    target_tree_idx = np.argmax((left_array <= pos) & (right_array > pos))
+    target_tree_idx = np.argmax((left_array <= pos) & (right_array >= pos))
     start_idx = max(0, target_tree_idx - tree_window)
-    end_idx = min(len(df), target_tree_idx + tree_window + 1)
+    end_idx = min(len(df)-1, target_tree_idx + tree_window + 1)
     df_subset = df.iloc[start_idx:end_idx]
-    target_seq = df_subset.loc[(df_subset['interval'].str[0] <= pos) & (df_subset['interval'].str[1] > pos), 'sequence'].values[0]
-    matching_intervals = np.full((len(target_seq), 2), np.nan)
+    target_seq = df_subset.loc[(df_subset['interval'].str[0] <= pos) & (df_subset['interval'].str[1] >= pos), 'sequence'].values[0]
+    number_of_overlaps = np.zeros(len(target_seq))
+    leftmost = df.iloc[start_idx]['left']
+    rightmost = df.iloc[end_idx]['right']
+    bp_grid = bp_grid[(bp_grid >= leftmost) & (bp_grid <= rightmost)]
+    df_subset = df_subset[df_subset.apply(lambda row: np.any((bp_grid >= row['left']) & (bp_grid <= row['right'])), axis=1)]
+    df_subset['num_bp_grid'] = df_subset.apply(lambda row: np.sum((bp_grid >= row['left']) & (bp_grid <= row['right'])), axis=1)
     for j, branch in enumerate(target_seq):
         branch_tuple = branch
         found_first = False
-        for i, seq in enumerate(df_subset['sequence']):
+        for i, row in df_subset.iterrows():
+            seq = row['sequence']
+            num_bp_grid = row['num_bp_grid']
             if branch_tuple in seq:
-                if not found_first:
-                    matching_intervals[j, 0] = df_subset['interval'].iloc[i][0]  # Set start
-                    found_first = True
-                matching_intervals[j, 1] = df_subset['interval'].iloc[i][1]  # Update end
-        if not found_first:
-            break
-    matching_intervals[np.isnan(matching_intervals)] = 0
-    ## cheating!
-    # matching_intervals[:, 0] = matching_intervals[:, 0] - (matching_intervals[:, 1] - matching_intervals[:, 0]) * 0.5
-    # matching_intervals[:, 1] = matching_intervals[:, 1] + (matching_intervals[:, 1] - matching_intervals[:, 0]) * 0.5
-    return matching_intervals[:, 0], matching_intervals[:, 1]
+                number_of_overlaps[j] += num_bp_grid
+    return number_of_overlaps
 
 def get_coal_descendants(ts, target):
     mut_edges = new_get_num_muts_for_edges(ts)
@@ -96,7 +95,7 @@ def get_overlap(set1, set2, num_samples):
     p2 = len(set2)/num_samples
     return (len(set1 & set2)/num_samples - p1*p2)/np.sqrt(p1-p1**2)/np.sqrt(p2-p2**2)
 
-def update_intervals(target_seq, row, matching_intervals, num_muts, found_mismatch, num_samples, overlap_threshold):
+def update_intervals(target_seq, row, number_of_overlaps, num_muts, found_mismatch, num_samples, num_bp_grid, overlap_threshold):
     """
     Helper function to update the matching intervals when overlap is detected.
     """
@@ -112,7 +111,7 @@ def update_intervals(target_seq, row, matching_intervals, num_muts, found_mismat
     candidate_pairs = []
     for j in range(ncoal1):
         for k in range(len(sequence)):
-            if overlap_matrix[j, k] > overlap_threshold:
+            if overlap_matrix[j, k] >= overlap_threshold:
                 candidate_pairs.append((j, k, overlap_matrix[j, k]))
     candidate_pairs.sort(key=lambda x: x[2], reverse=True)
     assigned_nodes_target = set()
@@ -121,17 +120,15 @@ def update_intervals(target_seq, row, matching_intervals, num_muts, found_mismat
         if j not in assigned_nodes_target and k not in assigned_nodes_other and not found_mismatch[j]:
             assigned_nodes_target.add(j)
             assigned_nodes_other.add(k)
-            if left < matching_intervals[j, 0]: 
-                matching_intervals[j, 0] = left
-            if right > matching_intervals[j, 1]:
-                matching_intervals[j, 1] = right
+            number_of_overlaps[j] += num_bp_grid
             num_muts[j] += muts[k]
+    ## removed the lines below because the descendants may reappear
     found_mismatch = np.ones(ncoal1, dtype='bool')
     for j in assigned_nodes_target:
         found_mismatch[j] = False
-    return found_mismatch, matching_intervals, num_muts
+    return found_mismatch, number_of_overlaps, num_muts
 
-def get_approx_node_persistence(df, pos, num_samples, tree_window=1000, overlap_threshold=0.5):
+def get_approx_node_persistence(df, pos, num_samples, bp_grid, overlap_threshold=0.8, tree_window=1000):
     """
     Find the min and max persistence intervals for each branch in the target lineage within a subset of trees,
     considering nodes equivalent if their descendants overlap by at least `overlap_threshold`.
@@ -148,27 +145,36 @@ def get_approx_node_persistence(df, pos, num_samples, tree_window=1000, overlap_
     """
     left_array = df['left'].values
     right_array = df['right'].values
-    target_tree_idx = np.argmax((left_array <= pos) & (right_array > pos))
+    target_tree_idx = np.argmax((left_array <= pos) & (right_array >= pos))
     start_idx = max(0, target_tree_idx - tree_window)
-    end_idx = min(len(df), target_tree_idx + tree_window + 1)
+    end_idx = min(len(df)-1, target_tree_idx + tree_window + 1)
     df_subset_forward = df.iloc[target_tree_idx:end_idx]
     df_subset_backward = df.iloc[start_idx:target_tree_idx]
     target_seq = df.iloc[target_tree_idx]['sequence']
-    matching_intervals = np.full((len(target_seq), 2), np.nan)
-    matching_intervals[:,0] = df.iloc[target_tree_idx]['left']
-    matching_intervals[:,1] = df.iloc[target_tree_idx]['right']
+    number_of_overlaps = np.zeros(len(target_seq))
     num_muts = np.zeros(len(target_seq))
     ncoal1 = len(target_seq)
+    leftmost = df.iloc[start_idx]['left']
+    rightmost = df.iloc[end_idx]['right']
+    bp_grid = bp_grid[(bp_grid >= leftmost) & (bp_grid <= rightmost)]
+    df_subset_forward = df_subset_forward[
+        df_subset_forward.apply(lambda row: np.any((bp_grid >= row['left']) & (bp_grid <= row['right'])), axis=1)
+    ]
+    df_subset_backward = df_subset_backward[
+        df_subset_backward.apply(lambda row: np.any((bp_grid >= row['left']) & (bp_grid <= row['right'])), axis=1)
+    ]
     found_mismatch_forward, found_mismatch_backward = np.zeros(ncoal1, dtype=bool), np.zeros(ncoal1, dtype=bool)
     # Forward pass
     for i, row in df_subset_forward.iterrows():
-        found_mismatch_forward, matching_intervals, num_muts = update_intervals(target_seq, row, matching_intervals, num_muts, found_mismatch_forward, num_samples, overlap_threshold)
+        num_bp_grid = np.sum((row['right'] >= bp_grid) & (row['left'] <= bp_grid))
+        found_mismatch_forward, number_of_overlaps, num_muts = update_intervals(target_seq, row, number_of_overlaps, num_muts, found_mismatch_forward, num_samples, num_bp_grid, overlap_threshold)
         if np.all(found_mismatch_forward): break
     # Backward pass
     for i, row in df_subset_backward.iloc[::-1].iterrows():
-        found_mismatch_backward, matching_intervals, num_muts = update_intervals(target_seq, row, matching_intervals, num_muts, found_mismatch_backward, num_samples, overlap_threshold)
+        num_bp_grid = np.sum((row['right'] >= bp_grid) & (row['left'] <= bp_grid))
+        found_mismatch_backward, number_of_overlaps, num_muts = update_intervals(target_seq, row, number_of_overlaps, num_muts, found_mismatch_backward, num_samples, num_bp_grid, overlap_threshold)
         if np.all(found_mismatch_backward): break
-    return matching_intervals[:, 0], matching_intervals[:, 1], num_muts
+    return number_of_overlaps, num_muts
 
 def get_relate_node_persistence(ts, target, pos):
     tree = ts.at(pos)
@@ -188,45 +194,34 @@ def get_relate_node_persistence(ts, target, pos):
     return matching_intervals[:, 0], matching_intervals[:, 1], num_mut_all
 
 if __name__ == "__main__":
-    ts = tskit.load("./stdpopsim_homsap_chr1.trees")
+    import matplotlib.pyplot as plt
+    ts = tskit.load("../stdpopsim_homsap_chr1.trees")
+    bp_grid = np.arange(0, ts.sequence_length, 1e4)
     num_samples = ts.num_samples
     target = 0
     df1 = get_coal_times(ts, target)
     df = get_coal_descendants(ts, target)
-    overall_scaling = np.zeros(20)
-    overall_scaling1 = np.zeros(20)
-    count_overall = np.zeros(20)
-    sum_num, sum_denom = 0, 0
     b1, b2 = [], []
     relate_muts_all, true_muts_all = [], []
-    import time
-    for pos in range(0, int(ts.sequence_length), 10000000):
-        relate_l, relate_r, relate_muts = get_relate_node_persistence(ts, target, pos)
-        true_l_1, true_r_1 = get_true_node_persistence(df1, pos)
-        st = time.time()
-        true_l, true_r, true_muts = get_approx_node_persistence(df, pos, num_samples)
-        print(time.time() - st)
-        relate_muts_all.extend(relate_muts)
-        true_muts_all.extend(true_muts)
-        b1.extend(true_r_1 - true_l_1)
-        b2.extend(true_r - true_l)
-        sum_num += np.sum(true_r - true_l)
-        sum_denom += np.sum(relate_r - relate_l)
-        for i in range(len(true_l)):
-            overall_scaling[i] += (true_r[i] - true_l[i]) / (relate_r[i] - relate_l[i])
-            overall_scaling1[i] += (true_r_1[i] - true_l_1[i]) / (relate_r[i] - relate_l[i])
-            count_overall[i] += 1
-    
-    print(np.sum(overall_scaling) / np.sum(count_overall))
-    print(sum_num / sum_denom)
-    print(np.corrcoef(b1,b2)[0,1])
-    print(np.corrcoef(relate_muts_all, true_muts_all)[0,1])
-    print(sum(b1)/sum(b2))
-    import matplotlib.pyplot as plt 
-    plt.scatter(b1, b2)
-    plt.show()
-    plt.scatter(relate_muts_all, true_muts_all)
-    plt.show()
-    import pdb; pdb.set_trace()
+    for thresh in [0.5, 0.8, 0.9, 0.99]:
+        print("")
+        print(thresh)
+        for pos in range(0, int(ts.sequence_length), 1000000):
+            true_overlaps = get_true_node_persistence(df1, pos, bp_grid)
+            approx_overlaps, approx_muts = get_approx_node_persistence(df, pos, num_samples, bp_grid, thresh)
+            b1.extend(true_overlaps)
+            b2.extend(approx_overlaps)
+        import pdb; pdb.set_trace()
+        print(np.corrcoef(b1,b2)[0,1])
+        print(stats.spearmanr(b1,b2))
+        print(sum(b1)/sum(b2))
+        plt.clf()
+        plt.scatter(b1, b2, s=2)
+        plt.ylabel('True overlaps')
+        plt.xlabel('Approx. overlaps')
+        plt.xlim([0,25])
+        plt.ylim([0,25])
+        plt.show()
+
 
 ## maybe look for two consequtive mismatches ?

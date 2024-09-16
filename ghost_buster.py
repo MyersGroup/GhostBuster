@@ -33,6 +33,7 @@ from utils import (
     compute_gamma_denom,
     load_gamma,
     load_props,
+    load_tadmix,
     get_target_branch_length,
 )
 from hmm_decode import Decode_grid
@@ -216,7 +217,7 @@ def e_m_step(
     st = time.time()
 
     if args.t_admix_guess is not None:
-        trans_prop = args.t_admix_guess
+        trans_prop = load_tadmix(args.t_admix_guess)
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -360,7 +361,7 @@ def random_sweep_iter(
     trans_prop = (
         np.power(10, np.random.uniform(np.log10(20), np.log10(2000)))
         if args.t_admix_guess is None
-        else args.t_admix_guess
+        else load_tadmix(args.t_admix_guess)
     )
     print((tau, trans_prop))
     n_samples = len(args.sample_id)
@@ -447,7 +448,7 @@ def random_sweep_iter(
  
     if args.load_membership != None:
         own_membership_trial = np.load(args.load_membership)
-        trans_prop = args.t_admix_guess
+        trans_prop = load_tadmix(args.t_admix_guess)
         tau = np.load(args.load_props)
    
     return (
@@ -613,6 +614,7 @@ def write_membership_gamma(
     own_membership,
     gamma_arr,
     tau,
+    trans_prop,
     mask_dodgy,
     chr_map,
     tree_left_bp,
@@ -668,7 +670,17 @@ def write_membership_gamma(
     ) as f:
         np.save(f, tau)
 
+    with open(
+        args.output + "_tadmix.npy",
+        "wb",
+    ) as f:
+        np.save(f, trans_prop)
+
 def main(args):
+    # if args.num_clusters == 1:
+    #     ## Dont use HMM when k=1
+    #     args.hmm = False
+
     if args.load_mask is not None:
         args.force_build = 1
         print("Exact positions can only be used with force_build=1")
@@ -971,6 +983,7 @@ def main(args):
         own_membership,
         gamma_arr,
         tau,
+        trans_prop,
         mask_dodgy,
         chr_map,
         tree_left_bp,
@@ -1053,7 +1066,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--t_admix_guess",
         help="Guess for the time of admixture",
-        type=float,
+        type=str,
         default=None,
     )
     parser.add_argument(
