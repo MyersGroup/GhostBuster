@@ -406,14 +406,14 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
 
         try:
             f_pkl = open(fixed_params_file_name, "rb")
-            (force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
+            (hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
             f_pkl.close()
             if exact_pos is not None:
                 if (exact_pos_file != exact_pos.values).any():
                     print("Exact position file doesn't match, calculating fixed parameters..")
                     raise Exception
             if gt_ref is not None and gt_ref_file is None:
-                if (gt_ref_file == gt_ref).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                if (hmm_file == args.hmm) & (gt_ref_file == gt_ref).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     proportion_of_coalescing_all.extend(proportion_of_coalescing)
@@ -424,7 +424,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                     print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
                     raise Exception
             elif gt_ref is None and gt_ref_file is None:
-                if (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                if (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     proportion_of_coalescing_all.extend(proportion_of_coalescing)
@@ -478,7 +478,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 exact_pos=exact_pos
             )
             f_pkl = open(fixed_params_file_name, "wb")
-            pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
+            pickle.dump([args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
             f_pkl.close()
             denom_all.extend(denom)
             proportion_of_coalescing_all.extend(proportion_of_coalescing)
