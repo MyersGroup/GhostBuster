@@ -393,8 +393,6 @@ def get_target_branch_length(
                 ts_edges = ts.edges()
 
                 tree_left_bp_chr, tree_right_bp_chr = [], []
-                df_coal_time_matrix = get_coal_times(ts, sample)
-                # df_coal_descendants = get_coal_descendants(ts, sample)
                 for tree in ts.trees():
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree]:
@@ -412,8 +410,14 @@ def get_target_branch_length(
                     num_sites_per_tree.append(num_sites)
                     for j in range(int(l / args.force_build), int(r / args.force_build)):
                         bp_grid.append((j+1)*args.force_build) ## caution
-                bp_grid = np.array(bp_grid)
+                if exact_pos is not None:
+                    bp_grid = exact_pos[(exact_pos['chr'] == chr)]['pos'].values
+                else:
+                    bp_grid = np.array(bp_grid)
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
+
+                df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
+                # df_coal_descendants = get_coal_descendants(ts, sample, bp_grid)
 
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
@@ -421,8 +425,8 @@ def get_target_branch_length(
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
                             ## caution - need to change the line below for gt_ref not none
-                            # number_of_overlaps_list, num_muts_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples, bp_grid)
-                            number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2, bp_grid )
+                            # number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples)
+                            number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
                             if np.min(number_of_overlaps_list) < 1:
                                 pdb.set_trace()
                             poplabels_included_pos = poplabels_included.copy()
@@ -439,6 +443,7 @@ def get_target_branch_length(
                             while parent != tree.root:
                                 edge_id = tree.edge(parent)
                                 edge = ts_edges[edge_id]
+                                edpep = ts_edges[tree.edge(tree.parent(parent))]
                                 parent = tree.parent(parent)
                                 tree_childrens = tree.children(parent)
                                 tree_leaves_left = list(tree.leaves(tree_childrens[0]))
@@ -450,18 +455,11 @@ def get_target_branch_length(
                                     np.intersect1d(tree_leaves_right, poplabels_included_pos).size -
                                     np.intersect1d(tree_leaves_right, leave_one_sample_out).size > 0
                                 ):
-                                    num_muts_list.append(int(edge.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
+                                    num_muts_list.append(int(edpep.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
                                         if exact_pos is not None:
-                                            # edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
-                                            # edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
-                                            # positions_in_tree = exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= edge_left) & (exact_pos['pos'] < edge_right)]
-                                            # number_of_overlaps = len(positions_in_tree)
                                             number_of_overlaps = number_of_overlaps_list[edge_count]
                                         else:
-                                            # edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
-                                            # edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
-                                            # number_of_overlaps = np.sum((edge_right >= bp_grid) & (edge_left < bp_grid))
                                             number_of_overlaps = number_of_overlaps_list[edge_count]
                                         number_window_list.append(1.0 * number_of_overlaps)
                                     else:
