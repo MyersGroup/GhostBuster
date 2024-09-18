@@ -30,11 +30,10 @@ def get_true_node_persistence(df, pos, tree_window=100):
     start_idx = max(0, target_tree_idx - tree_window)
     end_idx = min(len(df), target_tree_idx + tree_window + 1)
     df_subset = df.iloc[start_idx:end_idx]
-    target_seq = df_subset.loc[(df_subset['interval'].str[0] <= pos) & (df_subset['interval'].str[1] >= pos), 'sequence'].values[0]
+    target_seq = df.iloc[target_tree_idx]['sequence']
     number_of_overlaps = np.zeros(len(target_seq))
     for j, branch in enumerate(target_seq):
         branch_tuple = branch
-        found_first = False
         for i, row in df_subset.iterrows():
             seq = row['sequence']
             num_bp_grid = row['num_bp_grid']
@@ -95,7 +94,7 @@ def update_intervals(target_seq, row, number_of_overlaps, found_mismatch, num_sa
         found_mismatch[j] = False
     return found_mismatch, number_of_overlaps
 
-def get_approx_node_persistence(df, pos, num_samples, overlap_threshold=0.9, tree_window=100):
+def get_approx_node_persistence(df, pos, num_samples, overlap_threshold=0.8, tree_window=100):
     left_array = df['left'].values
     right_array = df['right'].values
     target_tree_idx = np.argmax((left_array <= pos) & (right_array >= pos))
@@ -122,17 +121,13 @@ def get_relate_node_persistence(ts, target, pos, bp_grid):
     ts_edges = ts.edges()
     p = copy.deepcopy(target)
     number_of_overlaps = []
-    num_mut_all = []
     while p != tree.root:
         edge = ts_edges[tree.edge(p)]
         edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
         edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
-        edgep = ts_edges[tree.edge(tree.parent(p))]
-        num_mut = int(edgep.metadata.decode('utf-8').split(" ")[2].rstrip('\x00'))
-        num_mut_all.append(num_mut)
         number_of_overlaps.append(np.sum((bp_grid >= edge_left) & (bp_grid <= edge_right)))
         p = tree.parent(p)
-    return number_of_overlaps, num_mut_all
+    return number_of_overlaps
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -156,15 +151,14 @@ if __name__ == "__main__":
     df1 = get_coal_times(ts, target, bp_grid)
     df = get_coal_descendants(ts, target, bp_grid)
     
-    b1, b2, b3 = [], [], []
-    
-    for thresh in [0.8]:
+    for thresh in [0.5, 0.7, 0.8, 0.9]:
+        b1, b2, b3 = [], [], []
         print("")
         print(thresh)
-        for pos in tqdm(range(0, int(ts.sequence_length)-1000000, 200000)):
+        for pos in tqdm(range(0, int(ts.sequence_length)-1000000, 1000000)):
             true_overlaps = get_true_node_persistence(df1, pos)
             approx_overlaps = get_approx_node_persistence(df, pos, num_samples, thresh)
-            relate_overlaps, relate_muts = get_relate_node_persistence(ts, target, pos, bp_grid)
+            relate_overlaps = get_relate_node_persistence(ts, target, pos, bp_grid)
             b1.extend(true_overlaps)
             b2.extend(approx_overlaps)
             b3.extend(relate_overlaps)
@@ -210,6 +204,6 @@ if __name__ == "__main__":
         plt.suptitle(f'Node Persistence Comparisons at Threshold {thresh}', fontsize=18)
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.savefig(f'node_persistence_comparisons_{thresh}.svg', dpi=300, transparent=True)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
 ## maybe look for two consequtive mismatches ?

@@ -16,7 +16,7 @@ from numba import jit
 from numba.typed import List
 import pickle
 import time 
-from infer_node_persistence import get_coal_descendants, get_approx_node_persistence, get_coal_times, get_true_node_persistence
+from infer_node_persistence import get_coal_descendants, get_approx_node_persistence, get_coal_times, get_true_node_persistence, get_relate_node_persistence
 
 def boolean(v):
     if isinstance(v, bool):
@@ -416,8 +416,8 @@ def get_target_branch_length(
                     bp_grid = np.array(bp_grid)
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
-                df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
-                # df_coal_descendants = get_coal_descendants(ts, sample, bp_grid)
+                # df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
+                df_coal_descendants = get_coal_descendants(ts, sample, bp_grid)
 
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
@@ -425,8 +425,9 @@ def get_target_branch_length(
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
                             ## caution - need to change the line below for gt_ref not none
-                            # number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples)
-                            number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
+                            number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples)
+                            # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
+                            # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
                             if np.min(number_of_overlaps_list) < 1:
                                 pdb.set_trace()
                             poplabels_included_pos = poplabels_included.copy()
