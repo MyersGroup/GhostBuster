@@ -468,7 +468,8 @@ def get_target_branch_length(
                                 edge_count += 1
                             ## scale number_window_list by the number of mutations in the tree
                             ## removing this for true trees as trees are accurate
-                            # number_window_list = scale_number_window_list(number_window_list, num_muts_list)
+                            if args.mut_scaling:
+                                number_window_list = scale_number_window_list(number_window_list, num_muts_list)
                             target_branch_length_sample_chr.append(number_window_list)
                         count_all_tree2 += 1
                     tree.next()

@@ -976,6 +976,7 @@ def main(args):
         exact_pos
     )
     
+    print("Saving the coal. rates and proportions without using HMM")
     target_branch_length_masked_unity = target_branch_length_masked
     for i in range(len(target_branch_length_masked_unity)):
         for j in range(len(target_branch_length_masked_unity[i])):
@@ -1163,6 +1164,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--hmm",
         help="Run HMM or treat each window as independent",
+        type=boolean,
+        default=True,
+    )
+    parser.add_argument(
+        "--mut_scaling",
+        help="Scale the likelihood based on presence of mutation on the lineage, improves robustness to bottlenecks",
         type=boolean,
         default=True,
     )
