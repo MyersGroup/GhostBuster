@@ -367,10 +367,6 @@ def random_sweep_iter(
     n_samples = len(args.sample_id)
 
     own_membership_trial = [[] for _ in range(n_clusters)]
-    log_num_em = np.zeros((n_clusters, int(np.sum(n_sites))), dtype="float64")
-    log_denom_em = np.zeros((n_clusters, int(np.sum(n_sites))), dtype="float64")
-    count_masked_trees = 0
-
     # update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
     update_membership_eventwise = update_membership_eventwise_numba
     for sample_no, sample in enumerate(args.sample_id):
@@ -391,13 +387,6 @@ def random_sweep_iter(
             args.ignore_last_epoch,
             n_epochs,
         )
-        start = int(np.sum(n_sites[0:sample_no]))
-        end = int(np.sum(n_sites[0:sample_no+1]))
-        log_num_em[:, start:end] = log_num_em_sam
-        log_denom_em[
-            :, start:end
-        ] = log_denom_em_sam
-        
         own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
             tree_left_bp[sample_no],
             tree_right_bp[sample_no],
@@ -422,7 +411,6 @@ def random_sweep_iter(
 
     trans_prop = trans_num/trans_denom
     tau = tau_update/np.sum(tau_update)
-    loglikelihood_per_comp = log_num_em + log_denom_em
     own_membership_trial = np.array(own_membership_trial, dtype='float64')
     
     for epoch in range(args.sweep_num_iters):
@@ -457,7 +445,6 @@ def random_sweep_iter(
         trans_prop,
         tau,
         unique_groups,
-        loglikelihood_per_comp,
     )
 
 
@@ -485,16 +472,18 @@ def random_sweep(
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
     st = time.time()
-    num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
+    num, denom, denom_unscaled, proportion_of_coalescing_all, epoch_index_all = [], [], [], [], []
     for sample_no, sample in enumerate(args.sample_id):
         (
             num1,
             denom1,
+            denom1_unscaled,
             proportion_of_coalescing_all1,
             epoch_index_all1,
         ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], gt_ref, unique_groups, exact_pos)
         num.append(num1)
         denom.append(denom1)
+        denom_unscaled.append(denom1_unscaled)
         proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
         epoch_index_all.append(epoch_index_all1)
     del ts_list
@@ -529,7 +518,6 @@ def random_sweep(
         for n_iters in range(n_repeats)
     )
     print("random sweep: " + str(time.time() - st))
-    loglikelihood_per_comp_arr = []
     for i in range(len(out)):
         (
             log_likelihood,
@@ -537,31 +525,23 @@ def random_sweep(
             trans_prop_trial,
             tau_trial,
             unique_groups,
-            loglikelihood_per_comp,
         ) = out[i]
-        loglikelihood_per_comp_arr.append(loglikelihood_per_comp)
         if log_likelihood > best_loglikelihood or i == 0:
             best_loglikelihood = log_likelihood
             own_membership = own_membership_trial
             trans_prop = trans_prop_trial
             tau = tau_trial
-            (
-                best_num,
-                best_denom,
-                best_proportion_of_coalescing_all,
-                best_epoch_index_all,
-            ) = (num, denom, proportion_of_coalescing_all, epoch_index_all)
     
     return (
         own_membership,
         trans_prop,
         tau,
-        best_num,
-        best_denom,
-        best_proportion_of_coalescing_all,
-        best_epoch_index_all,
+        num,
+        denom,
+        denom_unscaled,
+        proportion_of_coalescing_all,
+        epoch_index_all,
         unique_groups,
-        loglikelihood_per_comp_arr,
     )
 
 
@@ -877,10 +857,10 @@ def main(args):
         tau,
         num,
         denom,
+        denom_unscaled,
         proportion_of_coalescing_all,
         epoch_index_all,
         unique_groups,
-        loglikelihood_per_comp_arr,
     ) = random_sweep(
         args,
         args.num_clusters,
@@ -995,6 +975,46 @@ def main(args):
         sample_name_list,
         exact_pos
     )
+    
+    target_branch_length_masked_unity = target_branch_length_masked
+    for i in range(len(target_branch_length_masked_unity)):
+        for j in range(len(target_branch_length_masked_unity[i])):
+            for k in range(len(target_branch_length_masked_unity[i][j])):
+                target_branch_length_masked_unity[i][j][k] = 1
+    gen_grid_all_unscaled = copy.deepcopy(gen_grid_all)
+    for sample_no in range(len(args.sample_id)):
+        gen_grid_all_unscaled[sample_no] = 1e3*np.arange(0,len(gen_grid_all[sample_no]))
+    
+    _, _, gamma_arr_nohmm, tau_nohmm, _ = e_m_step(
+        args,
+        own_membership,
+        trans_prop,
+        tau,
+        None,
+        proportion_of_coalescing_all,
+        epoch_index_all,
+        denom_unscaled,
+        unique_groups,
+        epoch_intervals,
+        n_sites,
+        len(args.sample_id),
+        epoch,
+        target_branch_length_masked_unity,
+        tree_left_bp,
+        tree_right_bp,
+        gen_grid_all_unscaled,
+    )
+    with open(
+        args.output + "_gamma.nohmm.npy",
+        "wb",
+    ) as f:
+        np.save(f, gamma_arr_nohmm)
+    with open(
+        args.output + "_props.nohmm.npy",
+        "wb",
+    ) as f:
+        np.save(f, tau_nohmm)
+
     return
 
 if __name__ == "__main__":
