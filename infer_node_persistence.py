@@ -77,7 +77,7 @@ def get_coal_descendants(ts, target):
         p = copy.deepcopy(target)
         while p != tree.root:
             parent = tree.parent(p)
-            num_muts = mut_edges[tree.edge(p)]
+            num_muts = mut_edges[tree.edge(parent)]
             muts_.append(num_muts)
             descendants = set(tree.samples(parent)) - set(tree.samples(p))
             seq_.append(descendants)
@@ -142,6 +142,8 @@ def get_approx_node_persistence(df, pos, num_samples, bp_grid, overlap_threshold
     Returns:
     np.ndarray: Minimum persistence intervals for each branch.
     np.ndarray: Maximum persistence intervals for each branch.
+
+    Note: num_muts calculated here is wrong, it should be the number of mutations on the edge (as calculated in Relate)
     """
     left_array = df['left'].values
     right_array = df['right'].values
@@ -176,52 +178,103 @@ def get_approx_node_persistence(df, pos, num_samples, bp_grid, overlap_threshold
         if np.all(found_mismatch_backward): break
     return number_of_overlaps, num_muts
 
-def get_relate_node_persistence(ts, target, pos):
+def get_relate_node_persistence(ts, target, pos, bp_grid):
     tree = ts.at(pos)
     ts_edges = ts.edges()
     p = copy.deepcopy(target)
-    matching_intervals = []
+    number_of_overlaps = []
     num_mut_all = []
     while p != tree.root:
         edge = ts_edges[tree.edge(p)]
         edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
         edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
-        num_mut = int(edge.metadata.decode('utf-8').split(" ")[2].rstrip('\x00'))
-        p = tree.parent(p)
-        matching_intervals.append((edge_left, edge_right))
+        edgep = ts_edges[tree.edge(tree.parent(p))]
+        num_mut = int(edgep.metadata.decode('utf-8').split(" ")[2].rstrip('\x00'))
         num_mut_all.append(num_mut)
-    matching_intervals = np.array(matching_intervals)
-    return matching_intervals[:, 0], matching_intervals[:, 1], num_mut_all
+        number_of_overlaps.append(np.sum((bp_grid >= edge_left) & (bp_grid <= edge_right)))
+        p = tree.parent(p)
+    return number_of_overlaps, num_mut_all
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    ts = tskit.load("../stdpopsim_homsap_chr1.trees")
+    import seaborn as sns
+    import numpy as np
+    import scipy.stats as stats
+    from sklearn.linear_model import LinearRegression
+    import matplotlib 
+    font = {"size": 16}
+    matplotlib.rc("font", **font)
+    plt.rc('axes.spines', **{'bottom': True, 'left': True, 'right': False, 'top': False})
+    sns.set_palette('colorblind')
+    
+    ts = tskit.load("../../denisovan_sim_2024_08/trees/stdpopsim_homsap_chr1.trees")
     bp_grid = np.arange(0, ts.sequence_length, 1e4)
     num_samples = ts.num_samples
     target = 0
     df1 = get_coal_times(ts, target)
     df = get_coal_descendants(ts, target)
-    b1, b2 = [], []
-    relate_muts_all, true_muts_all = [], []
-    for thresh in [0.5, 0.8, 0.9, 0.99]:
+    
+    b1, b2, b3 = [], [], []
+    m1, m2 = [], []
+    
+    for thresh in [0.8]:
         print("")
         print(thresh)
-        for pos in range(0, int(ts.sequence_length), 1000000):
+        for pos in range(0, int(ts.sequence_length)-1000000, 2000000):
             true_overlaps = get_true_node_persistence(df1, pos, bp_grid)
             approx_overlaps, approx_muts = get_approx_node_persistence(df, pos, num_samples, bp_grid, thresh)
+            relate_overlaps, relate_muts = get_relate_node_persistence(ts, target, pos, bp_grid)
+            
             b1.extend(true_overlaps)
             b2.extend(approx_overlaps)
-        import pdb; pdb.set_trace()
-        print(np.corrcoef(b1,b2)[0,1])
-        print(stats.spearmanr(b1,b2))
-        print(sum(b1)/sum(b2))
+            b3.extend(relate_overlaps)
+            m1.extend(approx_muts)
+            m2.extend(relate_muts)
+        
+        # Plotting subplots for b1 vs b2, b2 vs b3, and m1 vs m2
         plt.clf()
-        plt.scatter(b1, b2, s=2)
-        plt.ylabel('True overlaps')
-        plt.xlabel('Approx. overlaps')
-        plt.xlim([0,25])
-        plt.ylim([0,25])
-        plt.show()
+        fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+        
+        # Define a function to handle plotting for each pair
+        def plot_comparison(ax, x_data, y_data, xlabel, ylabel, label_fit, label_yx):
+            df = pd.DataFrame({xlabel: x_data, ylabel: y_data})
+            df = df[(df[xlabel] < 100) & (df[ylabel] < 100)]
+            # Fit linear regression line
+            x_data = df[xlabel].values.reshape(-1, 1)
+            y_data = df[ylabel].values
+            linear_regressor = LinearRegression()
+            linear_regressor.fit(x_data, y_data)
+            slope = linear_regressor.coef_[0]
+            intercept = linear_regressor.intercept_
+            print(f"Linear fit slope: {slope}")
+            print(f"Linear fit intercept: {intercept}")
+            # Predict values for linear fit
+            y_pred = linear_regressor.predict(x_data)
+            sns.scatterplot(data=df, x=xlabel, y=ylabel, alpha=0.5, ax=ax)
+            if intercept >0:
+                ax.plot(x_data, y_pred, 'r', label=label_fit + f': y={np.round(slope, 2)}x+{np.round(intercept, 2)}', linewidth=2)
+            else:
+                ax.plot(x_data, y_pred, 'r', label=label_fit + f': y={np.round(slope, 2)}x-{np.abs(np.round(intercept, 2))}', linewidth=2)
+            ax.plot(x_data, x_data, 'g', label=label_yx, linewidth=2)  # y=x line
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.legend(loc='upper left', frameon=False)
 
+        # 1. First subplot: b1 vs b2
+        plot_comparison(axes[0], b1, b2, 'True overlaps', 'Approx. overlaps', 'Linear Fit', 'y=x')
+        print(stats.spearmanr(b1, b2))
+
+        # 2. Second subplot: b2 vs b3
+        plot_comparison(axes[1], b1, b3, 'True overlaps', 'Relate overlaps', 'Linear Fit', 'y=x')
+        print(stats.spearmanr(b1, b3))
+
+        # 3. Third subplot: m1 vs m2
+        plot_comparison(axes[2], m1, m2, 'Approx. mutations', 'Relate mutations', 'Linear Fit', 'y=x')
+        
+        # Overall title and save the figure
+        plt.suptitle(f'Node Persistence Comparisons at Threshold {thresh}', fontsize=18)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(f'node_persistence_comparisons_{thresh}.svg', dpi=300, transparent=True)
+        import pdb; pdb.set_trace()
 
 ## maybe look for two consequtive mismatches ?
