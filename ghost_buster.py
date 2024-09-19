@@ -1015,7 +1015,13 @@ def main(args):
         "wb",
     ) as f:
         np.save(f, tau_nohmm)
-
+    write_coal(
+        gamma_arr_nohmm,
+        sample_id_label + ".nohmm.coal",
+        unique_groups,
+        args.output,
+        epoch_intervals,
+    )
     return
 
 if __name__ == "__main__":
@@ -1180,7 +1186,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_membership", help = "Load the membership from a .npy file", type=str, default=None)
     parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
     parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
-
+    parser.add_argument("--node_persist_thresh", type=float, default=0.8, help="Correlation coefficient threshold above which nodes are considered equivalent")
     args = parser.parse_args()
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)

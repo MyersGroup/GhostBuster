@@ -3,6 +3,7 @@ import pandas as pd
 import tskit
 import time
 from tqdm import tqdm
+import msprime
 
 def combine_segs(segs, seq_len, get_segs=False, bin_size=10000):
     # Get sequence length from the segment boundaries
@@ -45,7 +46,7 @@ bin_size = 10000  # 10kb bin size
 ts_list = []
 chr_list = []
 for chrom in range(1, 6):
-    ts = tskit.load("data/stdpopsim_homsap_chr" + str(chrom) + ".trees")
+    ts = tskit.load("../data/stdpopsim_homsap_chr" + str(chrom) + ".trees")
     chr_list.append(chrom)
     ts_list.append(ts)
 
@@ -83,10 +84,14 @@ for l in Testpopulation:
     all_local_ancestry = []    
     for chrom_no, (chrom, ts) in enumerate(zip(chr_list, ts_list)):
         seq_len = ts.sequence_length
+        recomb_map_msprime = msprime.RateMap.read_hapmap('../genetic_map_GRCh37_chr' + str(chrom) + ".txt")
         true_de_segs = combine_segs(de_seg_all_chr[l][chrom_no], seq_len, True, bin_size)
-        chrom_data = np.vstack((chrom * np.ones(len(true_de_segs)), np.arange(0, seq_len, bin_size), true_de_segs)).T
-        all_local_ancestry.append(pd.DataFrame(chrom_data, columns=["chr", "pos", "gt"]))
+        chrom_data = np.vstack((chrom * np.ones(len(true_de_segs)), np.arange(0, seq_len, bin_size), true_de_segs, 1-true_de_segs)).T
+        df = pd.DataFrame(chrom_data, columns=["chr", "pos", "prob_0", "prob_1"])
+        df = df[(df.pos > recomb_map_msprime.left[0]) & (df.pos < recomb_map_msprime.right[-1])]
+        df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'])
+        all_local_ancestry.append(df)
     sample_local_ancestry_df = pd.concat(all_local_ancestry)
-    print("Genome-wide local ancestry for sample " +str(l) + " : " + str(sample_local_ancestry_df['gt'].mean()))
-    sample_local_ancestry_df.to_csv(f"ground_truth_{l}.csv", sep="\t", index=False)
+    sample_local_ancestry_df.to_csv(f"../ground_truth_{l}.csv", sep="\t", index=False)
+    print("Genome-wide local ancestry for sample " +str(l) + " : " + str(sample_local_ancestry_df['prob_0'].mean()))
     print(f"Finished processing sample {l}")

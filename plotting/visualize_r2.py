@@ -44,8 +44,9 @@ def get_pr_calibration(post_file_name, gt_file_name, sample_list):
     post_overall = []
     gt_overall = []
     for sample in sample_list:
-        post = pd.read_csv(glob.glob(post_file_name + '_overall_membership_*_sample_id_{0}.csv'.format(sample))[0], '\s+')
-        gt = pd.read_csv(gt_file_name + '_{0}.csv'.format(sample), '\s+')
+        post = pd.read_csv(glob.glob(post_file_name + '_overall_membership_*_sample_id_{0}.csv'.format(sample))[0], sep='\s+')
+        gt = pd.read_csv(gt_file_name + '_{0}.csv'.format(sample), sep='\s+')
+        gt = gt.rename(columns={'prob_0':'gt', 'prob_1':'notgt'})
         mdf = pd.merge(post, gt, on=['chr', 'pos'])
         ## choose the cluster with highest r2 with gt
         r2_per_comp = {}

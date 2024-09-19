@@ -425,7 +425,7 @@ def get_target_branch_length(
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
                             ## caution - need to change the line below for gt_ref not none
-                            number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples)
+                            number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples, args.node_persist_thresh)
                             # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
                             # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
                             if np.min(number_of_overlaps_list) < 1:
