@@ -657,10 +657,6 @@ def write_membership_gamma(
         np.save(f, trans_prop)
 
 def main(args):
-    # if args.num_clusters == 1:
-    #     ## Dont use HMM when k=1
-    #     args.hmm = False
-
     if args.load_mask is not None:
         args.force_build = 1
         print("Exact positions can only be used with force_build=1")
@@ -1187,8 +1183,33 @@ if __name__ == "__main__":
     parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
     parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
     parser.add_argument("--node_persist_thresh", type=float, default=0.8, help="Correlation coefficient threshold above which nodes are considered equivalent")
+    parser.add_argument("--cm_grid", type=float, default=None, help="Store local ancestry information per cM instead")
     args = parser.parse_args()
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)
-    print(args)
+    print(args)    
+    if args.cm_grid is not None:
+        df_all = pd.DataFrame()
+        chrs = list(map(int, args.chrs.split(",")))
+        for chr_no, chr in enumerate(chrs):
+            rec_file = args.rec + str(chr) + ".txt"
+            rec_file_gz = args.rec + str(chr) + ".txt.gz"
+            if os.path.isfile(rec_file):
+                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file)
+            elif os.path.isfile(rec_file_gz):
+                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file_gz)
+            else:
+                print(f"Recombination map for chromosome {chr} not found!")
+                continue
+            df = pd.DataFrame(np.arange(recomb_map_msprime.left[0], recomb_map_msprime.right[-1], 1), columns=['pos'])
+            df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'].values)
+            m_grid = args.cm_grid / 100
+            df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
+            df = df.groupby('genpos_rounded').first().reset_index()
+            df = df.drop(columns=['genpos_rounded'])
+            df['chr'] = chr
+            df_all = pd.concat([df_all, df], ignore_index=True)
+        print("Saving the mask file corresponding to the cM grid...")
+        df_all.to_csv(args.output + '.cm.mask', sep='\t', index=None)
+        args.load_mask = args.output + '.cm.mask'
     main(args)
