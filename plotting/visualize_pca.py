@@ -144,7 +144,7 @@ for idx, component in enumerate(components):
 
 # Second pass to re-plot with consistent limits
 plt.clf()
-fig, ax = plt.subplots(2, len(components), figsize=(5 * len(components), 10), dpi=300)
+fig, ax = plt.subplots(1, len(components), figsize=(5 * len(components), 5), dpi=300)
 
 for idx, component in enumerate(components):
     # PC1 vs PC2 for each component (first row)
@@ -155,13 +155,13 @@ for idx, component in enumerate(components):
     ax[0, idx].set_xlabel(f'{component} (PC1)', fontsize=18)
     ax[0, idx].set_ylabel(f'{component} (PC2)', fontsize=18)
 
-    # PC3 vs PC4 for each component (second row)
-    sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC3', y='PC4', ax=ax[1, idx], 
-                fill=True, color=palette[idx], cbar=False)
-    ax[1, idx].set_xlim(x3_min, x3_max)  # Apply the global x-axis limit for PC3
-    ax[1, idx].set_ylim(y3_min, y3_max)  # Apply the global y-axis limit for PC4
-    ax[1, idx].set_xlabel(f'{component} (PC3)', fontsize=18)
-    ax[1, idx].set_ylabel(f'{component} (PC4)', fontsize=18)
+    # # PC3 vs PC4 for each component (second row)
+    # sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC3', y='PC4', ax=ax[1, idx], 
+    #             fill=True, color=palette[idx], cbar=False)
+    # ax[1, idx].set_xlim(x3_min, x3_max)  # Apply the global x-axis limit for PC3
+    # ax[1, idx].set_ylim(y3_min, y3_max)  # Apply the global y-axis limit for PC4
+    # ax[1, idx].set_xlabel(f'{component} (PC3)', fontsize=18)
+    # ax[1, idx].set_ylabel(f'{component} (PC4)', fontsize=18)
 
 plt.tight_layout()
 plt.savefig(output_file_name + '_pca.svg', dpi=300)
