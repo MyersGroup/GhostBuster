@@ -29,10 +29,10 @@ def combine_segs(segs, seq_len, get_segs=False, bin_size=10000):
         # Create an array to hold local ancestry at every 10kb bin
         local_ancestry = np.zeros(int(seq_len / bin_size))
         for segment in merged:
-            start_bin = int(segment[0] // bin_size)
-            end_bin = int(segment[1] // bin_size)
+            start_bin = int(np.ceil(segment[0] // bin_size))
+            end_bin = int(np.floor(segment[1] // bin_size)) + 1
             if end_bin > start_bin:
-                local_ancestry[start_bin+1:end_bin+1] = 1
+                local_ancestry[start_bin:end_bin] = 1
         return local_ancestry
     else:
         return np.sum(merged[:, 1] - merged[:, 0]) / seq_len
@@ -149,7 +149,7 @@ if __name__ == '__main__':
 
 
 ## python RelateLocalAncestry/helper/calc_ground_truth.py --admix_source 3 --admix_dest 4 --sample_id 50 51 52 53 54 55 56 57 58 59 --trees data/stdpopsim_homsap_chr --chrs 1 --rec genetic_map_GRCh37_chr --output ground_truth
-## python RelateLocalAncestry/helper/calc_ground_truth.py --admix_source 3 --admix_dest 4 --sample_id 50 51 52 53 54 55 56 57 58 59 --trees data/stdpopsim_homsap_chr --chrs 5 --rec genetic_map_GRCh37_chr --output ground_truth_genpos --cm_grid 0.05
+## python RelateLocalAncestry/helper/calc_ground_truth.py --admix_source 3 --admix_dest 4 --sample_id 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 --trees data/stdpopsim_homsap_chr --chrs 5 --rec genetic_map_GRCh37_chr --output ground_truth_genpos --cm_grid 0.01
 # for i in {50..59}
 # do
 # cp ground_truth_genpos_${i}.csv ground_truth_genpos_overall_membership_$((i+1))_sample_id_${i}.csv
