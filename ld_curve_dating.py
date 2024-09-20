@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from scipy.interpolate import make_interp_spline, BSpline
 import glob
 import argparse
+import pdb
 
 from utils import boolean
 
@@ -126,8 +127,8 @@ def simulate_local_ancestry_markov(output, generations, n_samples=10, total_leng
         df_sample.to_csv(output_file, sep="\t", index=False)
         print(f"Sample {sample + 1} saved to {output_file}")
 
-def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters, prob_labels):
-    num_bins = int(bin_max / bin_size)
+def get_coancestry_per_sample(df_hap1, bin_size, bin_max, bin_min, num_clusters, prob_labels):
+    num_bins = int(bin_max / bin_size) - int(bin_min / bin_size)
     means_num = np.zeros((num_bins, num_clusters, num_clusters))
     means_denom = np.zeros((num_bins, num_clusters, num_clusters))
     for chr in np.unique(df_hap1.chr):
@@ -137,34 +138,72 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters, prob_lab
         )
         interp_genpos = np.arange(df_chr.genpos.values[0], df_chr.genpos.values[-1], bin_size)
         prob_values = f(interp_genpos)
-
-        # Replace regions where the closest index is more than 0.1cm away as NaN
-        # for i in range(len(interp_genpos)):
-        #     if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.001:
-        #         prob_values[i] = np.nan
-        # print(np.isnan(prob_values).sum() / prob_values.size)
-        
         props = np.nansum(prob_values, axis=0)
         lens = np.sum(~np.isnan(prob_values[:,0]))
-        for count, bin in enumerate(np.arange(0, bin_max, bin_size)):
+        for count, bin in enumerate(np.arange(int(bin_min / bin_size), int(bin_max / bin_size), 1)):
             ## shift prob_values by bin and multiply with itself
             for cluster1 in range(num_clusters):
                 for cluster2 in range(num_clusters):
-                    if count == 0:
+                    if bin == 0:
                         cross = prob_values[:, cluster1] * prob_values[:, cluster2]
                     else:
-                        cross = prob_values[0:-count, cluster1] * prob_values[count:, cluster2]
+                        cross = prob_values[0:-bin, cluster1] * prob_values[bin:, cluster2]
                     means_num[count, cluster1, cluster2] += np.nansum(cross) 
                     means_denom[count, cluster1, cluster2] += np.sum(~np.isnan(cross))
 
     means_num = np.array(means_num).transpose(1, 2, 0) / len(np.unique(df_hap1.chr))
     means_denom = np.array(means_denom).transpose(1, 2, 0) / len(np.unique(df_hap1.chr))
-    dist = np.arange(0, bin_max, bin_size)
+    dist = np.arange(int(bin_min / bin_size)*bin_size, int(bin_max / bin_size)*bin_size, bin_size)
     return means_num, means_denom, dist, props, lens
+
+def get_coancestry_per_pair_sample(df_hap1, df_hap2, bin_size, bin_max, bin_min, num_clusters, prob_labels):
+    assert len(df_hap1) == len(df_hap2)
+    assert np.allclose(df_hap1.genpos, df_hap2.genpos)
+    num_bins = int(bin_max / bin_size) - int(bin_min / bin_size)
+    means_num = np.zeros((num_bins, num_clusters, num_clusters))
+    means_denom = np.zeros((num_bins, num_clusters, num_clusters))
+    for chr in np.unique(df_hap1.chr):
+        df_chr1 = df_hap1[df_hap1.chr == chr]
+        f1 = interpolate.interp1d(df_chr1.genpos.values, df_chr1[prob_labels].values, axis=0)
+        interp_genpos1 = np.arange(df_chr1.genpos.values[0], df_chr1.genpos.values[-1], bin_size)
+        prob_values1 = f1(interp_genpos1)
+
+        df_chr2 = df_hap2[df_hap2.chr == chr]
+        f2 = interpolate.interp1d(df_chr2.genpos.values, df_chr2[prob_labels].values, axis=0)
+        interp_genpos2 = np.arange(df_chr2.genpos.values[0], df_chr2.genpos.values[-1], bin_size)
+        prob_values2 = f2(interp_genpos2)
+        
+        props = np.nansum(prob_values1, axis=0)
+        lens = np.sum(~np.isnan(prob_values1[:,0]))
+        for count, bin in enumerate(np.arange(int(bin_min / bin_size), int(bin_max / bin_size), 1)):
+            ## shift prob_values by bin and multiply with itself
+            for cluster1 in range(num_clusters):
+                for cluster2 in range(num_clusters):
+                    if bin == 0:
+                        cross = prob_values1[:, cluster1] * prob_values2[:, cluster2]
+                    else:
+                        cross = prob_values1[0:-bin, cluster1] * prob_values2[bin:, cluster2]
+                    means_num[count, cluster1, cluster2] += np.nansum(cross) 
+                    means_denom[count, cluster1, cluster2] += np.sum(~np.isnan(cross))
+
+    means_num = np.array(means_num).transpose(1, 2, 0) / len(np.unique(df_hap1.chr))
+    means_denom = np.array(means_denom).transpose(1, 2, 0) / len(np.unique(df_hap1.chr))
+    dist = np.arange(int(bin_min / bin_size)*bin_size, int(bin_max / bin_size)*bin_size, bin_size)
+    return means_num, means_denom, dist, props, lens
+
+def read_df_per_sam(df, len_all_cumsum, sam):
+    if sam >= 1:
+        df_sam = df.iloc[
+            len_all_cumsum[sam - 1] : len_all_cumsum[sam]
+        ]
+    else:
+        df_sam = df.iloc[0: len_all_cumsum[0]]
+    return df_sam
 
 def run_ld_curve_dating(args):
     bin_size = args.bin_size
     bin_max = args.bin_max
+    bin_min = args.bin_min
     output_prefix = args.output
     jn_blocks = 20
     initial_values = (
@@ -200,14 +239,35 @@ def run_ld_curve_dating(args):
         num_clusters = df.shape[1] - 4
         prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
         len_all_cumsum = np.cumsum(len_all)
-        
+
+        ## First calculate the normalization
+        means_whole_genome_num_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+        means_whole_genome_denom_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+        props_whole_genome_norm = np.zeros(num_clusters)
+        len_whole_genome_norm = 0
+        for sam1 in range(num_hap):
+            for sam2 in range(num_hap):
+                if sam1 != sam2:
+                    df_hap1 = read_df_per_sam(df, len_all_cumsum, sam1)
+                    df_hap2 = read_df_per_sam(df, len_all_cumsum, sam2)
+                    for chr in np.unique(df_hap1.chr):
+                        means_num, means_denom, dist, props_num, props_denom = get_coancestry_per_pair_sample(
+                            df_hap1[df_hap1['chr'] == chr], df_hap2[df_hap2['chr'] == chr], bin_size, bin_max, bin_min, num_clusters, prob_labels
+                        )
+                        means_whole_genome_num_norm += means_num
+                        means_whole_genome_denom_norm += means_denom
+                        props_whole_genome_norm += props_num
+                        len_whole_genome_norm += props_denom
+        means_whole_genome_norm = means_whole_genome_num_norm / means_whole_genome_denom_norm
+        props_whole_genome_norm /= len_whole_genome_norm
+        for cluster1 in range(num_clusters):
+            for cluster2 in range(num_clusters):
+                means_whole_genome_norm[cluster1, cluster2] /= props_whole_genome_norm[cluster1] * props_whole_genome_norm[cluster2]
+        # print("The normalizing constant calculated based on pairs of samples..")
+        # print(means_whole_genome_norm)
+
         for sam in range(num_hap):
-            if sam >= 1:
-                df_sam = df.iloc[
-                    len_all_cumsum[sam - 1] : len_all_cumsum[sam]
-                ]
-            else:
-                df_sam = df.iloc[0: len_all_cumsum[0]]
+            df_sam = read_df_per_sam(df, len_all_cumsum, sam)
             if sam % 2 == 0:
                 df_hap1 = df_sam
             else:
@@ -215,14 +275,14 @@ def run_ld_curve_dating(args):
                     df_hap1[prob_col] += df_sam[prob_col]
                     df_hap1[prob_col] /= 2
                 # print()
-                means_whole_genome_num = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size)))
-                means_whole_genome_denom = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size)))
+                means_whole_genome_num = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+                means_whole_genome_denom = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
                 props_whole_genome = np.zeros(num_clusters)
                 len_whole_genome = 0
                 
                 for chr in np.unique(df_hap1.chr):
                     means_num, means_denom, dist, props_num, props_denom = get_coancestry_per_sample(
-                        df_hap1[df_hap1['chr'] == chr], bin_size, bin_max, num_clusters, prob_labels
+                        df_hap1[df_hap1['chr'] == chr], bin_size, bin_max, bin_min, num_clusters, prob_labels
                     )
                     means_whole_genome_num += means_num
                     means_whole_genome_denom += means_denom
@@ -230,6 +290,7 @@ def run_ld_curve_dating(args):
                     len_whole_genome += props_denom
                 
                 means_whole_genome = means_whole_genome_num / means_whole_genome_denom
+                means_whole_genome = means_whole_genome / means_whole_genome_norm
                 props_whole_genome /= len_whole_genome
 
                 for cluster1 in range(num_clusters):
@@ -249,12 +310,13 @@ def run_ld_curve_dating(args):
         #     print(admixtimes_test)
         #     avg_ += admixtimes_test
     print((np.mean(admixtimes_all_blocks), np.std(admixtimes_all_blocks)))
-    plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix, refit=True)
+    plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix, refit=False)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--bin_size", help="Bin size in ld curves (in cM)", default=0.05, type=float)
     parser.add_argument("--bin_max", help="Maximum bin location in ld curves (in cM)", default=10, type=float)
+    parser.add_argument("--bin_min", help="Maximum bin location in ld curves (in cM)", default=0.02, type=float)
     parser.add_argument(
         "-o",
         "--output",
