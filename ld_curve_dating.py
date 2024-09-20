@@ -139,10 +139,10 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, num_clusters, prob_lab
         prob_values = f(interp_genpos)
 
         # Replace regions where the closest index is more than 0.1cm away as NaN
-        for i in range(len(interp_genpos)):
-            if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.001:
-                prob_values[i] = np.nan
-        print(np.isnan(prob_values).sum() / prob_values.size)
+        # for i in range(len(interp_genpos)):
+        #     if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.001:
+        #         prob_values[i] = np.nan
+        # print(np.isnan(prob_values).sum() / prob_values.size)
         
         props = np.nansum(prob_values, axis=0)
         lens = np.sum(~np.isnan(prob_values[:,0]))
@@ -171,7 +171,7 @@ def run_ld_curve_dating(args):
         np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000))))
     )
     means_all_blocks = []
-    admixtimes_all_blocks = 0.0
+    admixtimes_all_blocks = []
     for jn_block in range(jn_blocks):
         means_all = []            
         num_hap = 0
@@ -192,7 +192,8 @@ def run_ld_curve_dating(args):
             ## remove jack-knife block (removing 5% from each chromosome)
             for chr in dfc.chr.unique():
                 dfc.loc[dfc.chr == chr, 'block'] = pd.cut(dfc[dfc.chr == chr].pos, bins=jn_blocks, labels=False)
-                dfc = dfc.drop(dfc[(dfc.chr == chr) & (dfc.block == jn_block)].index)                
+                dfc.loc[(dfc.chr == chr) & (dfc.block == jn_block), ["prob_" + str(i) for i in range(dfc.shape[1] - 4)]] = np.nan
+                # dfc = dfc.drop(dfc[(dfc.chr == chr) & (dfc.block == jn_block)].index)                
             len_all.append(len(dfc))
             df = pd.concat([df, dfc], axis=0)
 
@@ -239,7 +240,7 @@ def run_ld_curve_dating(args):
 
         admixtimes = get_admixtimes(initial_values, dist, means_all)
         print("Block: " + str(jn_block) +  ", Admixture time: " + str(admixtimes))
-        admixtimes_all_blocks += admixtimes
+        admixtimes_all_blocks.append(admixtimes)
         means_all_blocks.append(np.mean(means_all, axis=0))
         # avg_ = 0
         # for _ in range(100):
@@ -247,7 +248,8 @@ def run_ld_curve_dating(args):
         #     admixtimes_test = get_admixtimes(initial_values, dist, means_all_test)
         #     print(admixtimes_test)
         #     avg_ += admixtimes_test
-    plot_ld_curves(dist, means_all_blocks, admixtimes_all_blocks/jn_blocks, output_prefix, refit=False)
+    print((np.mean(admixtimes_all_blocks), np.std(admixtimes_all_blocks)))
+    plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix, refit=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
