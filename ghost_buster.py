@@ -545,6 +545,28 @@ def random_sweep(
         n_sites
     )
 
+def get_expected_r2(own_membership, num_samples):
+    if num_samples % 2 == 0:
+        num_clusters = len(own_membership)
+        own_membership = own_membership.reshape(num_clusters, num_samples, -1)
+        num_sites = own_membership.shape[2]
+        diploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))
+        cross_haploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))  
+        for sample in range(0, num_samples, 2):
+            hap1 = own_membership[:, sample, :]
+            hap2 = own_membership[:, sample + 1, :]
+            diploid_membership[:, sample // 2, :] = hap1 + hap2
+            cross_haploid_membership[:, sample // 2, :] = hap1 * hap2
+        sum_diploid = diploid_membership.sum(axis=(1,2))
+        sum_diploid_squared = (diploid_membership ** 2).sum(axis=(1,2))
+        sum_cross_haploid = cross_haploid_membership.sum(axis=(1,2))
+        num = sum_diploid_squared - (sum_diploid ** 2) / num_sites
+        denom = sum_diploid + 2 * sum_cross_haploid - (sum_diploid ** 2) / num_sites
+        expected_r2 = num / denom
+        print("Final expected R2 = " + str(np.sum(num)/np.sum(denom)))
+        print("Per ancestry expected R2 = " + str(expected_r2))
+    else:
+        print("Not calculating expected R2 as both haploids not present....")
 
 def write_membership_grid(
     args,
@@ -589,7 +611,6 @@ def write_membership_grid(
             sep="\t",
         )
 
-
 def write_membership_gamma(
     args,
     own_membership,
@@ -605,7 +626,8 @@ def write_membership_gamma(
     unique_groups,
     sample_id_label,
     sample_name_list,
-    exact_pos
+    exact_pos,
+    output=None
 ):
     ## gamma and membership plots
     filename = (
@@ -626,7 +648,7 @@ def write_membership_gamma(
         args.num_clusters,
         sample_name_list,
         args.sample_id,
-        args.output,
+        args.output if output is None else output,
         args.force_build,
         exact_pos
     )
@@ -640,19 +662,19 @@ def write_membership_gamma(
     )
 
     with open(
-        args.output + "_gamma.npy",
+        args.output + "_gamma_" + sample_id_label +  ".npy",
         "wb",
     ) as f:
         np.save(f, gamma_arr)
 
     with open(
-        args.output + "_props.npy",
+        args.output + "_props_" + sample_id_label +  ".npy",
         "wb",
     ) as f:
         np.save(f, tau)
 
     with open(
-        args.output + "_tadmix.npy",
+        args.output + "_tadmix_" + sample_id_label +  ".npy",
         "wb",
     ) as f:
         np.save(f, trans_prop)
@@ -945,6 +967,7 @@ def main(args):
     print("HMM admix date = " + str(trans_prop))
     print("em iters: " + str(time.time() - st))
     print("Final log-likelihood = " + str(log_likelihood_arr[-1]))
+    get_expected_r2(own_membership, len(args.sample_id))
 
     write_membership_gamma(
         args,
@@ -974,7 +997,7 @@ def main(args):
     for sample_no in range(len(args.sample_id)):
         gen_grid_all_unscaled[sample_no] = 1e3*np.arange(0,len(gen_grid_all[sample_no]))
     
-    _, _, gamma_arr_nohmm, tau_nohmm, _ = e_m_step(
+    own_membership_nohmm, _, gamma_arr_nohmm, tau_nohmm, _ = e_m_step(
         args,
         own_membership,
         trans_prop,
@@ -993,22 +1016,23 @@ def main(args):
         tree_right_bp,
         gen_grid_all_unscaled,
     )
-    with open(
-        args.output + "_gamma.nohmm.npy",
-        "wb",
-    ) as f:
-        np.save(f, gamma_arr_nohmm)
-    with open(
-        args.output + "_props.nohmm.npy",
-        "wb",
-    ) as f:
-        np.save(f, tau_nohmm)
-    write_coal(
+    write_membership_gamma(
+        args,
+        own_membership_nohmm,
         gamma_arr_nohmm,
-        sample_id_label + ".nohmm.coal",
-        unique_groups,
-        args.output,
+        tau_nohmm,
+        trans_prop,
+        mask_dodgy,
+        chr_map,
+        tree_left_bp,
+        tree_right_bp,
+        gen_grid_all,
         epoch_intervals,
+        unique_groups,
+        "nohmm_" + sample_id_label,
+        sample_name_list,
+        exact_pos,
+        output=args.output + "_nohmm"
     )
     return
 
@@ -1200,7 +1224,10 @@ if __name__ == "__main__":
             df = df.groupby('genpos_rounded').first().reset_index()
             df = df.drop(columns=['genpos_rounded'])
             df['chr'] = chr
-            df_all = pd.concat([df_all, df], ignore_index=True)
+            df_kb = pd.DataFrame(np.arange(recomb_map_msprime.left[0], recomb_map_msprime.right[-1], args.force_build), columns=['pos'])
+            df_kb['chr'] = chr
+            df_union = pd.concat([df[['chr', 'pos']], df_kb[['chr', 'pos']]]).drop_duplicates().sort_values(by='pos').reset_index(drop=True)
+            df_all = pd.concat([df_all, df_union], ignore_index=True)
         print("Saving the mask file corresponding to the cM grid...")
         df_all.to_csv(args.output + '.cm.mask', sep='\t', index=None)
         args.load_mask = args.output + '.cm.mask'
