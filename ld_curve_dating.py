@@ -138,6 +138,9 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, bin_min, num_clusters,
         )
         interp_genpos = np.arange(df_chr.genpos.values[0], df_chr.genpos.values[-1], bin_size)
         prob_values = f(interp_genpos)
+        # for i in range(len(interp_genpos)):
+        #     if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.1*bin_size:
+        #         prob_values[i] = np.nan
         props = np.nansum(prob_values, axis=0)
         lens = np.sum(~np.isnan(prob_values[:,0]))
         for count, bin in enumerate(np.arange(int(bin_min / bin_size), int(bin_max / bin_size), 1)):
@@ -172,7 +175,10 @@ def get_coancestry_per_pair_sample(df_hap1, df_hap2, bin_size, bin_max, bin_min,
         f2 = interpolate.interp1d(df_chr2.genpos.values, df_chr2[prob_labels].values, axis=0)
         interp_genpos2 = np.arange(df_chr2.genpos.values[0], df_chr2.genpos.values[-1], bin_size)
         prob_values2 = f2(interp_genpos2)
-        
+        # for i in range(len(interp_genpos1)):
+        #     if min(abs(df_chr1.genpos.values - interp_genpos1[i])) > 0.1*bin_size:
+        #         prob_values1[i] = np.nan
+        #         prob_values2[i] = np.nan
         props = np.nansum(prob_values1, axis=0)
         lens = np.sum(~np.isnan(prob_values1[:,0]))
         for count, bin in enumerate(np.arange(int(bin_min / bin_size), int(bin_max / bin_size), 1)):

@@ -18,6 +18,18 @@ import pickle
 import time 
 from infer_node_persistence import get_coal_descendants, get_approx_node_persistence, get_coal_times, get_true_node_persistence, get_relate_node_persistence
 
+def get_mut_scaling_grid():
+    mut_scaling = {}
+    for i in range(1, 100):
+        sum_ = 0
+        for j in range(1,i+1):
+            sum_ += 2/(j+1) 
+        mut_scaling[i] = i/sum_
+        # mut_scaling[i] = i
+    return mut_scaling
+
+mut_scaling_grid = get_mut_scaling_grid()
+
 def boolean(v):
     if isinstance(v, bool):
         return v
@@ -315,10 +327,10 @@ def scale_number_window_list(number_window_list, num_muts_list):
     prev_node_with_mutation = 0
     for i in range(len(number_window_list)):
         if num_muts_list[i] > 0:
-            number_window_list[prev_node_with_mutation:i+1] *= (i + 1 - prev_node_with_mutation)
+            number_window_list[prev_node_with_mutation:i+1] *= mut_scaling_grid[i + 1 - prev_node_with_mutation]
             prev_node_with_mutation = i+1
-        if i == len(number_window_list) - 1:
-            number_window_list[prev_node_with_mutation:] *= (i + 1 - prev_node_with_mutation)
+        elif i == len(number_window_list) - 1:
+            number_window_list[prev_node_with_mutation:] *= mut_scaling_grid[i + 1 - prev_node_with_mutation]
     return number_window_list.tolist()
 
 
@@ -353,12 +365,13 @@ def get_target_branch_length(
             try:
                 with open(branch_persistence_file_name, "rb") as f_pkl:
                     (
-                        hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
+                        mut_scaling_file, hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
                         ignore_last_epoch, masking_threshold, poplabels_file,
                         target_branch_length_sample_chr, gt_ref_na_sum, exact_pos_file
                     ) = pickle.load(f_pkl)
                 
                 if (
+                    (mut_scaling_file == args.mut_scaling) &
                     (hmm_file == args.hmm) &
                     (force_build_file == args.force_build) &
                     (start_time == args.start_time) &
@@ -458,17 +471,14 @@ def get_target_branch_length(
                                 ):
                                     num_muts_list.append(int(edpep.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
-                                        if exact_pos is not None:
-                                            number_of_overlaps = number_of_overlaps_list[edge_count]
-                                        else:
-                                            number_of_overlaps = number_of_overlaps_list[edge_count]
+                                        number_of_overlaps = number_of_overlaps_list[edge_count]
                                         number_window_list.append(1.0 * number_of_overlaps)
                                     else:
                                         number_window_list.append(1.0)
                                 edge_count += 1
                             ## scale number_window_list by the number of mutations in the tree
                             ## removing this for true trees as trees are accurate
-                            if args.mut_scaling:
+                            if args.mut_scaling and args.hmm:
                                 number_window_list = scale_number_window_list(number_window_list, num_muts_list)
                             target_branch_length_sample_chr.append(number_window_list)
                         count_all_tree2 += 1
@@ -476,7 +486,7 @@ def get_target_branch_length(
                                 
                 target_branch_length_sample_chr = [sublist for sublist, count in zip(target_branch_length_sample_chr, num_sites_per_tree) for _ in range(count)]
                 with open(branch_persistence_file_name, "wb") as f_pkl:
-                    pickle.dump([args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
+                    pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)
                     for j in i:

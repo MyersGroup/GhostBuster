@@ -319,18 +319,8 @@ def random_sweep_iter(
     tree_right_bp,
     gen_grid_all,
     chr_map,
-    exact_pos,
+    n_sites,
 ):
-    n_sites = []
-    for sample_no in range(len(args.sample_id)):
-        n_sites_sam = 0
-        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
-            if exact_pos is None:
-                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
-            else:
-                n_sites_sam += len(exact_pos[(exact_pos['chr'] == chr_map[mask_dodgy[sample_no][i]]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
-        n_sites.append(copy.deepcopy(n_sites_sam))
-
     epoch_intervals = np.log10(epoch_intervals_pow)
     
     n_unique_groups = len(unique_groups)
@@ -491,6 +481,16 @@ def random_sweep(
     ts_list = []
 
     print("fixed params:" + str(time.time() - st))
+    n_sites = []
+    for sample_no in range(len(args.sample_id)):
+        n_sites_sam = 0
+        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
+            if exact_pos is None:
+                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
+            else:
+                n_sites_sam += len(exact_pos[(exact_pos['chr'] == np.array(chr_map)[mask_dodgy[sample_no]][i]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
+        n_sites.append(copy.deepcopy(n_sites_sam))
+
     st = time.time()
     out = Parallel(n_jobs=1)(
         delayed(random_sweep_iter)(
@@ -513,7 +513,7 @@ def random_sweep(
             tree_right_bp,
             gen_grid_all,
             chr_map,
-            exact_pos
+            n_sites
         )
         for n_iters in range(n_repeats)
     )
@@ -542,6 +542,7 @@ def random_sweep(
         proportion_of_coalescing_all,
         epoch_index_all,
         unique_groups,
+        n_sites
     )
 
 
@@ -857,6 +858,7 @@ def main(args):
         proportion_of_coalescing_all,
         epoch_index_all,
         unique_groups,
+        n_sites
     ) = random_sweep(
         args,
         args.num_clusters,
@@ -905,16 +907,6 @@ def main(args):
     f_tau = open(filename_tau, "w")
 
     st = time.time()
-    n_sites = []
-    for sample_no in range(len(args.sample_id)):
-        n_sites_sam = 0
-        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
-            if args.load_mask is None:
-                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
-            else:
-                n_sites_sam += len(exact_pos[(exact_pos['chr'] == np.array(chr_map)[mask_dodgy[sample_no]][i]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
-        n_sites.append(n_sites_sam)
-
     for epoch in range(args.num_iters):
         own_membership, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
             args,
@@ -987,7 +979,7 @@ def main(args):
         own_membership,
         trans_prop,
         tau,
-        None,
+        gamma_arr,
         proportion_of_coalescing_all,
         epoch_index_all,
         denom_unscaled,
@@ -1182,7 +1174,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_membership", help = "Load the membership from a .npy file", type=str, default=None)
     parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
     parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
-    parser.add_argument("--node_persist_thresh", type=float, default=0.8, help="Correlation coefficient threshold above which nodes are considered equivalent")
+    parser.add_argument("--node_persist_thresh", type=float, default=0.5, help="Correlation coefficient threshold above which nodes are considered equivalent")
     parser.add_argument("--cm_grid", type=float, default=None, help="Store local ancestry information per cM instead")
     args = parser.parse_args()
     np.random.seed(args.seed)  ## fix the random seed

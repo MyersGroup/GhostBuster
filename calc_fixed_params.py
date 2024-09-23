@@ -410,14 +410,14 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
 
         try:
             f_pkl = open(fixed_params_file_name, "rb")
-            (hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
+            (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
             f_pkl.close()
             if exact_pos is not None:
                 if (exact_pos_file != exact_pos.values).any():
                     print("Exact position file doesn't match, calculating fixed parameters..")
                     raise Exception
             if gt_ref is not None and gt_ref_file is None:
-                if (hmm_file == args.hmm) & (gt_ref_file == gt_ref).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                if (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) & (gt_ref_file == gt_ref).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     denom_all_unscaled.extend(denom_unscaled)
@@ -429,7 +429,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                     print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
                     raise Exception
             elif gt_ref is None and gt_ref_file is None:
-                if (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                if (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     denom_all_unscaled.extend(denom_unscaled)
@@ -447,22 +447,22 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             num_trees = np.sum(mask_dodgy_sam_chr)
             target_branch_length_masked_chr = []
             # make faster #
-            num_sites_per_tree = np.zeros(np.sum(mask_dodgy), dtype='int32')            
-            i, count_i  = 0,0 
-            for tseq in ts_list:
-                for tree in tseq.trees():
-                    if tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0:
-                        if mask_dodgy[count_i]:
-                            if exact_pos is None:
-                                num_sites_per_tree[i] = (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build)
-                            else:
-                                num_sites_per_tree[i] = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= tree.interval[0]) & (exact_pos['pos'] < tree.interval[1])])
-                            i+= 1
-                        count_i += 1
-            
+            if chr_no == 0:
+                num_sites_per_tree = np.zeros(np.sum(mask_dodgy), dtype='int32')            
+                i, count_i  = 0,0 
+                for chr_, tseq in zip(chrs, ts_list):
+                    for tree in tseq.trees():
+                        if tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0:
+                            if mask_dodgy[count_i]:
+                                if exact_pos is None:
+                                    num_sites_per_tree[i] = (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build)
+                                else:
+                                    num_sites_per_tree[i] = len(exact_pos[(exact_pos['chr'] == chr_) & (exact_pos['pos'] >= tree.interval[0]) & (exact_pos['pos'] < tree.interval[1])])
+                                i+= 1
+                            count_i += 1
+                chr_map_masked = np.array(chr_map)[mask_dodgy]
+                chr_map_masked = [sublist for sublist, count in zip(chr_map_masked, num_sites_per_tree) for _ in range(count)]
 
-            chr_map_masked = np.array(chr_map)[mask_dodgy]
-            chr_map_masked = [sublist for sublist, count in zip(chr_map_masked, num_sites_per_tree) for _ in range(count)]
             for t in range(len(target_branch_length_masked)):
                 if chr_map_masked[t] == chr:
                     target_branch_length_masked_chr.append(target_branch_length_masked[t])
@@ -484,7 +484,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 exact_pos=exact_pos
             )
             f_pkl = open(fixed_params_file_name, "wb")
-            pickle.dump([args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
+            pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
             f_pkl.close()
             denom_all.extend(denom)
             denom_all_unscaled.extend(denom_unscaled)
