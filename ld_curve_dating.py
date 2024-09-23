@@ -133,14 +133,19 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, bin_min, num_clusters,
     means_denom = np.zeros((num_bins, num_clusters, num_clusters))
     for chr in np.unique(df_hap1.chr):
         df_chr = df_hap1[df_hap1.chr == chr]
+        # df_chr['genpos_rounded'] = (df_chr['genpos'] / bin_size).astype('int')*bin_size 
+        # df_chr = df_chr.groupby('genpos_rounded').first().reset_index()
+        # df_chr = df_chr.drop(columns='genpos_rounded')
         f = interpolate.interp1d(
-            df_chr.genpos.values, df_chr[prob_labels].values, axis=0
+            df_chr.genpos.values, df_chr[prob_labels].values, axis=0, kind='nearest'
         )
         interp_genpos = np.arange(df_chr.genpos.values[0], df_chr.genpos.values[-1], bin_size)
         prob_values = f(interp_genpos)
-        # for i in range(len(interp_genpos)):
-        #     if min(abs(df_chr.genpos.values - interp_genpos[i])) > 0.1*bin_size:
-        #         prob_values[i] = np.nan
+
+        genpos_diffs = np.diff(df_chr.genpos.values)
+        interp_genpos_nearest = np.searchsorted(df_chr.genpos.values, interp_genpos)
+        too_far_mask = np.abs(df_chr.genpos.values[interp_genpos_nearest] - interp_genpos) > max(0.05, bin_size)
+        prob_values[too_far_mask] = np.nan
         props = np.nansum(prob_values, axis=0)
         lens = np.sum(~np.isnan(prob_values[:,0]))
         for count, bin in enumerate(np.arange(int(bin_min / bin_size), int(bin_max / bin_size), 1)):
@@ -167,18 +172,26 @@ def get_coancestry_per_pair_sample(df_hap1, df_hap2, bin_size, bin_max, bin_min,
     means_denom = np.zeros((num_bins, num_clusters, num_clusters))
     for chr in np.unique(df_hap1.chr):
         df_chr1 = df_hap1[df_hap1.chr == chr]
-        f1 = interpolate.interp1d(df_chr1.genpos.values, df_chr1[prob_labels].values, axis=0)
+        # df_chr1['genpos_rounded'] = (df_chr1['genpos'] / bin_size).astype('int')*bin_size 
+        # df_chr1 = df_chr1.groupby('genpos_rounded').first().reset_index()
+        # df_chr1 = df_chr1.drop(columns='genpos_rounded')
+        f1 = interpolate.interp1d(df_chr1.genpos.values, df_chr1[prob_labels].values, axis=0, kind='nearest')
         interp_genpos1 = np.arange(df_chr1.genpos.values[0], df_chr1.genpos.values[-1], bin_size)
         prob_values1 = f1(interp_genpos1)
 
         df_chr2 = df_hap2[df_hap2.chr == chr]
-        f2 = interpolate.interp1d(df_chr2.genpos.values, df_chr2[prob_labels].values, axis=0)
+        # df_chr2['genpos_rounded'] = (df_chr2['genpos'] / bin_size).astype('int')*bin_size 
+        # df_chr2 = df_chr2.groupby('genpos_rounded').first().reset_index()
+        # df_chr2 = df_chr2.drop(columns='genpos_rounded')
+        f2 = interpolate.interp1d(df_chr2.genpos.values, df_chr2[prob_labels].values, axis=0, kind='nearest')
         interp_genpos2 = np.arange(df_chr2.genpos.values[0], df_chr2.genpos.values[-1], bin_size)
         prob_values2 = f2(interp_genpos2)
-        # for i in range(len(interp_genpos1)):
-        #     if min(abs(df_chr1.genpos.values - interp_genpos1[i])) > 0.1*bin_size:
-        #         prob_values1[i] = np.nan
-        #         prob_values2[i] = np.nan
+
+        genpos_diffs = np.diff(df_chr1.genpos.values)
+        interp_genpos_nearest = np.searchsorted(df_chr1.genpos.values, interp_genpos1)
+        too_far_mask = np.abs(df_chr1.genpos.values[interp_genpos_nearest] - interp_genpos1) > max(0.05, bin_size)
+        prob_values1[too_far_mask] = np.nan
+        prob_values2[too_far_mask] = np.nan
         props = np.nansum(prob_values1, axis=0)
         lens = np.sum(~np.isnan(prob_values1[:,0]))
         for count, bin in enumerate(np.arange(int(bin_min / bin_size), int(bin_max / bin_size), 1)):
@@ -234,6 +247,8 @@ def run_ld_curve_dating(args):
             file = glob.glob(output_prefix + '_overall_membership_*' + str(hap_no) + '.csv')[0]
             dfc = pd.read_csv(file, sep='\s+')
             dfc['genpos'] = 100 * dfc['genpos'] ## converting M to cM
+            dfc = dfc.drop_duplicates(subset=['genpos', 'chr'])
+            dfc = dfc.sort_values(by=['chr', 'genpos'])
             ## remove jack-knife block (removing 5% from each chromosome)
             for chr in dfc.chr.unique():
                 dfc.loc[dfc.chr == chr, 'block'] = pd.cut(dfc[dfc.chr == chr].pos, bins=jn_blocks, labels=False)
