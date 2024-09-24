@@ -398,7 +398,7 @@ def get_target_branch_length(
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
                     if exact_pos is not None:
-                        if (exact_pos.values != exact_pos_file).any():
+                        if (exact_pos[(exact_pos['chr'] == chr)].values != exact_pos_file).any():
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
                     for i in target_branch_length_sample_chr:
@@ -455,12 +455,10 @@ def get_target_branch_length(
                 for tid in tqdm(range(ts.num_trees)):
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
-                            ## caution - need to change the line below for gt_ref not none
-                            number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples, args.node_persist_thresh)
-                            # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
-                            # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
-                            if np.min(number_of_overlaps_list) < 1:
-                                pdb.set_trace()
+                            if args.hmm:
+                                number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples, args.node_persist_thresh)
+                                # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
+                                # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             num_muts_list = []

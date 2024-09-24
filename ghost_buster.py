@@ -788,14 +788,14 @@ def main(args):
             else:
                 print(f"Recombination map for chromosome {chr} not found!")
                 continue
-            df = pd.DataFrame(np.arange(tree_left_bp[0], tree_right_bp[-1], 1), columns=['pos'])
+            df = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], 1), columns=['pos'])
             df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'].values)
             m_grid = args.cm_grid / 100
             df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
             df = df.groupby('genpos_rounded').first().reset_index()
             df = df.drop(columns=['genpos_rounded'])
             df['chr'] = chr
-            df_kb = pd.DataFrame(np.arange(tree_left_bp[0], tree_right_bp[-1], force_build_orig), columns=['pos'])
+            df_kb = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], force_build_orig), columns=['pos'])
             df_kb['chr'] = chr
             df_union = pd.concat([df[['chr', 'pos']], df_kb[['chr', 'pos']]]).drop_duplicates().sort_values(by='pos').reset_index(drop=True)
             df_all = pd.concat([df_all, df_union], ignore_index=True)
