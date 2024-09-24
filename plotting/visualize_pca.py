@@ -48,13 +48,15 @@ for sample in sample_list:
         with open(fixed_params_file_name, "rb") as f_pkl:
             (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
             _, num_groups, num_epochs = denom.shape
+            start_index = 1 if ignore_first_epoch else 0
+            end_index = num_epochs-2 if ignore_last_epoch else num_epochs-1
             for i in range(len(proportion_of_coalescing)):
                 sum_prop_coal = np.zeros(num_groups)
                 for c in range(len(proportion_of_coalescing[i])):
-                    if epoch_index[i][c] > 1 and epoch_index[i][c] < num_epochs - 1:
+                    if epoch_index[i][c] >= start_index and epoch_index[i][c] <= end_index:
                         sum_prop_coal += np.array(proportion_of_coalescing[i][c])
                 num_overall.append(sum_prop_coal)
-                denom_overall.append(np.sum(denom[i,:,1:num_epochs - 2], axis=1))
+                denom_overall.append(np.sum(denom[i,:,start_index:end_index+1], axis=1))
 
 # Process data
 post_overall = np.array(post_overall)
@@ -103,66 +105,93 @@ for i in range(post_overall.shape[1]):
     print(model.summary())
 
 # Plotting KDEs for each component pairwise
-plt.clf()
-fig, ax = plt.subplots(2, len(components), figsize=(5 * len(components), 10), dpi=300)
-palette = ['purple','green','red','blue'] #sns.color_palette("Set2", len(components))  # Use the Set2 palette to avoid blue and orange
+# plt.clf()
+# fig, ax = plt.subplots(2, len(components), figsize=(5 * len(components), 10), dpi=300)
 
-# To store the min/max limits after plotting for PC1-PC2 and PC3-PC4
-x1_min, x1_max = float('inf'), float('-inf')
-y1_min, y1_max = float('inf'), float('-inf')
+# # To store the min/max limits after plotting for PC1-PC2 and PC3-PC4
+# x1_min, x1_max = float('inf'), float('-inf')
+# y1_min, y1_max = float('inf'), float('-inf')
 
-x3_min, x3_max = float('inf'), float('-inf')
-y3_min, y3_max = float('inf'), float('-inf')
+# x3_min, x3_max = float('inf'), float('-inf')
+# y3_min, y3_max = float('inf'), float('-inf')
 
-# First pass to determine the limits
-for idx, component in enumerate(components):
-    # PC1 vs PC2 for each component (first row)
-    sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC1', y='PC2', ax=ax[0, idx], 
-                fill=True, color=palette[idx], cbar=False)
+# # First pass to determine the limits
+# for idx, component in enumerate(components):
+#     # PC1 vs PC2 for each component (first row)
+#     sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC1', y='PC2', ax=ax[0, idx], 
+#                 fill=True, color=palette[idx], cbar=False, cut=0.5)
     
-    # Infer the limits from the plot
-    x1_min_temp, x1_max_temp = ax[0, idx].get_xlim()
-    y1_min_temp, y1_max_temp = ax[0, idx].get_ylim()
+#     # Infer the limits from the plot
+#     x1_min_temp, x1_max_temp = ax[0, idx].get_xlim()
+#     y1_min_temp, y1_max_temp = ax[0, idx].get_ylim()
     
-    x1_min = min(x1_min, x1_min_temp)
-    x1_max = max(x1_max, x1_max_temp)
-    y1_min = min(y1_min, y1_min_temp)
-    y1_max = max(y1_max, y1_max_temp)
+#     x1_min = min(x1_min, x1_min_temp)
+#     x1_max = max(x1_max, x1_max_temp)
+#     y1_min = min(y1_min, y1_min_temp)
+#     y1_max = max(y1_max, y1_max_temp)
     
-    # PC3 vs PC4 for each component (second row)
-    sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC3', y='PC4', ax=ax[1, idx], 
-                fill=True, color=palette[idx], cbar=False)
+#     # PC3 vs PC4 for each component (second row)
+#     sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC3', y='PC4', ax=ax[1, idx], 
+#                 fill=True, color=palette[idx], cbar=False, cut=0.5)
     
-    # Infer the limits from the plot
-    x3_min_temp, x3_max_temp = ax[1, idx].get_xlim()
-    y3_min_temp, y3_max_temp = ax[1, idx].get_ylim()
+#     # Infer the limits from the plot
+#     x3_min_temp, x3_max_temp = ax[1, idx].get_xlim()
+#     y3_min_temp, y3_max_temp = ax[1, idx].get_ylim()
     
-    x3_min = min(x3_min, x3_min_temp)
-    x3_max = max(x3_max, x3_max_temp)
-    y3_min = min(y3_min, y3_min_temp)
-    y3_max = max(y3_max, y3_max_temp)
+#     x3_min = min(x3_min, x3_min_temp)
+#     x3_max = max(x3_max, x3_max_temp)
+#     y3_min = min(y3_min, y3_min_temp)
+#     y3_max = max(y3_max, y3_max_temp)
+
+pc1_min = df_pca['PC1'].quantile(0.02)
+pc1_max = df_pca['PC1'].quantile(0.98)
+pc2_min = df_pca['PC2'].quantile(0.02)
+pc2_max = df_pca['PC2'].quantile(0.98)
+pc3_min = df_pca['PC3'].quantile(0.02)
+pc3_max = df_pca['PC3'].quantile(0.98)
+pc4_min = df_pca['PC4'].quantile(0.02)
+pc4_max = df_pca['PC4'].quantile(0.98)
+palette = ['purple','green','red','blue','orange','brown','pink','gray','olive','cyan']
 
 # Second pass to re-plot with consistent limits
 plt.clf()
-fig, ax = plt.subplots(1, len(components), figsize=(5 * len(components), 5), dpi=300)
+fig, ax = plt.subplots(2, len(components), figsize=(5 * len(components), 10), dpi=300)
 
 for idx, component in enumerate(components):
-    # PC1 vs PC2 for each component (first row)
-    sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC1', y='PC2', ax=ax[idx], 
-                fill=True, color=palette[idx], cbar=False)
-    ax[idx].set_xlim(x1_min, x1_max)  # Apply the global x-axis limit for PC1
-    ax[idx].set_ylim(y1_min, y1_max)  # Apply the global y-axis limit for PC2
-    ax[idx].set_xlabel(f'PC1', fontsize=18)
-    ax[idx].set_ylabel(f'PC2', fontsize=18)
-    ax[idx].set_title(f'{component}', fontsize=18, loc='center')
+    sns.kdeplot(
+        data=df_pca[df_pca['Posterior_bin'] == component], 
+        x='PC1', 
+        y='PC2', 
+        ax=ax[0,idx], 
+        fill=True, 
+        color=palette[idx], 
+        cbar=False, 
+        cut=0, 
+        clip=((pc1_min, pc1_max), (pc2_min, pc2_max))
+    )
+    ax[0,idx].set_xlim(pc1_min, pc1_max)
+    ax[0,idx].set_ylim(pc2_min, pc2_max)
+    ax[0,idx].set_xlabel('PC1', fontsize=18)
+    ax[0,idx].set_ylabel('PC2', fontsize=18)
+    ax[0,idx].set_title(f'{component}', fontsize=18, loc='center')
 
-    # # PC3 vs PC4 for each component (second row)
-    # sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC3', y='PC4', ax=ax[1, idx], 
-    #             fill=True, color=palette[idx], cbar=False)
-    # ax[1, idx].set_xlim(x3_min, x3_max)  # Apply the global x-axis limit for PC3
-    # ax[1, idx].set_ylim(y3_min, y3_max)  # Apply the global y-axis limit for PC4
-    # ax[1, idx].set_xlabel(f'{component} (PC3)', fontsize=18)
-    # ax[1, idx].set_ylabel(f'{component} (PC4)', fontsize=18)
+    # PC3 vs PC4 for each component (second row)
+    sns.kdeplot(
+        data=df_pca[df_pca['Posterior_bin'] == component], 
+        x='PC3', 
+        y='PC4', 
+        ax=ax[1,idx], 
+        fill=True, 
+        color=palette[idx], 
+        cbar=False, 
+        cut=0, 
+        clip=((pc3_min, pc3_max), (pc4_min, pc4_max))
+    )
+    ax[1, idx].set_xlim(pc3_min, pc3_max)  # Apply the global x-axis limit for PC3
+    ax[1, idx].set_ylim(pc4_min, pc4_max)  # Apply the global y-axis limit for PC4
+    ax[1, idx].set_xlabel(f'PC3', fontsize=18)
+    ax[1, idx].set_ylabel(f'PC4', fontsize=18)
+    ax[1,idx].set_title(f'{component}', fontsize=18, loc='center')
 
 plt.tight_layout()
 plt.savefig(output_file_name + '_pca.svg', dpi=300)

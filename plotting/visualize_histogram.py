@@ -15,22 +15,22 @@ mpl.rcParams['ytick.major.size'] = 10
 mpl.rcParams['axes.linewidth'] = 2
 mpl.rcParams['xtick.major.width'] = 2
 mpl.rcParams['ytick.major.width'] = 2
+palette = ['purple','green','red','blue','orange','brown','pink','gray','olive','cyan']
 
 def plot_histogram_from_csv(df, output):
-    if not all(col in df.columns for col in ['prob_0', 'prob_1']):
-        print("Required columns prob_0, prob_1 not found.")
+    prob_cols = np.sort([col for col in df.columns if col.startswith('prob_')])
+    if not prob_cols:
+        print("No columns starting with 'prob_' found.")
         return
-    plt.figure(figsize=(14, 7))
-    plt.subplot(1, 2, 1)
-    plt.hist(df['prob_0'], bins=50, color='blue', alpha=0.7)
-    plt.title('Histogram for component 1', fontsize=24)
-    plt.xlabel('Probability', fontsize=20)
-    plt.ylabel('Frequency', fontsize=20)
-    plt.subplot(1, 2, 2)
-    plt.hist(df['prob_1'], bins=50, color='green', alpha=0.7)
-    plt.title('Histogram for component 2', fontsize=24)
-    plt.xlabel('Probability', fontsize=20)
-    plt.ylabel('Frequency', fontsize=20)
+    num_components = len(prob_cols)
+    plt.figure(figsize=(7 * num_components, 7))  # Adjust width dynamically
+    for i, col in enumerate(prob_cols):
+        plt.subplot(1, num_components, i + 1)
+        plt.hist(df[col], bins=50, alpha=0.7, color=palette[i])
+        plt.title(f'Histogram for {col}', fontsize=24)
+        plt.xlabel('Probability', fontsize=20)
+        plt.ylabel('Frequency', fontsize=20)
+
     plt.tight_layout()
     plt.savefig(output + '_histogram.svg', dpi=300, transparent=True)
     plt.show()
@@ -41,6 +41,5 @@ if __name__ == "__main__":
     for file in glob.glob(post_file_name + "_overall_membership_*_sample_id_*.csv"):
         df = pd.read_csv(file, sep='\s+')
         dfc.append(df)
-    
     combined_df = pd.concat(dfc, ignore_index=True)
     plot_histogram_from_csv(combined_df, post_file_name)
