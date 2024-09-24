@@ -67,11 +67,17 @@ for (i in 1:num_components){
   
   ## Get the corresponding proportion for this component
   proportion_value <- last_iter_prop %>% filter(Components == paste0("comp", i)) %>% pull(Proportion)
+  xlim_values <- range(28 * coal_subset$epoch.start, na.rm = TRUE)
+  ylim_values <- range(0.5 / coal_subset$mean, na.rm = TRUE)
   
+  # Adjust the limits with a small padding for better visualization (optional)
+  xlim_values <- c(max(5e2, xlim_values[1] * 0.5), min(2e6, xlim_values[2] * 2))
+  ylim_values <- c(max(5e2, ylim_values[1] * 0.5), min(2e7, ylim_values[2] * 2))
+
   p <- ggplot(coal_subset) +
     geom_step(aes(x = 28*epoch.start, y = 0.5/mean, color = Reference), lwd = 1.2) +
-    scale_x_continuous(trans = "log10", limit = c(5e3, 2e6)) +
-    scale_y_continuous(trans = "log10", limit = c(2e2, 2e7)) +
+    scale_x_continuous(trans = "log10", limits = xlim_values) +
+    scale_y_continuous(trans = "log10", limits = ylim_values) +
     xlab("years ago") + 
     ylab(paste0("Component ", i, " (", round(proportion_value, 2), "%)")) + 
     theme_classic(base_size = 18, base_family = "Helvetica")  # Explicitly setting the font

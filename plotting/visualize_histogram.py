@@ -1,4 +1,5 @@
-import argparse
+import glob
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -15,8 +16,7 @@ mpl.rcParams['axes.linewidth'] = 2
 mpl.rcParams['xtick.major.width'] = 2
 mpl.rcParams['ytick.major.width'] = 2
 
-def plot_histogram_from_csv(csv_file_path):
-    df = pd.read_csv(csv_file_path, delimiter='\t')
+def plot_histogram_from_csv(df, output):
     if not all(col in df.columns for col in ['prob_0', 'prob_1']):
         print("Required columns prob_0, prob_1 not found.")
         return
@@ -32,8 +32,15 @@ def plot_histogram_from_csv(csv_file_path):
     plt.xlabel('Probability', fontsize=20)
     plt.ylabel('Frequency', fontsize=20)
     plt.tight_layout()
+    plt.savefig(output + '_histogram.svg', dpi=300, transparent=True)
     plt.show()
 
-# Example usage:
-csv_file_path = 'ancestry_probabilities.csv'
-plot_histogram_from_csv(csv_file_path)
+if __name__ == "__main__":
+    post_file_name = sys.argv[1]
+    dfc = []
+    for file in glob.glob(post_file_name + "_overall_membership_*_sample_id_*.csv"):
+        df = pd.read_csv(file, sep='\s+')
+        dfc.append(df)
+    
+    combined_df = pd.concat(dfc, ignore_index=True)
+    plot_histogram_from_csv(combined_df, post_file_name)
