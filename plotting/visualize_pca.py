@@ -41,12 +41,12 @@ post_overall = []
 num_overall = []
 denom_overall = []
 for sample in sample_list:
-    post = pd.read_csv(glob.glob(output_file_name + '_overall_membership_*_sample_id_{0}.csv'.format(sample))[0], '\s+')
+    post = pd.read_csv(glob.glob(output_file_name + '_overall_membership_*_sample_id_{0}.csv'.format(sample))[0], sep='\s+')
     post_overall.extend(post[['prob_' + str(i) for i in range(post.shape[1] - 3)]].values)
     for chr in chr_list:
         fixed_params_file_name = output_file_name + "_fixed_params_chr{0}_sample{1}.pkl".format(chr, sample)
         with open(fixed_params_file_name, "rb") as f_pkl:
-            (force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
+            (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
             _, num_groups, num_epochs = denom.shape
             for i in range(len(proportion_of_coalescing)):
                 sum_prop_coal = np.zeros(num_groups)
@@ -148,12 +148,13 @@ fig, ax = plt.subplots(1, len(components), figsize=(5 * len(components), 5), dpi
 
 for idx, component in enumerate(components):
     # PC1 vs PC2 for each component (first row)
-    sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC1', y='PC2', ax=ax[0, idx], 
+    sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC1', y='PC2', ax=ax[idx], 
                 fill=True, color=palette[idx], cbar=False)
-    ax[0, idx].set_xlim(x1_min, x1_max)  # Apply the global x-axis limit for PC1
-    ax[0, idx].set_ylim(y1_min, y1_max)  # Apply the global y-axis limit for PC2
-    ax[0, idx].set_xlabel(f'{component} (PC1)', fontsize=18)
-    ax[0, idx].set_ylabel(f'{component} (PC2)', fontsize=18)
+    ax[idx].set_xlim(x1_min, x1_max)  # Apply the global x-axis limit for PC1
+    ax[idx].set_ylim(y1_min, y1_max)  # Apply the global y-axis limit for PC2
+    ax[idx].set_xlabel(f'PC1', fontsize=18)
+    ax[idx].set_ylabel(f'PC2', fontsize=18)
+    ax[idx].set_title(f'{component}', fontsize=18, loc='center')
 
     # # PC3 vs PC4 for each component (second row)
     # sns.kdeplot(data=df_pca[df_pca['Posterior_bin'] == component], x='PC3', y='PC4', ax=ax[1, idx], 

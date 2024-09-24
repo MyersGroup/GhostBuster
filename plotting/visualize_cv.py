@@ -1,43 +1,67 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
-import sys
-import scipy.stats as stats
-import random
 import matplotlib as mpl
-font = {'family' : 'normal', 'size' : 22}
+
+# Font and plot style configurations
+font = {'family': 'normal', 'size': 22}
 mpl.rc('font', **font)
-plt.rc('axes.spines', **{'bottom':True, 'left':True, 'right':False, 'top':False})
-mpl.rcParams['xtick.labelsize'] = 20          # Set global font size for x-tick labels
-mpl.rcParams['ytick.labelsize'] = 20          # Set global font size for y-tick labels
-mpl.rcParams['xtick.major.size'] = 10           # Set global length for major x-ticks
-mpl.rcParams['ytick.major.size'] = 10           # Set global length for major y-ticks
-mpl.rcParams['axes.linewidth'] = 2            # Set global thickness for axis lines
-mpl.rcParams['xtick.major.size'] = 10         # Set global length for major x-ticks
-mpl.rcParams['ytick.major.size'] = 10         # Set global length for major y-ticks
-mpl.rcParams['xtick.major.width'] = 2         # Set global width for major x-ticks
-mpl.rcParams['ytick.major.width'] = 2         # Set global width for major y-ticks
+plt.rc('axes.spines', **{'bottom': True, 'left': True, 'right': False, 'top': False})
+mpl.rcParams['xtick.labelsize'] = 20
+mpl.rcParams['ytick.labelsize'] = 20
+mpl.rcParams['xtick.major.size'] = 10
+mpl.rcParams['ytick.major.size'] = 10
+mpl.rcParams['axes.linewidth'] = 2
+mpl.rcParams['xtick.major.width'] = 2
+mpl.rcParams['ytick.major.width'] = 2
 
-data = {
-    'k': [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 4],
-    'll': [-104, -90, -130, -101, -103, -103, -199, -200, -101, -102, np.nan, np.nan]
-}
+# Argument parsing using nargs=[+]
+parser = argparse.ArgumentParser(description="Scatter plot with nargs for k, ll, and r2 values")
+parser.add_argument('--k', nargs='+', type=int, help='Cluster numbers (k)')
+parser.add_argument('--ll', nargs='+', type=float, help='Log-likelihood values')
+parser.add_argument('--r2', nargs='+', type=float, help='R² values')
+parser.add_argument('--output', type=str, help='Output file name')
+
+args = parser.parse_args()
+assert len(args.k) == len(args.ll) == len(args.r2)
+
+# Convert inputs into a DataFrame
+data = {'k': args.k, 'll': args.ll, 'r2': args.r2}
 df = pd.DataFrame(data)
-df = df.dropna()
-def mean_confidence_interval(data, confidence=0.95):
-    mean = np.mean(data)
-    n = len(data)
-    stderr = stats.sem(data)
-    h = stderr * stats.t.ppf((1 + confidence) / 2., n-1)
-    return mean, h
+print(df)
 
-grouped = df.groupby('k')['ll'].apply(lambda x: mean_confidence_interval(x)).apply(pd.Series)
-grouped.columns = ['mean', 'ci']
+# Create subplots stacked on top of each other
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5), sharex=True)  # Share the x-axis
 
-plt.figure(figsize=(6,6))
-plt.errorbar(grouped.index, grouped['mean'], yerr=grouped['ci'], fmt='o', capsize=10, markersize=12, linewidth=3, elinewidth=3)
-plt.xlabel('Number of clusters')
-plt.xticks(grouped.index)
-plt.title('Mean held-out likelihood')
-plt.savfig(output + '_cross_validation.svg', dpi=300, transparent=True)
+# First subplot for ll values
+ax1.scatter(df['k'], df['ll'], s=150, c='blue', edgecolors='black', linewidths=2, label='Held-out Log-Likelihood')  # Larger points
+ax1.plot(df['k'], df['ll'], linestyle='--', color='blue', linewidth=3)  # Fatter lines
+ax1.set_ylabel(None)
+# min_lim_ll = df.ll.min() - 0.2 * abs(df.ll.min())
+# max_lim_ll = df.ll.max() + 0.2 * abs(df.ll.max())
+# ax1.set_ylim(min_lim_ll, max_lim_ll)
+ax1.legend(loc='upper right', fontsize=16, frameon=False)  # Smaller legend font
+ax1.set_xticks(args.k)  # Set xticks only at args.k
+
+# Second subplot for r2 values
+ax2.scatter(df['k'], df['r2'], s=150, c='green', edgecolors='black', linewidths=2, label='Adjusted R²')  # Larger points
+ax2.plot(df['k'], df['r2'], linestyle='--', color='green', linewidth=3)  # Fatter lines
+ax2.set_ylabel(None)
+# min_lim_r2 = df.r2.min() - 0.2 * abs(df.r2.min())
+# max_lim_r2 = df.r2.max() + 0.2 * abs(df.r2.max())
+# ax2.set_ylim(min_lim_r2, max_lim_r2)
+ax2.legend(loc='upper right', fontsize=16, frameon=False)  # Smaller legend font
+ax2.set_xticks(args.k)  # Set xticks only at args.k
+
+# Common x-label
+fig.text(0.5, 0.04, 'Number of clusters', ha='center', fontsize=22)  # Adjust position and size
+
+# Adjust layout
+plt.tight_layout(rect=[0, 0.04, 1, 1])  # Adjust the bottom space for the common xlabel
+
+# Save the figure
+plt.savefig(args.output + '.svg', dpi=300, transparent=True)
+
+# For testing: uncomment below to simulate input in an interactive environment
+# parser.parse_args(['--k', '1', '2', '3', '--ll', '-104', '-199', '-130', '--r2', '0.8', '0.6', '0.9', '--output', 'test_output'])

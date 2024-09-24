@@ -10,11 +10,6 @@ library(nls2)
 library(ggthemes)
 library(reticulate)
 
-### change here with the location of your python (run 'which python')
-virtualenv_create(envname = "gb", python = "/Users/hloya/miniconda3/envs/gb/bin/python")
-reticulate::use_virtualenv("gb", required = TRUE)
-np <- import("numpy")
-
 filename <- commandArgs(trailingOnly = TRUE)[1]
 
 colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
