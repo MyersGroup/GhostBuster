@@ -170,10 +170,20 @@ def filter_recomb_rate(
     )
     return mask_dodgy
 
-def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, chr_map):
+def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, recomb_rates, chr_map):
     mask_dodgy = np.zeros(len(tree_left_bp), dtype="bool")
+    # mask_dodgy_nan = np.zeros(len(tree_left_bp), dtype="bool")
+    recomb_rates = np.array(recomb_rates)
     count = 0
     for chr_count, chr in enumerate(np.unique(chr_map)):
+        # recomb_rates_chr = recomb_rates[chr_map == chr]
+        # for i, r in enumerate(recomb_rates_chr):
+        #     if np.isnan(r):
+        #         recomb_rates_chr[
+        #             np.abs(np.array(tree_left_bp)[chr_map == chr] - np.array(tree_left_bp)[chr_map == chr][i]) < 500000
+        #         ] = np.inf
+        # recomb_rates_chr = np.nan_to_num(recomb_rates_chr, posinf=np.nan)
+        # mask_dodgy_nan[chr_map == chr] = ~np.isnan(recomb_rates_chr)
         membership_mask_chr = membership_mask[membership_mask['chr'] == chr]
         membership_mask_chr['pos'] = membership_mask_chr['pos']
         membership_mask_chr['pos'] = membership_mask_chr['pos'].astype(int)
@@ -350,10 +360,12 @@ def get_target_branch_length(
     exact_pos is a dataframe with chr, pos where we want the target branch length exactly.
     """    
     target_branch_length = []
+    mutscale = []
     
     for sample_no, sample in enumerate(sample_list):
         count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
         target_branch_length_sample = List()
+        mutscale_sample = List()
         leave_one_sample_out = list(set(sample_list) - set([sample]))
         
         for chr_no, chr in enumerate(chrs):
@@ -367,7 +379,7 @@ def get_target_branch_length(
                     (
                         mut_scaling_file, hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
                         ignore_last_epoch, masking_threshold, poplabels_file,
-                        target_branch_length_sample_chr, gt_ref_na_sum, exact_pos_file
+                        target_branch_length_sample_chr, mutscale_sample_chr, gt_ref_na_sum, exact_pos_file
                     ) = pickle.load(f_pkl)
                 
                 if (
@@ -394,6 +406,11 @@ def get_target_branch_length(
                         for j in i:
                             numba_i.append(j)
                         target_branch_length_sample.append(numba_i)
+                    for i in mutscale_sample_chr:
+                        numba_i = List().empty_list(nb.types.float64)
+                        for j in i:
+                            numba_i.append(j)
+                        mutscale_sample.append(numba_i)
                     print(f"Loaded branch persistence statistics from: {branch_persistence_file_name}")
                     continue
                 else:
@@ -402,6 +419,7 @@ def get_target_branch_length(
             except:
                 print(f"Saving branch persistence statistics to: {branch_persistence_file_name}")
                 target_branch_length_sample_chr = []
+                mutscale_sample_chr = []
                 ts = ts_list[chr_no]
                 ts_edges = ts.edges()
 
@@ -480,22 +498,32 @@ def get_target_branch_length(
                             ## removing this for true trees as trees are accurate
                             if args.mut_scaling:
                                 number_window_list = scale_number_window_list(number_window_list, num_muts_list)
+                                mutscale_sample_chr.append(scale_number_window_list(np.ones_like(number_window_list), num_muts_list))
+                            else:
+                                mutscale_sample_chr.append(np.ones_like(number_window_list))
                             target_branch_length_sample_chr.append(number_window_list)
                         count_all_tree2 += 1
                     tree.next()
                                 
                 target_branch_length_sample_chr = [sublist for sublist, count in zip(target_branch_length_sample_chr, num_sites_per_tree) for _ in range(count)]
+                mutscale_sample_chr = [sublist for sublist, count in zip(mutscale_sample_chr, num_sites_per_tree) for _ in range(count)]
                 with open(branch_persistence_file_name, "wb") as f_pkl:
-                    pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
+                    pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, mutscale_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)
                     for j in i:
                         numba_i.append(j)
                     target_branch_length_sample.append(numba_i)
+                for i in mutscale_sample_chr:
+                    numba_i = List().empty_list(nb.types.float64)
+                    for j in i:
+                        numba_i.append(j)
+                    mutscale_sample.append(numba_i)
 
         target_branch_length.append(target_branch_length_sample)
+        mutscale.append(mutscale_sample)
 
-    return target_branch_length  ## num_samples x num_trees x num_branches
+    return target_branch_length, mutscale  ## num_samples x num_trees x num_branches
 
 if __name__ == "__main__":
     load_gamma(

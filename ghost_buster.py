@@ -450,6 +450,7 @@ def random_sweep(
     mask_dodgy,
     epoch_intervals,
     target_branch_length_masked,
+    mutscale_masked,
     tree_left_bp,
     tree_right_bp,
     gen_grid_all,
@@ -470,7 +471,7 @@ def random_sweep(
             denom1_unscaled,
             proportion_of_coalescing_all1,
             epoch_index_all1,
-        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], gt_ref, unique_groups, exact_pos)
+        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], mutscale_masked[sample_no], gt_ref, unique_groups, exact_pos)
         num.append(num1)
         denom.append(denom1)
         denom_unscaled.append(denom1_unscaled)
@@ -680,7 +681,8 @@ def write_membership_gamma(
         np.save(f, trans_prop)
 
 def main(args):
-    if args.load_mask is not None:
+    if args.load_mask is not None or args.cm_grid is not None:
+        force_build_orig = args.force_build
         args.force_build = 1
         print("Exact positions can only be used with force_build=1")
 
@@ -772,6 +774,35 @@ def main(args):
         chr_map,
     ) = load_tree_stats(args, ts_list, poplabels, args.tree_stats_file_prefix)
 
+    ## cM grid option
+    if args.cm_grid is not None:
+        df_all = pd.DataFrame()
+        chrs = list(map(int, args.chrs.split(",")))
+        for chr_no, chr in enumerate(chrs):
+            rec_file = args.rec + str(chr) + ".txt"
+            rec_file_gz = args.rec + str(chr) + ".txt.gz"
+            if os.path.isfile(rec_file):
+                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file)
+            elif os.path.isfile(rec_file_gz):
+                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file_gz)
+            else:
+                print(f"Recombination map for chromosome {chr} not found!")
+                continue
+            df = pd.DataFrame(np.arange(tree_left_bp[0], tree_right_bp[-1], 1), columns=['pos'])
+            df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'].values)
+            m_grid = args.cm_grid / 100
+            df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
+            df = df.groupby('genpos_rounded').first().reset_index()
+            df = df.drop(columns=['genpos_rounded'])
+            df['chr'] = chr
+            df_kb = pd.DataFrame(np.arange(tree_left_bp[0], tree_right_bp[-1], force_build_orig), columns=['pos'])
+            df_kb['chr'] = chr
+            df_union = pd.concat([df[['chr', 'pos']], df_kb[['chr', 'pos']]]).drop_duplicates().sort_values(by='pos').reset_index(drop=True)
+            df_all = pd.concat([df_all, df_union], ignore_index=True)
+        print("Saving the mask file corresponding to the cM grid...")
+        df_all.to_csv(args.output + '.cm.mask', sep='\t', index=None)
+        args.load_mask = args.output + '.cm.mask'
+
     ### Filter based on recombination rates
     if args.load_mask is None:
         mask_dodgy = []
@@ -790,7 +821,7 @@ def main(args):
         exact_pos = exact_pos.sort_values(by=['chr', 'pos'])
         exact_pos = exact_pos.reset_index(drop=True)
         mask_dodgy = []
-        load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, chr_map)
+        load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)
         for sample_id in args.sample_id:
             mask_dodgy.append(load_mask)
 
@@ -865,7 +896,7 @@ def main(args):
         gt_ref = None
 
     st = time.time()
-    target_branch_length_masked = get_target_branch_length(
+    target_branch_length_masked, mutscale_masked = get_target_branch_length(
         args, poplabels, ts_list, chrs, mask_dodgy, args.sample_id, gt_ref=gt_ref, exact_pos=exact_pos
     )
     print("target branch length: " + str(time.time() - st))
@@ -893,6 +924,7 @@ def main(args):
         mask_dodgy,
         epoch_intervals,
         target_branch_length_masked,
+        mutscale_masked,
         tree_left_bp,
         tree_right_bp,
         gen_grid_all,
@@ -988,11 +1020,11 @@ def main(args):
     )
     
     print("Saving the coal. rates and proportions without using HMM")
-    target_branch_length_masked_unity = target_branch_length_masked
-    for i in range(len(target_branch_length_masked_unity)):
-        for j in range(len(target_branch_length_masked_unity[i])):
-            for k in range(len(target_branch_length_masked_unity[i][j])):
-                target_branch_length_masked_unity[i][j][k] = 1
+    # target_branch_length_masked_unity = target_branch_length_masked
+    # for i in range(len(target_branch_length_masked_unity)):
+    #     for j in range(len(target_branch_length_masked_unity[i])):
+    #         for k in range(len(target_branch_length_masked_unity[i][j])):
+    #             target_branch_length_masked_unity[i][j][k] = 1
     gen_grid_all_unscaled = copy.deepcopy(gen_grid_all)
     for sample_no in range(len(args.sample_id)):
         gen_grid_all_unscaled[sample_no] = 1e3*np.arange(0,len(gen_grid_all[sample_no]))
@@ -1011,7 +1043,7 @@ def main(args):
         n_sites,
         len(args.sample_id),
         epoch,
-        target_branch_length_masked_unity,
+        mutscale_masked,
         tree_left_bp,
         tree_right_bp,
         gen_grid_all_unscaled,
@@ -1204,31 +1236,4 @@ if __name__ == "__main__":
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)
     print(args)    
-    if args.cm_grid is not None:
-        df_all = pd.DataFrame()
-        chrs = list(map(int, args.chrs.split(",")))
-        for chr_no, chr in enumerate(chrs):
-            rec_file = args.rec + str(chr) + ".txt"
-            rec_file_gz = args.rec + str(chr) + ".txt.gz"
-            if os.path.isfile(rec_file):
-                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file)
-            elif os.path.isfile(rec_file_gz):
-                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file_gz)
-            else:
-                print(f"Recombination map for chromosome {chr} not found!")
-                continue
-            df = pd.DataFrame(np.arange(recomb_map_msprime.left[0], recomb_map_msprime.right[-1], 1), columns=['pos'])
-            df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'].values)
-            m_grid = args.cm_grid / 100
-            df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
-            df = df.groupby('genpos_rounded').first().reset_index()
-            df = df.drop(columns=['genpos_rounded'])
-            df['chr'] = chr
-            df_kb = pd.DataFrame(np.arange(recomb_map_msprime.left[0], recomb_map_msprime.right[-1], args.force_build), columns=['pos'])
-            df_kb['chr'] = chr
-            df_union = pd.concat([df[['chr', 'pos']], df_kb[['chr', 'pos']]]).drop_duplicates().sort_values(by='pos').reset_index(drop=True)
-            df_all = pd.concat([df_all, df_union], ignore_index=True)
-        print("Saving the mask file corresponding to the cM grid...")
-        df_all.to_csv(args.output + '.cm.mask', sep='\t', index=None)
-        args.load_mask = args.output + '.cm.mask'
     main(args)

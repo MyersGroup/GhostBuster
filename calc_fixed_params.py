@@ -21,6 +21,7 @@ def fixed_parameters(
     sample_list,
     epoch_intervals_pow,
     target_branch_length_masked,
+    mutscale_masked,
     chr,
     force_build=1,
     ignore_first_epoch=False,
@@ -381,7 +382,7 @@ def fixed_parameters(
         epoch_index_in_tree = epoch_index_all[n_t]
         for c_t in range(len(denom_all[n_t])):
             denom_epochwise[n_t] += denom_all[n_t][c_t]/target_branch_length_masked[n_t][c_t]
-            denom_epochwise_unscaled[n_t] += denom_all[n_t][c_t]
+            denom_epochwise_unscaled[n_t] += denom_all[n_t][c_t]/mutscale_masked[n_t][c_t]
             
     return (
         coal_count,
@@ -392,7 +393,7 @@ def fixed_parameters(
     )
 
 
-def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked, gt_ref=None, unique_groups=None, exact_pos=None):
+def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epoch_intervals, target_branch_length_masked, mutscale_masked, gt_ref=None, unique_groups=None, exact_pos=None):
     chrs = list(map(int, args.chrs.split(",")))
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP) if unique_groups is None else unique_groups
     epoch_intervals_pow = np.power(10, epoch_intervals)
@@ -446,6 +447,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             mask_dodgy_sam_chr = mask_dodgy[np.array(chr_map) == chr]
             num_trees = np.sum(mask_dodgy_sam_chr)
             target_branch_length_masked_chr = []
+            mutscale_masked_chr = []
             # make faster #
             if chr_no == 0:
                 num_sites_per_tree = np.zeros(np.sum(mask_dodgy), dtype='int32')            
@@ -466,6 +468,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             for t in range(len(target_branch_length_masked)):
                 if chr_map_masked[t] == chr:
                     target_branch_length_masked_chr.append(target_branch_length_masked[t])
+                    mutscale_masked_chr.append(mutscale_masked[t])
             
             (coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index) = fixed_parameters(
                 ts_list[chr_no:chr_no + 1],
@@ -477,6 +480,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 args.sample_id,
                 epoch_intervals_pow,
                 target_branch_length_masked_chr,
+                mutscale_masked_chr,
                 chr,
                 args.force_build,
                 ignore_first_epoch=args.ignore_first_epoch,
