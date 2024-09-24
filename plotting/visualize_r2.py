@@ -39,8 +39,9 @@ def calculate_ece(prob_true, prob_pred, n_bins=20):
     ece /= len(prob_pred)  # Normalize by the total number of points
     return ece
 
+import sys
+
 def get_pr_calibration(post_file_name, gt_file_name, sample_list):
-    ## load the ground truth and the inferred local ancestry
     post_overall = []
     gt_overall = []
     for sample in sample_list:
@@ -48,112 +49,101 @@ def get_pr_calibration(post_file_name, gt_file_name, sample_list):
         gt = pd.read_csv(gt_file_name + '_{0}.csv'.format(sample), sep='\s+')
         gt = gt.rename(columns={'prob_0':'gt', 'prob_1':'notgt'})
         mdf = pd.merge(post, gt, on=['chr', 'pos'])
-        ## choose the cluster with highest r2 with gt
         r2_per_comp = {}
         for component in range(0, post.shape[1] - 3):
             r2_per_comp[component] = np.corrcoef(mdf['gt'], mdf['prob_' + str(component)])[0, 1]
         best_comp = max(r2_per_comp, key=r2_per_comp.get)
         post_overall.extend(mdf['prob_' + str(best_comp)].values.tolist())
         gt_overall.extend(mdf['gt'].values.tolist())
-    ## calc. R2
     r2 = np.corrcoef(gt_overall, post_overall)[0, 1]**2
-    print("R2: ", r2)
-    ## calc. PR curve and AUC
     precision, recall, thresholds = precision_recall_curve(gt_overall, post_overall)
     sampled_pairs = random.sample(list(zip(precision, recall)), 200)
     precision_sampled, recall_sampled = zip(*sampled_pairs)
-    sorted_pairs = sorted(zip(precision_sampled, recall_sampled), key=lambda x: x[1])  # Sort by recall
+    sorted_pairs = sorted(zip(precision_sampled, recall_sampled), key=lambda x: x[1])
     precision, recall = zip(*sorted_pairs)
     ap = average_precision_score(gt_overall, post_overall)
-    print("AP: ", ap)
-    ## calibration curve
     prob_true, prob_pred = calibration_curve(gt_overall, post_overall, n_bins=20)
     ece = calculate_ece(prob_true, prob_pred)
-    print("ECE: ", ece)
     return r2, precision, recall, ap, prob_pred, prob_true, ece
 
-gt_file_name = sys.argv[1] 
-relate_file_name = sys.argv[2]
-true_file_name = sys.argv[3]
+def plot_results(gt_file_name, relate_file_name, true_file_name=None, skov_file_name=None):
+    sample_list = []
+    for file in glob.glob(relate_file_name + "_overall_membership_*_sample_id_*.csv"):
+        sample = int(file.split("sample_id_")[-1].split(".")[0])
+        sample_list.append(sample)
 
-sample_list = []
-for file in glob.glob(relate_file_name + "_overall_membership_*_sample_id_*.csv"):
-    sample = int(file.split("sample_id_")[-1].split(".")[0])
-    sample_list.append(sample)
+    sample_list = np.unique(sample_list)
+    
+    r2_relate, precision_relate, recall_relate, ap_relate, prob_pred_relate, prob_true_relate, ece_relate = get_pr_calibration(relate_file_name, gt_file_name, sample_list)
+    results = [("Relate trees", r2_relate, precision_relate, recall_relate, ap_relate, prob_pred_relate, prob_true_relate, ece_relate)]
+    
+    if true_file_name:
+        r2_true, precision_true, recall_true, ap_true, prob_pred_true, prob_true_true, ece_true = get_pr_calibration(true_file_name, gt_file_name, sample_list)
+        results.append(("True trees", r2_true, precision_true, recall_true, ap_true, prob_pred_true, prob_true_true, ece_true))
 
-sample_list = np.unique(sample_list)
-r2_relate, precision_relate, recall_relate, ap_relate, prob_pred_relate, prob_true_relate, ece_relate=get_pr_calibration(relate_file_name, gt_file_name, sample_list)
-r2_true, precision_true, recall_true, ap_true, prob_pred_true, prob_true_true, ece_true=get_pr_calibration(true_file_name, gt_file_name, sample_list)
-## make pretty plots
+    if skov_file_name:
+        r2_skov, precision_skov, recall_skov, ap_skov, prob_pred_skov, prob_true_skov, ece_skov = get_pr_calibration(skov_file_name, gt_file_name, sample_list)
+        results.append(("Skov et al.", r2_skov, precision_skov, recall_skov, ap_skov, prob_pred_skov, prob_true_skov, ece_skov))
+    
+    # Sort results by R²
+    results = sorted(results, key=lambda x: x[1], reverse=True)
 
-# PR curve
-plt.clf()
-plt.figure(figsize=(8, 8))
-plt.plot(recall_relate, precision_relate, color='#1f77b4', linestyle='-', linewidth=4, marker='o', label="Relate trees (AP = %0.2f)" % ap_relate)
-plt.plot(recall_true, precision_true, color='#ff7f0e', linestyle='-', linewidth=4, marker='o', label="True trees (AP = %0.2f)" % ap_true)
-plt.xlabel('Recall (1 - FNR)', fontsize=22)
-plt.ylabel('Precision (1 - FDR)', fontsize=22)
-plt.legend(loc='lower left', ncol=1, fontsize=22, frameon=False)
-plt.tight_layout()
-plt.savefig(relate_file_name + '_pr.svg', dpi=300, transparent=True)
-plt.show()
+    # Plot PR Curve
+    plt.clf()
+    plt.figure(figsize=(8, 8))
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Relate, True, Skov et al.
+    for idx, (label, r2, precision, recall, ap, prob_pred, prob_true, ece) in enumerate(results):
+        plt.plot(recall, precision, color=colors[idx], linestyle='-', linewidth=4, marker='o', label=f"{label} (AP = {ap:.2f})")
+    plt.xlabel('Recall (1 - FNR)', fontsize=22)
+    plt.ylabel('Precision (1 - FDR)', fontsize=22)
+    plt.legend(loc='lower left', ncol=1, fontsize=22, frameon=False)
+    plt.tight_layout()
+    plt.savefig(relate_file_name + '_pr.svg', dpi=300, transparent=True)
+    plt.show()
 
-# calibration curve
-plt.clf()
-plt.figure(figsize=(8, 8))
-plt.plot(prob_pred_relate, prob_true_relate, marker='o', color='#1f77b4', label="Relate trees (ECE = %0.2f)" % ece_relate, lw=4)
-plt.plot(prob_pred_true, prob_true_true, marker='o', color='#ff7f0e', label="True trees (ECE = %0.2f)" % ece_true, lw=4)
-plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
-plt.xlabel('Predicted Probability', fontsize=22)
-plt.ylabel('True Probability', fontsize=22)
-plt.legend(loc='lower right', fontsize=22, frameon=False)
-plt.tight_layout()
-plt.savefig(relate_file_name + '_calibration.svg', dpi=300, transparent=True)
-plt.show()
+    # Plot Calibration Curve
+    plt.clf()
+    plt.figure(figsize=(8, 8))
+    for idx, (label, r2, precision, recall, ap, prob_pred, prob_true, ece) in enumerate(results):
+        plt.plot(prob_pred, prob_true, marker='o', color=colors[idx], label=f"{label} (ECE = {ece:.2f})", lw=4)
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+    plt.xlabel('Predicted Probability', fontsize=22)
+    plt.ylabel('True Probability', fontsize=22)
+    plt.legend(loc='lower right', fontsize=22, frameon=False)
+    plt.tight_layout()
+    plt.savefig(relate_file_name + '_calibration.svg', dpi=300, transparent=True)
+    plt.show()
 
-# R2 plot
-plt.figure(figsize=(5, 8))
-data = {'Scenario': ['True trees', 'Relate trees'],
-        'R2': [r2_true, r2_relate]}
-r2_values = pd.DataFrame(data)
-bold_colors = ['#ff7f0e', '#1f77b4'] 
-ax = sns.barplot(x='Scenario', y='R2', data=r2_values, palette=bold_colors, dodge=0.8, width=0.6, edgecolor='black')
-for p in ax.patches:
-    ax.annotate(f'{p.get_height():.2f}', 
-                (p.get_x() + p.get_width() / 2, p.get_height() + 0.01),  # Positioning the text labels on the bars
-                ha='center', va='bottom', fontsize=20, color='black')
+    # Plot R² Bar Plot
+    plt.clf()
+    plt.figure(figsize=(5, 8))
+    data = {'Scenario': [res[0] for res in results], 'R2': [res[1] for res in results]}
+    r2_values = pd.DataFrame(data)
+    ax = sns.barplot(x='Scenario', y='R2', data=r2_values, palette=colors[:len(results)], width=0.4, dodge=False, edgecolor='black')
 
-plt.ylabel(r'$R^2$', fontsize=20)
-plt.xlabel('')
-plt.ylim(0, 1.1)  # Adjust the y-axis limits for better display
-plt.xticks(fontsize=20, rotation=45, ha='right')  # Rotate x-ticks 45 degrees
-plt.legend(title=None, loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=2, fontsize=16, frameon=False)
-plt.tight_layout()
-plt.savefig(relate_file_name + '_r2.svg', dpi=300, transparent=True)
-plt.show()
+    # Adjust the positioning of the tick labels
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=20)
 
-# R2 plot
-# data = {'Scenario': ['True trees', 'True trees', 'Relate trees', 'Relate trees'],
-#         'Group': ['All populations sampled', 'Population D unsampled', 'All populations sampled', 'Population D unsampled'],
-#         'R2': [0.95, 0.86, 0.92, 0.81]}
-# r2_values = pd.DataFrame(data)
-# bold_colors = ['#1f77b4', '#ff7f0e']  # These are some stronger color choices (blue and orange)
+    # Annotate the bars
+    for p in ax.patches:
+        ax.annotate(f'{p.get_height():.2f}', 
+                    (p.get_x() + p.get_width() / 2., p.get_height() + 0.01), 
+                    ha='center', va='bottom', fontsize=20, color='black')
 
-# plt.figure(figsize=(10, 6))
-# ax = sns.barplot(x='R2', y='Scenario', hue='Group', data=r2_values, palette=bold_colors, dodge=0.8, width=0.6, edgecolor='black')
-# for p in ax.patches:
-#     ax.annotate(f'{p.get_width():.2f}', 
-#                 (p.get_width() + 0.01, p.get_y() + p.get_height() / 2),  # Positioning the text labels on the bars
-#                 ha = 'left', va = 'center', fontsize=20, color='black')
+    plt.ylabel(r'$R^2$', fontsize=20)
+    plt.xlabel(None)
+    plt.ylim(0, 1.1)  # Adjust y-axis limit for better appearance
+    plt.tight_layout()
+    plt.savefig(relate_file_name + '_r2.svg', dpi=300, transparent=True)
+    plt.show()
 
-# plt.xlabel(r'$R^2$', fontsize=20)
-# plt.ylabel('')
-# plt.xticks(fontsize=20)
-# plt.yticks(fontsize=20)
-# plt.legend(title=None, loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=2, fontsize=16, frameon=False)
-# plt.ylim(-0.5, 1.5)  # Control the y-axis limits to reduce space between the bars
-# plt.tight_layout()
-# plt.savefig(relate_file_name + '_r2.svg', dpi=300, transparent=True)
+# Command-line usage
+if __name__ == "__main__":
+    gt_file_name = sys.argv[1]
+    relate_file_name = sys.argv[2]
+    true_file_name = sys.argv[3] if len(sys.argv) > 3 else None
+    skov_file_name = sys.argv[4] if len(sys.argv) > 4 else None
+    plot_results(gt_file_name, relate_file_name, true_file_name, skov_file_name)
 
 
 ## Usage: python ../clean/RelateLocalAncestry/plotting/visualize_r2.py ground_truth output_nonghost/relate output_nonghost/true 
