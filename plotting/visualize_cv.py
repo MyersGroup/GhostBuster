@@ -38,9 +38,9 @@ fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5), sharex=True)  # Share the x
 ax1.scatter(df['k'], df['ll'], s=150, c='blue', edgecolors='black', linewidths=2, label='Held-out Log-Likelihood')  # Larger points
 ax1.plot(df['k'], df['ll'], linestyle='--', color='blue', linewidth=3)  # Fatter lines
 ax1.set_ylabel(None)
-# min_lim_ll = df.ll.min() - 0.2 * abs(df.ll.min())
-# max_lim_ll = df.ll.max() + 0.2 * abs(df.ll.max())
-# ax1.set_ylim(min_lim_ll, max_lim_ll)
+min_lim_ll = df.ll.min() - 0.2 * (df.ll.max() - df.ll.min())
+max_lim_ll = df.ll.max() + 0.2 * (df.ll.max() - df.ll.min())
+ax1.set_ylim(min_lim_ll, max_lim_ll)
 ax1.legend(loc='upper right', fontsize=16, frameon=False)  # Smaller legend font
 ax1.set_xticks(args.k)  # Set xticks only at args.k
 
@@ -48,9 +48,9 @@ ax1.set_xticks(args.k)  # Set xticks only at args.k
 ax2.scatter(df['k'], df['r2'], s=150, c='green', edgecolors='black', linewidths=2, label='Adjusted R²')  # Larger points
 ax2.plot(df['k'], df['r2'], linestyle='--', color='green', linewidth=3)  # Fatter lines
 ax2.set_ylabel(None)
-# min_lim_r2 = df.r2.min() - 0.2 * abs(df.r2.min())
-# max_lim_r2 = df.r2.max() + 0.2 * abs(df.r2.max())
-# ax2.set_ylim(min_lim_r2, max_lim_r2)
+min_lim_r2 = df.r2.min() - 0.2 * (df.r2.max() - df.r2.min())
+max_lim_r2 = df.r2.max() + 0.2 * (df.r2.max() - df.r2.min())
+ax2.set_ylim(min_lim_r2, max_lim_r2)
 ax2.legend(loc='upper right', fontsize=16, frameon=False)  # Smaller legend font
 ax2.set_xticks(args.k)  # Set xticks only at args.k
 

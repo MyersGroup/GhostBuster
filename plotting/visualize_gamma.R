@@ -74,8 +74,10 @@ for (i in 1:num_components){
   xlim_values <- c(max(5e2, xlim_values[1] * 0.5), min(2e6, xlim_values[2] * 2))
   ylim_values <- c(max(5e2, ylim_values[1] * 0.5), min(2e7, ylim_values[2] * 2))
 
+  coal_subset$mean <- pmin(pmax(0.5 / coal_subset$mean, ylim_values[1]), ylim_values[2])
+
   p <- ggplot(coal_subset) +
-    geom_step(aes(x = 28*epoch.start, y = 0.5/mean, color = Reference), lwd = 1.2) +
+    geom_step(aes(x = 28*epoch.start, y = mean, color = Reference), lwd = 1.2) +
     scale_x_continuous(trans = "log10", limits = xlim_values) +
     scale_y_continuous(trans = "log10", limits = ylim_values) +
     xlab("years ago") + 
