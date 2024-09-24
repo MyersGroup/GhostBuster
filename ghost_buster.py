@@ -33,6 +33,7 @@ from utils import (
     compute_gamma_denom,
     load_gamma,
     load_props,
+    load_tadmix,
     get_target_branch_length,
 )
 from hmm_decode import Decode_grid
@@ -216,7 +217,7 @@ def e_m_step(
     st = time.time()
 
     if args.t_admix_guess is not None:
-        trans_prop = args.t_admix_guess
+        trans_prop = load_tadmix(args.t_admix_guess)
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
@@ -318,18 +319,8 @@ def random_sweep_iter(
     tree_right_bp,
     gen_grid_all,
     chr_map,
-    exact_pos,
+    n_sites,
 ):
-    n_sites = []
-    for sample_no in range(len(args.sample_id)):
-        n_sites_sam = 0
-        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
-            if exact_pos is None:
-                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
-            else:
-                n_sites_sam += len(exact_pos[(exact_pos['chr'] == chr_map[mask_dodgy[sample_no][i]]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
-        n_sites.append(copy.deepcopy(n_sites_sam))
-
     epoch_intervals = np.log10(epoch_intervals_pow)
     
     n_unique_groups = len(unique_groups)
@@ -360,16 +351,12 @@ def random_sweep_iter(
     trans_prop = (
         np.power(10, np.random.uniform(np.log10(20), np.log10(2000)))
         if args.t_admix_guess is None
-        else args.t_admix_guess
+        else load_tadmix(args.t_admix_guess)
     )
     print((tau, trans_prop))
     n_samples = len(args.sample_id)
 
     own_membership_trial = [[] for _ in range(n_clusters)]
-    log_num_em = np.zeros((n_clusters, int(np.sum(n_sites))), dtype="float64")
-    log_denom_em = np.zeros((n_clusters, int(np.sum(n_sites))), dtype="float64")
-    count_masked_trees = 0
-
     # update_membership_eventwise = update_membership_eventwise_numpy if np.isnan(gamma_arr).any() else update_membership_eventwise_numba
     update_membership_eventwise = update_membership_eventwise_numba
     for sample_no, sample in enumerate(args.sample_id):
@@ -390,13 +377,6 @@ def random_sweep_iter(
             args.ignore_last_epoch,
             n_epochs,
         )
-        start = int(np.sum(n_sites[0:sample_no]))
-        end = int(np.sum(n_sites[0:sample_no+1]))
-        log_num_em[:, start:end] = log_num_em_sam
-        log_denom_em[
-            :, start:end
-        ] = log_denom_em_sam
-        
         own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
             tree_left_bp[sample_no],
             tree_right_bp[sample_no],
@@ -421,7 +401,6 @@ def random_sweep_iter(
 
     trans_prop = trans_num/trans_denom
     tau = tau_update/np.sum(tau_update)
-    loglikelihood_per_comp = log_num_em + log_denom_em
     own_membership_trial = np.array(own_membership_trial, dtype='float64')
     
     for epoch in range(args.sweep_num_iters):
@@ -447,7 +426,7 @@ def random_sweep_iter(
  
     if args.load_membership != None:
         own_membership_trial = np.load(args.load_membership)
-        trans_prop = args.t_admix_guess
+        trans_prop = load_tadmix(args.t_admix_guess)
         tau = np.load(args.load_props)
    
     return (
@@ -456,7 +435,6 @@ def random_sweep_iter(
         trans_prop,
         tau,
         unique_groups,
-        loglikelihood_per_comp,
     )
 
 
@@ -472,6 +450,7 @@ def random_sweep(
     mask_dodgy,
     epoch_intervals,
     target_branch_length_masked,
+    mutscale_masked,
     tree_left_bp,
     tree_right_bp,
     gen_grid_all,
@@ -484,16 +463,18 @@ def random_sweep(
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
     st = time.time()
-    num, denom, proportion_of_coalescing_all, epoch_index_all = [], [], [], []
+    num, denom, denom_unscaled, proportion_of_coalescing_all, epoch_index_all = [], [], [], [], []
     for sample_no, sample in enumerate(args.sample_id):
         (
             num1,
             denom1,
+            denom1_unscaled,
             proportion_of_coalescing_all1,
             epoch_index_all1,
-        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], gt_ref, unique_groups, exact_pos)
+        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], mutscale_masked[sample_no], gt_ref, unique_groups, exact_pos)
         num.append(num1)
         denom.append(denom1)
+        denom_unscaled.append(denom1_unscaled)
         proportion_of_coalescing_all.append(proportion_of_coalescing_all1)
         epoch_index_all.append(epoch_index_all1)
     del ts_list
@@ -501,6 +482,16 @@ def random_sweep(
     ts_list = []
 
     print("fixed params:" + str(time.time() - st))
+    n_sites = []
+    for sample_no in range(len(args.sample_id)):
+        n_sites_sam = 0
+        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
+            if exact_pos is None:
+                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
+            else:
+                n_sites_sam += len(exact_pos[(exact_pos['chr'] == np.array(chr_map)[mask_dodgy[sample_no]][i]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
+        n_sites.append(copy.deepcopy(n_sites_sam))
+
     st = time.time()
     out = Parallel(n_jobs=1)(
         delayed(random_sweep_iter)(
@@ -523,12 +514,11 @@ def random_sweep(
             tree_right_bp,
             gen_grid_all,
             chr_map,
-            exact_pos
+            n_sites
         )
         for n_iters in range(n_repeats)
     )
     print("random sweep: " + str(time.time() - st))
-    loglikelihood_per_comp_arr = []
     for i in range(len(out)):
         (
             log_likelihood,
@@ -536,33 +526,48 @@ def random_sweep(
             trans_prop_trial,
             tau_trial,
             unique_groups,
-            loglikelihood_per_comp,
         ) = out[i]
-        loglikelihood_per_comp_arr.append(loglikelihood_per_comp)
         if log_likelihood > best_loglikelihood or i == 0:
             best_loglikelihood = log_likelihood
             own_membership = own_membership_trial
             trans_prop = trans_prop_trial
             tau = tau_trial
-            (
-                best_num,
-                best_denom,
-                best_proportion_of_coalescing_all,
-                best_epoch_index_all,
-            ) = (num, denom, proportion_of_coalescing_all, epoch_index_all)
     
     return (
         own_membership,
         trans_prop,
         tau,
-        best_num,
-        best_denom,
-        best_proportion_of_coalescing_all,
-        best_epoch_index_all,
+        num,
+        denom,
+        denom_unscaled,
+        proportion_of_coalescing_all,
+        epoch_index_all,
         unique_groups,
-        loglikelihood_per_comp_arr,
+        n_sites
     )
 
+def get_expected_r2(own_membership, num_samples):
+    if num_samples % 2 == 0:
+        num_clusters = len(own_membership)
+        own_membership = own_membership.reshape(num_clusters, num_samples, -1)
+        num_sites = own_membership.shape[2]
+        diploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))
+        cross_haploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))  
+        for sample in range(0, num_samples, 2):
+            hap1 = own_membership[:, sample, :]
+            hap2 = own_membership[:, sample + 1, :]
+            diploid_membership[:, sample // 2, :] = hap1 + hap2
+            cross_haploid_membership[:, sample // 2, :] = hap1 * hap2
+        sum_diploid = diploid_membership.sum(axis=(1,2))
+        sum_diploid_squared = (diploid_membership ** 2).sum(axis=(1,2))
+        sum_cross_haploid = cross_haploid_membership.sum(axis=(1,2))
+        num = sum_diploid_squared - (sum_diploid ** 2) / num_sites
+        denom = sum_diploid + 2 * sum_cross_haploid - (sum_diploid ** 2) / num_sites
+        expected_r2 = num / denom
+        print("Final expected R2 = " + str(np.sum(num)/np.sum(denom)))
+        print("Per ancestry expected R2 = " + str(expected_r2))
+    else:
+        print("Not calculating expected R2 as both haploids not present....")
 
 def write_membership_grid(
     args,
@@ -607,12 +612,12 @@ def write_membership_grid(
             sep="\t",
         )
 
-
 def write_membership_gamma(
     args,
     own_membership,
     gamma_arr,
     tau,
+    trans_prop,
     mask_dodgy,
     chr_map,
     tree_left_bp,
@@ -622,7 +627,8 @@ def write_membership_gamma(
     unique_groups,
     sample_id_label,
     sample_name_list,
-    exact_pos
+    exact_pos,
+    output=None
 ):
     ## gamma and membership plots
     filename = (
@@ -643,7 +649,7 @@ def write_membership_gamma(
         args.num_clusters,
         sample_name_list,
         args.sample_id,
-        args.output,
+        args.output if output is None else output,
         args.force_build,
         exact_pos
     )
@@ -657,19 +663,26 @@ def write_membership_gamma(
     )
 
     with open(
-        args.output + "_gamma.npy",
+        args.output + "_gamma_" + sample_id_label +  ".npy",
         "wb",
     ) as f:
         np.save(f, gamma_arr)
 
     with open(
-        args.output + "_props.npy",
+        args.output + "_props_" + sample_id_label +  ".npy",
         "wb",
     ) as f:
         np.save(f, tau)
 
+    with open(
+        args.output + "_tadmix_" + sample_id_label +  ".npy",
+        "wb",
+    ) as f:
+        np.save(f, trans_prop)
+
 def main(args):
-    if args.load_mask is not None:
+    if args.load_mask is not None or args.cm_grid is not None:
+        force_build_orig = args.force_build
         args.force_build = 1
         print("Exact positions can only be used with force_build=1")
 
@@ -761,6 +774,35 @@ def main(args):
         chr_map,
     ) = load_tree_stats(args, ts_list, poplabels, args.tree_stats_file_prefix)
 
+    ## cM grid option
+    if args.cm_grid is not None:
+        df_all = pd.DataFrame()
+        chrs = list(map(int, args.chrs.split(",")))
+        for chr_no, chr in enumerate(chrs):
+            rec_file = args.rec + str(chr) + ".txt"
+            rec_file_gz = args.rec + str(chr) + ".txt.gz"
+            if os.path.isfile(rec_file):
+                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file)
+            elif os.path.isfile(rec_file_gz):
+                recomb_map_msprime = msprime.RateMap.read_hapmap(rec_file_gz)
+            else:
+                print(f"Recombination map for chromosome {chr} not found!")
+                continue
+            df = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], 1), columns=['pos'])
+            df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'].values)
+            m_grid = args.cm_grid / 100
+            df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
+            df = df.groupby('genpos_rounded').first().reset_index()
+            df = df.drop(columns=['genpos_rounded'])
+            df['chr'] = chr
+            df_kb = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], force_build_orig), columns=['pos'])
+            df_kb['chr'] = chr
+            df_union = pd.concat([df[['chr', 'pos']], df_kb[['chr', 'pos']]]).drop_duplicates().sort_values(by='pos').reset_index(drop=True)
+            df_all = pd.concat([df_all, df_union], ignore_index=True)
+        print("Saving the mask file corresponding to the cM grid...")
+        df_all.to_csv(args.output + '.cm.mask', sep='\t', index=None)
+        args.load_mask = args.output + '.cm.mask'
+
     ### Filter based on recombination rates
     if args.load_mask is None:
         mask_dodgy = []
@@ -779,7 +821,7 @@ def main(args):
         exact_pos = exact_pos.sort_values(by=['chr', 'pos'])
         exact_pos = exact_pos.reset_index(drop=True)
         mask_dodgy = []
-        load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, chr_map)
+        load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)
         for sample_id in args.sample_id:
             mask_dodgy.append(load_mask)
 
@@ -854,7 +896,7 @@ def main(args):
         gt_ref = None
 
     st = time.time()
-    target_branch_length_masked = get_target_branch_length(
+    target_branch_length_masked, mutscale_masked = get_target_branch_length(
         args, poplabels, ts_list, chrs, mask_dodgy, args.sample_id, gt_ref=gt_ref, exact_pos=exact_pos
     )
     print("target branch length: " + str(time.time() - st))
@@ -865,10 +907,11 @@ def main(args):
         tau,
         num,
         denom,
+        denom_unscaled,
         proportion_of_coalescing_all,
         epoch_index_all,
         unique_groups,
-        loglikelihood_per_comp_arr,
+        n_sites
     ) = random_sweep(
         args,
         args.num_clusters,
@@ -881,6 +924,7 @@ def main(args):
         mask_dodgy,
         epoch_intervals,
         target_branch_length_masked,
+        mutscale_masked,
         tree_left_bp,
         tree_right_bp,
         gen_grid_all,
@@ -917,16 +961,6 @@ def main(args):
     f_tau = open(filename_tau, "w")
 
     st = time.time()
-    n_sites = []
-    for sample_no in range(len(args.sample_id)):
-        n_sites_sam = 0
-        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
-            if args.load_mask is None:
-                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
-            else:
-                n_sites_sam += len(exact_pos[(exact_pos['chr'] == np.array(chr_map)[mask_dodgy[sample_no]][i]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
-        n_sites.append(n_sites_sam)
-
     for epoch in range(args.num_iters):
         own_membership, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
             args,
@@ -965,12 +999,14 @@ def main(args):
     print("HMM admix date = " + str(trans_prop))
     print("em iters: " + str(time.time() - st))
     print("Final log-likelihood = " + str(log_likelihood_arr[-1]))
+    get_expected_r2(own_membership, len(args.sample_id))
 
     write_membership_gamma(
         args,
         own_membership,
         gamma_arr,
         tau,
+        trans_prop,
         mask_dodgy,
         chr_map,
         tree_left_bp,
@@ -981,6 +1017,54 @@ def main(args):
         sample_id_label,
         sample_name_list,
         exact_pos
+    )
+    
+    print("Saving the coal. rates and proportions without using HMM")
+    # target_branch_length_masked_unity = target_branch_length_masked
+    # for i in range(len(target_branch_length_masked_unity)):
+    #     for j in range(len(target_branch_length_masked_unity[i])):
+    #         for k in range(len(target_branch_length_masked_unity[i][j])):
+    #             target_branch_length_masked_unity[i][j][k] = 1
+    gen_grid_all_unscaled = copy.deepcopy(gen_grid_all)
+    for sample_no in range(len(args.sample_id)):
+        gen_grid_all_unscaled[sample_no] = 1e3*np.arange(0,len(gen_grid_all[sample_no]))
+    
+    own_membership_nohmm, _, gamma_arr_nohmm, tau_nohmm, _ = e_m_step(
+        args,
+        own_membership,
+        trans_prop,
+        tau,
+        gamma_arr,
+        proportion_of_coalescing_all,
+        epoch_index_all,
+        denom_unscaled,
+        unique_groups,
+        epoch_intervals,
+        n_sites,
+        len(args.sample_id),
+        epoch,
+        mutscale_masked,
+        tree_left_bp,
+        tree_right_bp,
+        gen_grid_all_unscaled,
+    )
+    write_membership_gamma(
+        args,
+        own_membership_nohmm,
+        gamma_arr_nohmm,
+        tau_nohmm,
+        trans_prop,
+        mask_dodgy,
+        chr_map,
+        tree_left_bp,
+        tree_right_bp,
+        gen_grid_all,
+        epoch_intervals,
+        unique_groups,
+        "nohmm_" + sample_id_label,
+        sample_name_list,
+        exact_pos,
+        output=args.output + "_nohmm"
     )
     return
 
@@ -1053,7 +1137,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--t_admix_guess",
         help="Guess for the time of admixture",
-        type=float,
+        type=str,
         default=None,
     )
     parser.add_argument(
@@ -1133,6 +1217,12 @@ if __name__ == "__main__":
         type=boolean,
         default=True,
     )
+    parser.add_argument(
+        "--mut_scaling",
+        help="Scale the likelihood based on presence of mutation on the lineage, improves robustness to bottlenecks",
+        type=boolean,
+        default=True,
+    )
     parser.add_argument("--ypg", type=float, default=28, help="years per generation, 28 years default")
     parser.add_argument("--tree_stats_file_prefix", type=str, default=None, help="file prefix for the tree stats file")
     parser.add_argument("--branch_persistence_file_prefix", type=str, default=None, help="file prefix for the branch persistence file")
@@ -1140,9 +1230,10 @@ if __name__ == "__main__":
     parser.add_argument("--load_membership", help = "Load the membership from a .npy file", type=str, default=None)
     parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
     parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
-
+    parser.add_argument("--node_persist_thresh", type=float, default=0.5, help="Correlation coefficient threshold above which nodes are considered equivalent")
+    parser.add_argument("--cm_grid", type=float, default=None, help="Store local ancestry information per cM instead")
     args = parser.parse_args()
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)
-    print(args)
+    print(args)    
     main(args)

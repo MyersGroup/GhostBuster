@@ -16,6 +16,19 @@ from numba import jit
 from numba.typed import List
 import pickle
 import time 
+from infer_node_persistence import get_coal_descendants, get_approx_node_persistence, get_coal_times, get_true_node_persistence, get_relate_node_persistence
+
+def get_mut_scaling_grid():
+    mut_scaling = {}
+    for i in range(1, 100):
+        sum_ = 0
+        for j in range(1,i+1):
+            sum_ += 2/(j+1) 
+        mut_scaling[i] = i/sum_
+        # mut_scaling[i] = i
+    return mut_scaling
+
+mut_scaling_grid = get_mut_scaling_grid()
 
 def boolean(v):
     if isinstance(v, bool):
@@ -157,10 +170,20 @@ def filter_recomb_rate(
     )
     return mask_dodgy
 
-def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, chr_map):
+def load_mask_csv(args, membership_mask, tree_left_bp, tree_right_bp, recomb_rates, chr_map):
     mask_dodgy = np.zeros(len(tree_left_bp), dtype="bool")
+    # mask_dodgy_nan = np.zeros(len(tree_left_bp), dtype="bool")
+    recomb_rates = np.array(recomb_rates)
     count = 0
     for chr_count, chr in enumerate(np.unique(chr_map)):
+        # recomb_rates_chr = recomb_rates[chr_map == chr]
+        # for i, r in enumerate(recomb_rates_chr):
+        #     if np.isnan(r):
+        #         recomb_rates_chr[
+        #             np.abs(np.array(tree_left_bp)[chr_map == chr] - np.array(tree_left_bp)[chr_map == chr][i]) < 500000
+        #         ] = np.inf
+        # recomb_rates_chr = np.nan_to_num(recomb_rates_chr, posinf=np.nan)
+        # mask_dodgy_nan[chr_map == chr] = ~np.isnan(recomb_rates_chr)
         membership_mask_chr = membership_mask[membership_mask['chr'] == chr]
         membership_mask_chr['pos'] = membership_mask_chr['pos']
         membership_mask_chr['pos'] = membership_mask_chr['pos'].astype(int)
@@ -302,16 +325,22 @@ def load_props(path):
     else:
         return np.array(path.split(" "), dtype="float")
 
+def load_tadmix(path):
+    try:
+        return np.load(path)
+    except:
+        return float(path)
+
 def scale_number_window_list(number_window_list, num_muts_list):
     ### caution!!!!!!
     number_window_list = np.array(number_window_list)#*(1-1/math.e)
     prev_node_with_mutation = 0
     for i in range(len(number_window_list)):
         if num_muts_list[i] > 0:
-            number_window_list[prev_node_with_mutation:i+1] *= (i + 1 - prev_node_with_mutation)
+            number_window_list[prev_node_with_mutation:i+1] *= mut_scaling_grid[i + 1 - prev_node_with_mutation]
             prev_node_with_mutation = i+1
-        if i == len(number_window_list) - 1:
-            number_window_list[prev_node_with_mutation:] *= (i + 1 - prev_node_with_mutation)
+        elif i == len(number_window_list) - 1:
+            number_window_list[prev_node_with_mutation:] *= mut_scaling_grid[i + 1 - prev_node_with_mutation]
     return number_window_list.tolist()
 
 
@@ -331,10 +360,12 @@ def get_target_branch_length(
     exact_pos is a dataframe with chr, pos where we want the target branch length exactly.
     """    
     target_branch_length = []
+    mutscale = []
     
     for sample_no, sample in enumerate(sample_list):
         count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
         target_branch_length_sample = List()
+        mutscale_sample = List()
         leave_one_sample_out = list(set(sample_list) - set([sample]))
         
         for chr_no, chr in enumerate(chrs):
@@ -346,12 +377,14 @@ def get_target_branch_length(
             try:
                 with open(branch_persistence_file_name, "rb") as f_pkl:
                     (
-                        force_build_file, start_time, end_time, ignore_first_epoch,
+                        mut_scaling_file, hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
                         ignore_last_epoch, masking_threshold, poplabels_file,
-                        target_branch_length_sample_chr, gt_ref_na_sum, exact_pos_file
+                        target_branch_length_sample_chr, mutscale_sample_chr, gt_ref_na_sum, exact_pos_file
                     ) = pickle.load(f_pkl)
                 
                 if (
+                    (mut_scaling_file == args.mut_scaling) &
+                    (hmm_file == args.hmm) &
                     (force_build_file == args.force_build) &
                     (start_time == args.start_time) &
                     (end_time == args.end_time) &
@@ -365,7 +398,7 @@ def get_target_branch_length(
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
                     if exact_pos is not None:
-                        if (exact_pos.values != exact_pos_file).any():
+                        if (exact_pos[(exact_pos['chr'] == chr)].values != exact_pos_file).any():
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
                     for i in target_branch_length_sample_chr:
@@ -373,6 +406,11 @@ def get_target_branch_length(
                         for j in i:
                             numba_i.append(j)
                         target_branch_length_sample.append(numba_i)
+                    for i in mutscale_sample_chr:
+                        numba_i = List().empty_list(nb.types.float64)
+                        for j in i:
+                            numba_i.append(j)
+                        mutscale_sample.append(numba_i)
                     print(f"Loaded branch persistence statistics from: {branch_persistence_file_name}")
                     continue
                 else:
@@ -381,6 +419,7 @@ def get_target_branch_length(
             except:
                 print(f"Saving branch persistence statistics to: {branch_persistence_file_name}")
                 target_branch_length_sample_chr = []
+                mutscale_sample_chr = []
                 ts = ts_list[chr_no]
                 ts_edges = ts.edges()
 
@@ -401,15 +440,25 @@ def get_target_branch_length(
                         num_sites = r // args.force_build - l // args.force_build
                     num_sites_per_tree.append(num_sites)
                     for j in range(int(l / args.force_build), int(r / args.force_build)):
-                        bp_grid.append(j+1)
-                bp_grid = np.array(bp_grid)
+                        bp_grid.append((j+1)*args.force_build) ## caution
+                if exact_pos is not None:
+                    bp_grid = exact_pos[(exact_pos['chr'] == chr)]['pos'].values
+                else:
+                    bp_grid = np.array(bp_grid)
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
+
+                # df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
+                df_coal_descendants = get_coal_descendants(ts, sample, bp_grid)
 
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
                 for tid in tqdm(range(ts.num_trees)):
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
+                            if args.hmm:
+                                number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples, args.node_persist_thresh)
+                                # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
+                                # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             num_muts_list = []
@@ -420,9 +469,11 @@ def get_target_branch_length(
                                 poplabels_included_pos = poplabels[new_mask].index.values.copy()
                                 count_all_tree3 += 1
 
+                            edge_count = 0
                             while parent != tree.root:
                                 edge_id = tree.edge(parent)
                                 edge = ts_edges[edge_id]
+                                edpep = ts_edges[tree.edge(tree.parent(parent))]
                                 parent = tree.parent(parent)
                                 tree_childrens = tree.children(parent)
                                 tree_leaves_left = list(tree.leaves(tree_childrens[0]))
@@ -434,42 +485,43 @@ def get_target_branch_length(
                                     np.intersect1d(tree_leaves_right, poplabels_included_pos).size -
                                     np.intersect1d(tree_leaves_right, leave_one_sample_out).size > 0
                                 ):
-                                    num_muts_list.append(int(edge.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
+                                    num_muts_list.append(int(edpep.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
-                                        if exact_pos is not None:
-                                            edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
-                                            edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
-                                            ## check if the next line is correct - 
-                                            positions_in_tree = exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= edge_left) & (exact_pos['pos'] < edge_right)]
-                                            number_of_overlaps = len(positions_in_tree)
-                                        else:
-                                            edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]) // args.force_build, tree.interval[1] // args.force_build)
-                                            edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]) // args.force_build, tree.interval[0] // args.force_build)
-                                            number_of_overlaps = np.sum((edge_right >= bp_grid) & (edge_left < bp_grid))
-                                        number_window_list.append(np.float64(1.0 * number_of_overlaps))
+                                        number_of_overlaps = number_of_overlaps_list[edge_count]
+                                        number_window_list.append(1.0 * number_of_overlaps)
                                     else:
-                                        number_window_list.append(np.float64(1.0))
-
+                                        number_window_list.append(1.0)
+                                edge_count += 1
                             ## scale number_window_list by the number of mutations in the tree
-                            number_window_list = scale_number_window_list(number_window_list, num_muts_list)
+                            ## removing this for true trees as trees are accurate
+                            if args.mut_scaling:
+                                number_window_list = scale_number_window_list(number_window_list, num_muts_list)
+                                mutscale_sample_chr.append(scale_number_window_list(np.ones_like(number_window_list), num_muts_list))
+                            else:
+                                mutscale_sample_chr.append(np.ones_like(number_window_list))
                             target_branch_length_sample_chr.append(number_window_list)
-                            
                         count_all_tree2 += 1
                     tree.next()
                                 
-                target_branch_length_sample_chr = np.repeat(target_branch_length_sample_chr, num_sites_per_tree, axis=0)
+                target_branch_length_sample_chr = [sublist for sublist, count in zip(target_branch_length_sample_chr, num_sites_per_tree) for _ in range(count)]
+                mutscale_sample_chr = [sublist for sublist, count in zip(mutscale_sample_chr, num_sites_per_tree) for _ in range(count)]
                 with open(branch_persistence_file_name, "wb") as f_pkl:
-                    pickle.dump([args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl)
-                
+                    pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, mutscale_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)
                     for j in i:
                         numba_i.append(j)
                     target_branch_length_sample.append(numba_i)
+                for i in mutscale_sample_chr:
+                    numba_i = List().empty_list(nb.types.float64)
+                    for j in i:
+                        numba_i.append(j)
+                    mutscale_sample.append(numba_i)
 
         target_branch_length.append(target_branch_length_sample)
+        mutscale.append(mutscale_sample)
 
-    return target_branch_length  ## num_samples x num_trees x num_branches
+    return target_branch_length, mutscale  ## num_samples x num_trees x num_branches
 
 if __name__ == "__main__":
     load_gamma(

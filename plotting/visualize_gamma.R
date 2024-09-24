@@ -10,11 +10,6 @@ library(nls2)
 library(ggthemes)
 library(reticulate)
 
-virtualenv_create(envname = "python_environment", python = "/apps/eb/2020b/skylake/software/Python/3.9.6-GCCcore-11.2.0/bin/python")
-reticulate::use_virtualenv("python_environment", required = TRUE)
-np <- import("numpy")
-colors <- c("Mbuti" = "#F8766D", "Papuan" = "#00BFC4", "Denisovan" = "#7CAE00")
-
 filename <- commandArgs(trailingOnly = TRUE)[1]
 
 colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
@@ -75,7 +70,7 @@ for (i in 1:num_components){
   
   p <- ggplot(coal_subset) +
     geom_step(aes(x = 28*epoch.start, y = 0.5/mean, color = Reference), lwd = 1.2) +
-    scale_x_continuous(trans = "log10", limit = c(3e3, 5e4)) +
+    scale_x_continuous(trans = "log10", limit = c(5e3, 2e6)) +
     scale_y_continuous(trans = "log10", limit = c(2e2, 2e7)) +
     xlab("years ago") + 
     ylab(paste0("Component ", i, " (", round(proportion_value, 2), "%)")) + 
