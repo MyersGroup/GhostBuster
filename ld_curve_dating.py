@@ -24,6 +24,29 @@ color_palette = sns.color_palette("colorblind")
 def func(dist, a, c):
     return a * np.exp(-dist / 100) + c
 
+from scipy.interpolate import make_interp_spline
+from scipy.optimize import curve_fit
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix):
+    num_sam = len(means_all)
+    plt.clf()
+    fig, ax = plt.subplots(figsize=(5, 5), dpi=300)
+    for sam in range(num_sam):
+        spl = make_interp_spline(dist, means_all[sam][0, 0])  # comp1, comp1
+        ax.plot(dist, spl(dist), color="gray", alpha=0.3, linewidth=0.5)
+    mean_of_all_sam = np.mean(means_all, axis=0)
+    spl = make_interp_spline(dist, mean_of_all_sam[0, 0])  # comp1, comp1
+    ax.plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
+    popt, pcov = curve_fit(func, dist * admixtimes, mean_of_all_sam[0, 0], maxfev=5000)
+    ax.plot(dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1, label='Admix. = {0:.1f} gens'.format(admixtimes))
+    ax.set_xlabel("Genetic distance (cM)")
+    ax.set_ylabel("Relative probability")
+    plt.legend(frameon=False, loc='upper right', fontsize=14)
+    plt.tight_layout()
+    plt.savefig(output_prefix + "ld_curve_comp1.svg", dpi=300, transparent=True)
+    plt.show()
 
 def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
     num_sam = len(means_all)
@@ -61,6 +84,7 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
         )
     plt.savefig(output_prefix + "ld_curve.svg", dpi=300)
     plt.show()
+    plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix)
 
 
 def get_admixtime_lhood(admixtimes, dist, means_all):
@@ -144,7 +168,7 @@ def get_coancestry_per_sample(df_hap1, bin_size, bin_max, bin_min, num_clusters,
 
         genpos_diffs = np.diff(df_chr.genpos.values)
         interp_genpos_nearest = np.searchsorted(df_chr.genpos.values, interp_genpos)
-        too_far_mask = np.abs(df_chr.genpos.values[interp_genpos_nearest] - interp_genpos) > max(0.05, bin_size)
+        too_far_mask = np.abs(df_chr.genpos.values[interp_genpos_nearest] - interp_genpos) > bin_size
         prob_values[too_far_mask] = np.nan
         props = np.nansum(prob_values, axis=0)
         lens = np.sum(~np.isnan(prob_values[:,0]))
@@ -189,7 +213,7 @@ def get_coancestry_per_pair_sample(df_hap1, df_hap2, bin_size, bin_max, bin_min,
 
         genpos_diffs = np.diff(df_chr1.genpos.values)
         interp_genpos_nearest = np.searchsorted(df_chr1.genpos.values, interp_genpos1)
-        too_far_mask = np.abs(df_chr1.genpos.values[interp_genpos_nearest] - interp_genpos1) > max(0.05, bin_size)
+        too_far_mask = np.abs(df_chr1.genpos.values[interp_genpos_nearest] - interp_genpos1) > bin_size
         prob_values1[too_far_mask] = np.nan
         prob_values2[too_far_mask] = np.nan
         props = np.nansum(prob_values1, axis=0)
