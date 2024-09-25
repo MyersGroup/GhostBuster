@@ -422,6 +422,8 @@ def get_target_branch_length(
                 mutscale_sample_chr = []
                 ts = ts_list[chr_no]
                 ts_edges = ts.edges()
+                if exact_pos is not None:
+                    exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
 
                 tree_left_bp_chr, tree_right_bp_chr = [], []
                 for tree in ts.trees():
@@ -435,7 +437,8 @@ def get_target_branch_length(
                 num_sites_per_tree = []
                 for i, (l, r) in enumerate(zip(tree_left_bp_chr, tree_right_bp_chr)):
                     if exact_pos is not None:
-                        num_sites = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
+                        # num_sites = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
+                        num_sites = np.searchsorted(exact_pos_chr['pos'].values, r) - np.searchsorted(exact_pos_chr['pos'].values, l) 
                     else:
                         num_sites = r // args.force_build - l // args.force_build
                     num_sites_per_tree.append(num_sites)
@@ -448,7 +451,7 @@ def get_target_branch_length(
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
                 # df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
-                df_coal_descendants = get_coal_descendants(ts, sample, bp_grid)
+                df_coal_descendants = get_coal_descendants(ts, sample, bp_grid, ts.num_samples)
 
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
@@ -456,7 +459,7 @@ def get_target_branch_length(
                     if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
                             if args.hmm:
-                                number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, ts.num_samples, args.node_persist_thresh)
+                                number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, args.node_persist_thresh)
                                 # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
                                 # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
                             poplabels_included_pos = poplabels_included.copy()

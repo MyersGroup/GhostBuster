@@ -82,16 +82,17 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
                 y_cord = 0.5
                 ax[i, j].text(0.35, y_cord, '{0:.1f} gens'.format(admixtimes), transform=ax[i, j].transAxes, fontsize=14, verticalalignment='bottom')
     fig.text(0.5, 0.04, "Genetic distance (cM)", ha="center", va="center")
-    fig.text(
-        0.03, 0.5, "Relative probability", ha="center", va="center", rotation="vertical"
-    )
+    # fig.text(
+    #     0.03, 0.5, "Relative probability", ha="center", va="center", rotation="vertical"
+    # )
     if not refit:
         fig.suptitle(
             "Co-ancestry curves (admix time = {0:.1f} generations)".format(admixtimes)
         )
     plt.savefig(output_prefix + "ld_curve.svg", dpi=300)
     plt.show()
-    plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix)
+    if not refit:
+        plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix)
 
 
 def get_admixtime_lhood(admixtimes, dist, means_all):
@@ -363,6 +364,7 @@ def run_ld_curve_dating(args):
         #     avg_ += admixtimes_test
     print((np.mean(admixtimes_all_blocks), np.std(admixtimes_all_blocks)))
     plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix, refit=False)
+    plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix+'_refit', refit=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

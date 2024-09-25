@@ -34,6 +34,8 @@ def fixed_parameters(
     ] == [True] * len(sample_list)
     ### You have removed target samples from the poplabels file
     eps = 1e-20
+    if exact_pos is not None:
+        exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
     num_samples = len(list(ts_list[0].first().samples()))
     num_nodes = len(list(ts_list[0].first().nodes()))
     coal_count = np.zeros(
@@ -118,7 +120,7 @@ def fixed_parameters(
                         if exact_pos is None:
                             num_sites_per_tree[count_mut_trees] = (tree.interval[1] // force_build - tree.interval[0] // force_build)
                         else:
-                            num_sites_per_tree[count_mut_trees] = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= tree.interval[0]) & (exact_pos['pos'] < tree.interval[1])])
+                            num_sites_per_tree[count_mut_trees] = np.searchsorted(exact_pos_chr['pos'].values, tree.interval[1]) - np.searchsorted(exact_pos_chr['pos'].values, tree.interval[0])
                         poplabels = poplabels_orig.copy()
                         if gt_ref is None:
                             lineage_content = lineage_content_init.copy()
@@ -453,13 +455,15 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 num_sites_per_tree = np.zeros(np.sum(mask_dodgy), dtype='int32')            
                 i, count_i  = 0,0 
                 for chr_, tseq in zip(chrs, ts_list):
+                    if exact_pos is not None:
+                        exact_pos_chr = exact_pos[exact_pos['chr'] == chr_]
                     for tree in tseq.trees():
                         if tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0:
                             if mask_dodgy[count_i]:
                                 if exact_pos is None:
                                     num_sites_per_tree[i] = (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build)
                                 else:
-                                    num_sites_per_tree[i] = len(exact_pos[(exact_pos['chr'] == chr_) & (exact_pos['pos'] >= tree.interval[0]) & (exact_pos['pos'] < tree.interval[1])])
+                                    num_sites_per_tree[i] = np.searchsorted(exact_pos_chr['pos'].values, tree.interval[1]) - np.searchsorted(exact_pos_chr['pos'].values, tree.interval[0])
                                 i+= 1
                             count_i += 1
                 chr_map_masked = np.array(chr_map)[mask_dodgy]

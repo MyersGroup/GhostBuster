@@ -2,6 +2,7 @@ import tskit
 import numpy as np
 import pandas as pd
 import copy
+import numba
 
 def get_coal_times(ts, target, bp_grid):
     ### go along the tree and save the matrix of (t1,t2) for each coal. event on target lineage
@@ -41,7 +42,13 @@ def get_true_node_persistence(df, pos, tree_window=100):
                 number_of_overlaps[j] += num_bp_grid
     return number_of_overlaps
 
-def get_coal_descendants(ts, target, bp_grid):
+def convert_set_to_binary(s, num_samples):
+    binary = np.zeros(num_samples, dtype='int')
+    for i in s:
+        binary[i] = 1
+    return binary
+
+def get_coal_descendants(ts, target, bp_grid, num_samples):
     seq_all_trees = []
     tree_intervals = [] 
     for tree in ts.trees():
@@ -49,10 +56,10 @@ def get_coal_descendants(ts, target, bp_grid):
         p = copy.deepcopy(target)
         while p != tree.root:
             parent = tree.parent(p)
-            descendants = set(tree.samples(parent)) - set(tree.samples(p))
-            seq_.append(descendants)
+            descendants_binary = convert_set_to_binary(set(tree.samples(parent)) - set(tree.samples(p)), num_samples)
+            seq_.append(descendants_binary)
             p = parent
-        seq_all_trees.append(seq_)
+        seq_all_trees.append(np.array(seq_))
         tree_intervals.append(tree.interval)    
     df = pd.DataFrame({'interval': tree_intervals, 'sequence': seq_all_trees})
     df['left'] = df['interval'].apply(lambda x: x[0])
@@ -66,14 +73,16 @@ def get_overlap(set1, set2, num_samples):
     p2 = len(set2)/num_samples
     return (len(set1 & set2)/num_samples - p1*p2)/np.sqrt(p1-p1**2)/np.sqrt(p2-p2**2)
 
-def update_intervals(target_seq, row, number_of_overlaps, found_mismatch, num_samples, overlap_threshold):
-    sequence = row['sequence']
-    num_bp_grid = row['num_bp_grid']
+def update_intervals(target_seq, sequence, num_bp_grid, number_of_overlaps, found_mismatch, overlap_threshold):
     ncoal1 = len(target_seq)
     overlap_matrix = np.zeros((ncoal1, len(sequence)))
-    for j, target_descendants in enumerate(target_seq):
-        for k, node_descendants in enumerate(sequence):
-            overlap_matrix[j, k] = get_overlap(target_descendants, node_descendants, num_samples) #len(target_descendants & node_descendants)/len(node_descendants.union(target_descendants))
+    num_samples = len(target_seq[0])
+    overlap_matrix = (target_seq @ sequence.T) / num_samples
+    p1_num = np.mean(target_seq, axis=1, keepdims=True)
+    p2_num = np.mean(sequence, axis=1, keepdims=True)
+    p1_denom = np.sqrt(p1_num - p1_num**2)
+    p2_denom = np.sqrt(p2_num - p2_num**2)
+    overlap_matrix = (overlap_matrix - p1_num @ p2_num.T) / (p1_denom @ p2_denom.T)
     candidate_pairs = []
     for j in range(ncoal1):
         for k in range(len(sequence)):
@@ -94,7 +103,7 @@ def update_intervals(target_seq, row, number_of_overlaps, found_mismatch, num_sa
         found_mismatch[j] = False
     return found_mismatch, number_of_overlaps
 
-def get_approx_node_persistence(df, pos, num_samples, overlap_threshold=0.8, tree_window=100):
+def get_approx_node_persistence(df, pos, overlap_threshold=0.8, tree_window=100):
     left_array = df['left'].values
     right_array = df['right'].values
     target_tree_idx = np.argmax((left_array <= pos) & (right_array >= pos))
@@ -108,11 +117,11 @@ def get_approx_node_persistence(df, pos, num_samples, overlap_threshold=0.8, tre
     found_mismatch_forward, found_mismatch_backward = np.zeros(ncoal1, dtype=bool), np.zeros(ncoal1, dtype=bool)
     # Forward pass
     for i, row in df_subset_forward.iterrows():
-        found_mismatch_forward, number_of_overlaps = update_intervals(target_seq, row, number_of_overlaps, found_mismatch_forward, num_samples, overlap_threshold)
+        found_mismatch_forward, number_of_overlaps = update_intervals(target_seq, row['sequence'], row['num_bp_grid'], number_of_overlaps, found_mismatch_forward, overlap_threshold)
         if np.all(found_mismatch_forward): break
     # Backward pass
     for i, row in df_subset_backward.iloc[::-1].iterrows():
-        found_mismatch_backward, number_of_overlaps = update_intervals(target_seq, row, number_of_overlaps, found_mismatch_backward, num_samples, overlap_threshold)
+        found_mismatch_backward, number_of_overlaps = update_intervals(target_seq, row['sequence'], row['num_bp_grid'], number_of_overlaps, found_mismatch_backward, overlap_threshold)
         if np.all(found_mismatch_backward): break
     return number_of_overlaps
 

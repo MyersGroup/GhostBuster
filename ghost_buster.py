@@ -483,14 +483,33 @@ def random_sweep(
 
     print("fixed params:" + str(time.time() - st))
     n_sites = []
+
+    count_matching_mask = 0
     for sample_no in range(len(args.sample_id)):
+        if (mask_dodgy[sample_no] == mask_dodgy[0]).all():
+            count_matching_mask += 1
+
+    if count_matching_mask == len(args.sample_id): 
+        effective_number_samples = 1
+        print("All samples have the same mask")
+    else:
+        effective_number_samples = len(args.sample_id)
+
+    for sample_no in range(effective_number_samples):
         n_sites_sam = 0
-        for i, (l, r) in enumerate(zip(tree_left_bp[sample_no], tree_right_bp[sample_no])):
-            if exact_pos is None:
-                n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
-            else:
-                n_sites_sam += len(exact_pos[(exact_pos['chr'] == np.array(chr_map)[mask_dodgy[sample_no]][i]) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
+        chr_map_masked = np.array(chr_map)[mask_dodgy[sample_no]]
+        for chr in np.unique(chr_map_masked):
+            if exact_pos is not None:
+                exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
+            for i, (l, r) in enumerate(zip(tree_left_bp[sample_no][chr_map_masked == chr], tree_right_bp[sample_no][chr_map_masked == chr])):
+                if exact_pos is None:
+                    n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
+                else:
+                    n_sites_sam += np.searchsorted(exact_pos_chr['pos'], r) - np.searchsorted(exact_pos_chr['pos'], l)
         n_sites.append(copy.deepcopy(n_sites_sam))
+    
+    if count_matching_mask == len(args.sample_id):
+        n_sites = [n_sites[0]] * len(args.sample_id)
 
     st = time.time()
     out = Parallel(n_jobs=1)(
@@ -547,17 +566,27 @@ def random_sweep(
     )
 
 def get_expected_r2(own_membership, num_samples):
-    num_clusters = len(own_membership)
-    own_membership = own_membership.reshape(num_clusters, num_samples, -1)
-    num_sites = own_membership.shape[2]
-    sum_haploid = own_membership.sum(axis=(1, 2))
-    sum_haploid_squared = (own_membership ** 2).sum(axis=(1, 2))
-    num = sum_haploid_squared - (sum_haploid ** 2) / num_sites
-    denom = sum_haploid - (sum_haploid ** 2) / num_sites
-    expected_r2 = num/denom
-    print("Final expected R2 = " + str(np.sum(num) / np.sum(denom)))
-    print("Per ancestry expected R2 = " + str(expected_r2))
-    return expected_r2
+    if num_samples % 2 == 0:
+        num_clusters = len(own_membership)
+        own_membership = own_membership.reshape(num_clusters, num_samples, -1)
+        num_sites = own_membership.shape[2]
+        diploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))
+        cross_haploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))  
+        for sample in range(0, num_samples, 2):
+            hap1 = own_membership[:, sample, :]
+            hap2 = own_membership[:, sample + 1, :]
+            diploid_membership[:, sample // 2, :] = hap1 + hap2
+            cross_haploid_membership[:, sample // 2, :] = hap1 * hap2
+        sum_diploid = diploid_membership.sum(axis=(1,2))
+        sum_diploid_squared = (diploid_membership ** 2).sum(axis=(1,2))
+        sum_cross_haploid = cross_haploid_membership.sum(axis=(1,2))
+        num = sum_diploid_squared - (sum_diploid ** 2) / num_sites / (num_samples // 2)
+        denom = sum_diploid + 2 * sum_cross_haploid - (sum_diploid ** 2) / num_sites / (num_samples // 2)
+        expected_r2 = num / denom
+        print("Final expected R2 = " + str(np.sum(num)/np.sum(denom)))
+        print("Per ancestry expected R2 = " + str(expected_r2))
+    else:
+        print("Not calculating expected R2 as both haploids not present....")
 
 def write_membership_grid(
     args,
