@@ -14,12 +14,19 @@ import pdb
 
 from utils import boolean
 
-font = {"size": 16}
-matplotlib.rc("font", **font)
-plt.rc("axes.spines", **{"bottom": True, "left": True, "right": False, "top": False})
-sns.set_palette("colorblind")
-color_palette = sns.color_palette("colorblind")
-
+import matplotlib as mpl
+font = {'family' : 'normal', 'size' : 22}
+mpl.rc('font', **font)
+plt.rc('axes.spines', **{'bottom':True, 'left':True, 'right':False, 'top':False})
+mpl.rcParams['xtick.labelsize'] = 20          # Set global font size for x-tick labels
+mpl.rcParams['ytick.labelsize'] = 20          # Set global font size for y-tick labels
+mpl.rcParams['xtick.major.size'] = 10           # Set global length for major x-ticks
+mpl.rcParams['ytick.major.size'] = 10           # Set global length for major y-ticks
+mpl.rcParams['axes.linewidth'] = 2            # Set global thickness for axis lines
+mpl.rcParams['xtick.major.size'] = 10         # Set global length for major x-ticks
+mpl.rcParams['ytick.major.size'] = 10         # Set global length for major y-ticks
+mpl.rcParams['xtick.major.width'] = 2         # Set global width for major x-ticks
+mpl.rcParams['ytick.major.width'] = 2         # Set global width for major y-ticks
 
 def func(dist, a, c):
     return a * np.exp(-dist / 100) + c
