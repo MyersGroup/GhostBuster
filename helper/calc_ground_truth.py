@@ -6,43 +6,42 @@ from tqdm import tqdm
 import msprime
 import argparse
 
-def combine_segs(segs, seq_len, get_segs=False, bin_size=10000):
-    # Get sequence length from the segment boundaries
-    merged = np.empty([0, 2])
+def combine_segs(segs, seq_len, num_dests, get_segs=False, bin_size=10000):
+    local_ancestry = np.zeros((int(seq_len / bin_size), num_dests))
     if len(segs) == 0:
         if get_segs:
-            return []
+            return local_ancestry
         else:
             return np.zeros(int(seq_len / bin_size))
     sorted_segs = segs[np.argsort(segs[:, 0]), :]
+    merged = np.empty([0, 3])
     for higher in sorted_segs:
         if len(merged) == 0:
             merged = np.vstack([merged, higher])
         else:
             lower = merged[-1, :]
-            if higher[0] <= lower[1]:
+            if higher[0] <= lower[1] and higher[2] == lower[2]:
                 upper_bound = max(lower[1], higher[1])
-                merged[-1, :] = (lower[0], upper_bound)
+                merged[-1, :] = (lower[0], upper_bound, lower[2])
             else:
                 merged = np.vstack([merged, higher])
     if get_segs:
-        # Create an array to hold local ancestry at every 10kb bin
-        local_ancestry = np.zeros(int(seq_len / bin_size))
         for segment in merged:
+            dest = int(segment[2])
             start_bin = int(np.ceil(segment[0] // bin_size))
             end_bin = int(np.floor(segment[1] // bin_size)) + 1
             if end_bin > start_bin:
-                local_ancestry[start_bin:end_bin] = 1
+                local_ancestry[start_bin:end_bin, dest] = 1
         return local_ancestry
     else:
         return np.sum(merged[:, 1] - merged[:, 0]) / seq_len
 
 def main(args):
-    admix_source = args.admix_source 
+    admix_source = args.admix_source
     admix_dest = args.admix_dest
-    Testpopulation = args.sample_id 
+    Testpopulation = args.sample_id
     bin_size = args.force_build if args.cm_grid is None else 1
-    # Preload the tree sequences for all chromosomes
+    num_dests = len(admix_dest)
     ts_list = []
     chr_list = []
     for chrom in args.chrs:
@@ -62,7 +61,7 @@ def main(args):
                         "right": migration.right,
                         "node": migration.node,
                         "time": migration.time,
-                        "dest": migration.dest,
+                        "dest": admix_dest.index(migration.dest),
                         "source": migration.source,
                     }
                 )
@@ -75,29 +74,32 @@ def main(args):
                     break
                 for node in tree.leaves(mr['node']):
                     if node in Testpopulation:
-                        de_seg[node].append(tree.get_interval())  
+                        de_seg[node].append((tree.get_interval()[0], tree.get_interval()[1], mr['dest']))
         for l in Testpopulation:
             de_seg_all_chr[l].append(np.array(de_seg[l]))
     for l in Testpopulation:
-        all_local_ancestry = []    
+        all_local_ancestry = []
         for chrom_no, (chrom, ts) in enumerate(zip(chr_list, ts_list)):
             seq_len = ts.sequence_length
             recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(chrom) + ".txt")
-            true_de_segs = combine_segs(de_seg_all_chr[l][chrom_no], seq_len, True, bin_size)
-            chrom_data = np.vstack((chrom * np.ones(len(true_de_segs)), np.arange(0, seq_len, bin_size), true_de_segs, 1-true_de_segs)).T
-            df = pd.DataFrame(chrom_data, columns=["chr", "pos", "prob_0", "prob_1"])
+            true_de_segs = combine_segs(de_seg_all_chr[l][chrom_no], seq_len, num_dests, True, bin_size)
+            chrom_data = np.hstack((
+                chrom * np.ones((true_de_segs.shape[0], 1)),
+                np.arange(0, seq_len, bin_size)[0:true_de_segs.shape[0]].reshape(-1, 1),
+                true_de_segs
+            ))
+            df = pd.DataFrame(chrom_data, columns=["chr", "pos"] + [f"prob_{i}" for i in range(num_dests)])
             df = df[(df.pos > recomb_map_msprime.left[0]) & (df.pos < recomb_map_msprime.right[-1])]
             df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'])
             if args.cm_grid is not None:
-                m_grid = args.cm_grid/100
-                df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int')* m_grid
+                m_grid = args.cm_grid / 100
+                df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
                 df = df.groupby('genpos_rounded').first().reset_index()
                 df = df.drop(columns=['genpos_rounded'])
-                ## filter df to only keep values close to integral multiple of args.cm_grid
             all_local_ancestry.append(df)
         sample_local_ancestry_df = pd.concat(all_local_ancestry)
         sample_local_ancestry_df.to_csv(args.output + f"_{l}.csv", sep="\t", index=False)
-        print("Genome-wide local ancestry for sample " +str(l) + " : " + str(sample_local_ancestry_df['prob_0'].mean()))
+        print(f"Genome-wide local ancestry for sample {l}: {sample_local_ancestry_df.iloc[:, 2:].mean().mean()}")
         print(f"Finished processing sample {l}")
 
 if __name__ == '__main__':
