@@ -9,7 +9,7 @@ import statsmodels.api as sm
 from sklearn.metrics import precision_recall_curve, average_precision_score
 from sklearn.calibration import calibration_curve
 import random
-
+import sys
 import matplotlib as mpl
 font = {'family' : 'normal', 'size' : 22}
 mpl.rc('font', **font)
@@ -39,22 +39,29 @@ def calculate_ece(prob_true, prob_pred, n_bins=20):
     ece /= len(prob_pred)  # Normalize by the total number of points
     return ece
 
-import sys
-
 def get_pr_calibration(post_file_name, gt_file_name, sample_list):
     post_overall = []
     gt_overall = []
     for sample in sample_list:
         post = pd.read_csv(glob.glob(post_file_name + '_overall_membership_*_sample_id_{0}.csv'.format(sample))[0], sep='\s+')
+        mean_prop = post[[col for col in post.columns if col.startswith('prob_')]].mean(axis=0)
+        post = post.drop(columns=[f'prob_{max_idx}' for max_idx in np.where(mean_prop == mean_prop.max())[0]])
         gt = pd.read_csv(gt_file_name + '_{0}.csv'.format(sample), sep='\s+')
-        gt = gt.rename(columns={'prob_0':'gt', 'prob_1':'notgt'})
+        gt = gt.rename(columns={f'prob_{i}': f'gt_{i}' for i in range(len([col for col in gt.columns if col.startswith('prob_')]))})
+        gt_components = [col for col in gt.columns if col.startswith('gt_')]
+        post_components = [col for col in post.columns if col.startswith('prob_')]
         mdf = pd.merge(post, gt, on=['chr', 'pos'])
-        r2_per_comp = {}
-        for component in range(0, post.shape[1] - 3):
-            r2_per_comp[component] = np.corrcoef(mdf['gt'], mdf['prob_' + str(component)])[0, 1]
-        best_comp = max(r2_per_comp, key=r2_per_comp.get)
-        post_overall.extend(mdf['prob_' + str(best_comp)].values.tolist())
-        gt_overall.extend(mdf['gt'].values.tolist())
+        for post_comp in post_components:
+            best_r2 = -np.inf
+            best_gt_comp = None
+            for gt_comp in gt_components:
+                if gt_comp in gt.columns:
+                    r2 = np.corrcoef(mdf[gt_comp], mdf[post_comp])[0, 1]
+                    if r2 > best_r2:
+                        best_r2 = r2
+                        best_gt_comp = gt_comp
+            post_overall.extend(mdf[post_comp].values.tolist())
+            gt_overall.extend(mdf[best_gt_comp].values.tolist())
     r2 = np.corrcoef(gt_overall, post_overall)[0, 1]**2
     precision, recall, thresholds = precision_recall_curve(gt_overall, post_overall)
     sampled_pairs = random.sample(list(zip(precision, recall)), 200)
@@ -109,7 +116,7 @@ def plot_results(gt_file_name, relate_file_name, true_file_name=None, skov_file_
     plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
     plt.xlabel('Predicted Probability', fontsize=22)
     plt.ylabel('True Probability', fontsize=22)
-    plt.legend(loc='lower right', fontsize=22, frameon=False)
+    plt.legend(fontsize=18, frameon=False)
     plt.tight_layout()
     plt.savefig(relate_file_name + '_calibration.svg', dpi=300, transparent=True)
     plt.show()
@@ -146,4 +153,4 @@ if __name__ == "__main__":
     plot_results(gt_file_name, relate_file_name, true_file_name, skov_file_name)
 
 
-## Usage: python ../clean/RelateLocalAncestry/plotting/visualize_r2.py ground_truth output_nonghost/relate output_nonghost/true 
+## Usage: python ../clean/RelateLocalAncestry/plotting/visualize_r2.py ground_truth output_ghost/relate output_ghost/true skov/skov
