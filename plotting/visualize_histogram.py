@@ -19,7 +19,7 @@ palette = ['purple','green','red','blue','orange','brown','pink','gray','olive',
 
 def plot_histogram_from_csv(df, output):
     prob_cols = np.sort([col for col in df.columns if col.startswith('prob_')])
-    if not prob_cols:
+    if len(prob_cols) < 1:
         print("No columns starting with 'prob_' found.")
         return
     num_components = len(prob_cols)
@@ -27,7 +27,8 @@ def plot_histogram_from_csv(df, output):
     for i, col in enumerate(prob_cols):
         plt.subplot(1, num_components, i + 1)
         plt.hist(df[col], bins=50, alpha=0.7, color=palette[i])
-        plt.title(f'Histogram for {col}', fontsize=24)
+        comp = 'comp. ' + str(int(col.split('_')[-1])+1)
+        plt.title(f'Histogram for {comp}', fontsize=24)
         plt.xlabel('Probability', fontsize=20)
         plt.ylabel('Frequency', fontsize=20)
 
