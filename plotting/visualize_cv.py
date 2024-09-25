@@ -32,13 +32,13 @@ df = pd.DataFrame(data)
 print(df)
 
 # Create subplots stacked on top of each other
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5), sharex=True)  # Share the x-axis
+fig, (ax2, ax1) = plt.subplots(2, 1, figsize=(7, 5), sharex=True)  # Share the x-axis
 
 # First subplot for ll values
-ax1.scatter(df['k'], df['ll'], s=150, c='blue', edgecolors='black', linewidths=2)  # Larger points
-ax1.plot(df['k'], df['ll'], linestyle='--', color='blue', linewidth=3)  # Fatter lines
+ax1.scatter(df['k'], df['ll'], s=150, c='olive', edgecolors='black', linewidths=2)  # Larger points
+ax1.plot(df['k'], df['ll'], linestyle='--', color='olive', linewidth=3)  # Fatter lines
 ax1.set_ylabel(None)
-ax1.set_xlabel(None)
+ax1.set_xlabel('Number of components', fontsize=22)
 min_lim_ll = df.ll.min() - 0.2 * (df.ll.max() - df.ll.min())
 max_lim_ll = df.ll.max() + 0.2 * (df.ll.max() - df.ll.min())
 ax1.set_ylim(min_lim_ll, max_lim_ll)
@@ -47,10 +47,10 @@ ax1.set_title('Held-out log-likelihood', fontsize=20)
 ax1.set_xticks(args.k)  # Set xticks only at args.k
 
 # Second subplot for r2 values
-ax2.scatter(df['k'], df['r2'], s=150, c='green', edgecolors='black', linewidths=2)  # Larger points
-ax2.plot(df['k'], df['r2'], linestyle='--', color='green', linewidth=3)  # Fatter lines
+ax2.scatter(df['k'], df['r2'], s=150, c='brown', edgecolors='black', linewidths=2)  # Larger points
+ax2.plot(df['k'], df['r2'], linestyle='--', color='brown', linewidth=3)  # Fatter lines
 ax2.set_ylabel(None)
-ax2.set_xlabel('Number of components', fontsize=22)
+ax2.set_xlabel(None)
 min_lim_r2 = df.r2.min() - 0.2 * (df.r2.max() - df.r2.min())
 max_lim_r2 = df.r2.max() + 0.2 * (df.r2.max() - df.r2.min())
 ax2.set_ylim(min_lim_r2, max_lim_r2)

@@ -191,7 +191,7 @@ for idx, component in enumerate(components):
     ax[1, idx].set_ylim(pc4_min, pc4_max)  # Apply the global y-axis limit for PC4
     ax[1, idx].set_xlabel(f'PC3', fontsize=18)
     ax[1, idx].set_ylabel(f'PC4', fontsize=18)
-    ax[1,idx].set_title(f'{component}', fontsize=18, loc='center')
+    # ax[1,idx].set_title(f'{component}', fontsize=18, loc='center')
 
 plt.tight_layout()
 plt.savefig(output_file_name + '_pca.svg', dpi=300)

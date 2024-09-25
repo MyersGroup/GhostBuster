@@ -23,7 +23,7 @@ def plot_histogram_from_csv(df, output):
         print("No columns starting with 'prob_' found.")
         return
     num_components = len(prob_cols)
-    plt.figure(figsize=(7 * num_components, 7))  # Adjust width dynamically
+    plt.figure(figsize=(7 * num_components, 5))  # Adjust width dynamically
     for i, col in enumerate(prob_cols):
         plt.subplot(1, num_components, i + 1)
         plt.hist(df[col], bins=50, alpha=0.7, color=palette[i])
