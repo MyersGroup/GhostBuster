@@ -808,7 +808,7 @@ def main(args):
                 print(f"Recombination map for chromosome {chr} not found!")
                 continue
             df = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], 1), columns=['pos'])
-            df['genpos'] = recomb_map_msprime.get_cumulative_mass(df['pos'].values)
+            df['genpos'] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(df['pos'].values, recomb_map_msprime.position.min()), recomb_map_msprime.position.max())) 
             m_grid = args.cm_grid / 100
             df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
             df = df.groupby('genpos_rounded').first().reset_index()
@@ -871,9 +871,10 @@ def main(args):
         
         if args.load_mask is not None:
             exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
-            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(exact_pos_chr['pos'].values)
+            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(exact_pos_chr['pos'].values, recomb_map_msprime.position.min()), recomb_map_msprime.position.max()))
         else:
-            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.arange(0, int(tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max()), args.force_build))
+            grid_ = np.arange(0, int(tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max()), args.force_build)
+            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(grid_, recomb_map_msprime.position.min()), recomb_map_msprime.position.max()))
 
 
     gen_grid_all = []

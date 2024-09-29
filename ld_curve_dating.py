@@ -39,18 +39,18 @@ import matplotlib.pyplot as plt
 def plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix):
     num_sam = len(means_all)
     plt.clf()
-    fig, ax = plt.subplots(figsize=(5, 5), dpi=300)
+    fig, ax = plt.subplots(figsize=(7, 7), dpi=300)
     for sam in range(num_sam):
-        spl = make_interp_spline(dist, means_all[sam][0, 0])  # comp1, comp1
+        spl = make_interp_spline(dist, means_all[sam][0, 0])
         ax.plot(dist, spl(dist), color="gray", alpha=0.3, linewidth=0.5)
     mean_of_all_sam = np.mean(means_all, axis=0)
-    spl = make_interp_spline(dist, mean_of_all_sam[0, 0])  # comp1, comp1
+    spl = make_interp_spline(dist, mean_of_all_sam[0, 0])
     ax.plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
     popt, pcov = curve_fit(func, dist * admixtimes, mean_of_all_sam[0, 0], maxfev=5000)
-    ax.plot(dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1, label='Admix. = {0:.1f} gens'.format(admixtimes))
+    ax.plot(dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1)
+    ax.text(0.4, 0.8, '{:.1f} gens.'.format(admixtimes), transform=ax.transAxes, fontsize=26, verticalalignment='top', color="green")
     ax.set_xlabel("Genetic distance (cM)")
     ax.set_ylabel("Relative probability")
-    plt.legend(frameon=False, loc='upper right', fontsize=14)
     plt.tight_layout()
     plt.savefig(output_prefix + "ld_curve_comp1.svg", dpi=300, transparent=True)
     plt.show()

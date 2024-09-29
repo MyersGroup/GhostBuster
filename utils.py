@@ -490,7 +490,10 @@ def get_target_branch_length(
                                 ):
                                     num_muts_list.append(int(edpep.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
-                                        number_of_overlaps = number_of_overlaps_list[edge_count]
+                                        try:
+                                            number_of_overlaps = number_of_overlaps_list[edge_count]
+                                        except:
+                                            pdb.set_trace()
                                         number_window_list.append(1.0 * number_of_overlaps)
                                     else:
                                         number_window_list.append(1.0)

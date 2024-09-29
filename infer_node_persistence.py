@@ -51,7 +51,10 @@ def convert_set_to_binary(s, num_samples):
 def get_coal_descendants(ts, target, bp_grid, num_samples):
     seq_all_trees = []
     tree_intervals = [] 
+    num_bp_grid_all = []
     for tree in ts.trees():
+        num_bp_grid = np.searchsorted(bp_grid, tree.interval[1], side='right') - np.searchsorted(bp_grid, tree.interval[0])
+        if num_bp_grid == 0: continue
         seq_ = []
         p = copy.deepcopy(target)
         while p != tree.root:
@@ -59,13 +62,12 @@ def get_coal_descendants(ts, target, bp_grid, num_samples):
             descendants_binary = convert_set_to_binary(set(tree.samples(parent)) - set(tree.samples(p)), num_samples)
             seq_.append(descendants_binary)
             p = parent
+        num_bp_grid_all.append(num_bp_grid)
         seq_all_trees.append(np.array(seq_))
         tree_intervals.append(tree.interval)    
-    df = pd.DataFrame({'interval': tree_intervals, 'sequence': seq_all_trees})
+    df = pd.DataFrame({'interval': tree_intervals, 'sequence': seq_all_trees, 'num_bp_grid': num_bp_grid_all})
     df['left'] = df['interval'].apply(lambda x: x[0])
     df['right'] = df['interval'].apply(lambda x: x[1])
-    df['num_bp_grid'] = df.apply(lambda row: np.sum((bp_grid >= row['left']) & (bp_grid <= row['right'])), axis=1)
-    df = df[df['num_bp_grid'] > 0]
     return df
 
 def get_overlap(set1, set2, num_samples):
