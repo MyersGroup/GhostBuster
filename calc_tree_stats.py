@@ -78,7 +78,7 @@ def compute_tree_stats(
         count += 1
         tree = ts.first()
         for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
-            if tree.interval[1] // force_build - tree.interval[0] // force_build > 0:
+            if np.ceil(tree.interval[1] / force_build) - np.ceil(tree.interval[0] / force_build) > 0:
                 tree_size.append(tree.interval[1] - tree.interval[0])
                 tree_left_bp_chr.append(tree.interval[0])
                 tree_right_bp_chr.append(tree.interval[1])

@@ -503,7 +503,7 @@ def random_sweep(
                 exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
             for i, (l, r) in enumerate(zip(tree_left_bp[sample_no][chr_map_masked == chr], tree_right_bp[sample_no][chr_map_masked == chr])):
                 if exact_pos is None:
-                    n_sites_sam += int(r/args.force_build) - int(l/args.force_build)
+                    n_sites_sam += int(np.ceil(r/args.force_build)) - int(np.ceil(l/args.force_build))
                 else:
                     n_sites_sam += np.searchsorted(exact_pos_chr['pos'], r) - np.searchsorted(exact_pos_chr['pos'], l)
         n_sites.append(copy.deepcopy(n_sites_sam))
@@ -610,9 +610,9 @@ def write_membership_grid(
             chr_map_ = chr_map[mask_dodgy[k]]
             res = []
             for i, (c, l, r) in enumerate(zip(chr_map_, tree_left_bp[k], tree_right_bp[k])):
-                for j in range(int(l / window_size), int(r / window_size)):
+                for j in range(int(np.ceil(l / window_size)), int(np.ceil(r / window_size))):
                     res.append(
-                        [c, (j+1) * window_size] +  own_membership[:, count_i].tolist()
+                        [c, j* window_size] +  own_membership[:, count_i].tolist()
                     )
                     count_i += 1
             df = pd.DataFrame(
@@ -839,10 +839,16 @@ def main(args):
         exact_pos = exact_pos[exact_pos['chr'].isin(list(map(int, args.chrs.split(","))))]
         exact_pos = exact_pos.sort_values(by=['chr', 'pos'])
         exact_pos = exact_pos.reset_index(drop=True)
-        mask_dodgy = []
+        mask_dodgy_recomb = filter_recomb_rate(
+                args.masking_threshold,
+                tree_left_bp,
+                recomb_rates,
+                chr_map
+            )
         load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)
+        mask_dodgy = []
         for sample_id in args.sample_id:
-            mask_dodgy.append(load_mask)
+            mask_dodgy.append(load_mask*mask_dodgy_recomb)
 
     num_trees_per_sample = [np.sum(mask_dodgy[sam]) for sam in range(len(args.sample_id))]
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
@@ -873,7 +879,7 @@ def main(args):
             exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
             gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(exact_pos_chr['pos'].values, recomb_map_msprime.position.min()), recomb_map_msprime.position.max()))
         else:
-            grid_ = np.arange(0, int(tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max()), args.force_build)
+            grid_ = np.arange(0, int(np.ceil(tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max())), args.force_build)
             gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(grid_, recomb_map_msprime.position.min()), recomb_map_msprime.position.max()))
 
 
@@ -882,7 +888,7 @@ def main(args):
         gen_grid_sam = []
         if args.load_mask is None: 
             for i, (c, l, r) in enumerate(zip(np.array(chr_map)[mask_dodgy[sample_no]], tree_left_bp[sample_no], tree_right_bp[sample_no])):
-                for j in range(int(l/args.force_build), int(r/args.force_build)):
+                for j in range(int(np.ceil(l/args.force_build)), int(np.ceil(r/args.force_build))):
                     if args.hmm is False:
                         gen_grid_sam.append(j*1e3)
                     else:

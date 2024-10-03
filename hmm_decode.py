@@ -30,7 +30,7 @@ def bp_to_trees(probability, tree_left_bp, tree_right_bp, window_size=1e3):
     count = 0
     for i, (l, r) in enumerate(zip(tree_left_bp, tree_right_bp)):
         count_i = 0
-        for j in range(int(l / window_size), int(r / window_size)):
+        for j in range(int(np.ceil(l / window_size)), int(np.ceil(r / window_size))):
             res[:, i] += probability[:, count]
             count += 1
             count_i += 1

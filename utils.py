@@ -20,7 +20,7 @@ from infer_node_persistence import get_coal_descendants, get_approx_node_persist
 
 def get_mut_scaling_grid():
     mut_scaling = {}
-    for i in range(1, 100):
+    for i in range(1, 1000):
         sum_ = 0
         for j in range(1,i+1):
             sum_ += 2/(j+1) 
@@ -427,7 +427,7 @@ def get_target_branch_length(
 
                 tree_left_bp_chr, tree_right_bp_chr = [], []
                 for tree in ts.trees():
-                    if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
+                    if (np.ceil(tree.interval[1]/args.force_build) - np.ceil(tree.interval[0]/args.force_build) > 0):
                         if mask_dodgy[sample_no][count_all_tree]:
                             tree_left_bp_chr.append(tree.interval[0])
                             tree_right_bp_chr.append(tree.interval[1])
@@ -440,15 +440,27 @@ def get_target_branch_length(
                         # num_sites = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
                         num_sites = np.searchsorted(exact_pos_chr['pos'].values, r) - np.searchsorted(exact_pos_chr['pos'].values, l) 
                     else:
-                        num_sites = r // args.force_build - l // args.force_build
+                        num_sites = np.ceil(r / args.force_build) - np.ceil(l / args.force_build)
                     num_sites_per_tree.append(num_sites)
-                    for j in range(int(l / args.force_build), int(r / args.force_build)):
-                        bp_grid.append((j+1)*args.force_build) ## caution
+                    for j in range(int(np.ceil(l / args.force_build)), int(np.ceil(r / args.force_build))):
+                        bp_grid.append(j*args.force_build) ## caution
                 if exact_pos is not None:
                     bp_grid = exact_pos[(exact_pos['chr'] == chr)]['pos'].values
                 else:
                     bp_grid = np.array(bp_grid)
                 num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
+
+                ### Might be faster than previous implementation
+                # if exact_pos is not None:
+                #     left_indices = np.searchsorted(exact_pos_chr['pos'].values, tree_left_bp_chr)
+                #     right_indices = np.searchsorted(exact_pos_chr['pos'].values, tree_right_bp_chr)
+                #     num_sites_per_tree = right_indices - left_indices
+                #     bp_grid = exact_pos_chr['pos'].values
+                # else:
+                #     num_sites_per_tree = (tree_right_bp_chr // args.force_build) - (tree_left_bp_chr // args.force_build)
+                #     ranges = [np.arange(int(l / args.force_build) + 1, int(r / args.force_build) + 1) * args.force_build for l, r in zip(tree_left_bp_chr, tree_right_bp_chr)]
+                #     bp_grid = np.concatenate(ranges)
+                # num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
                 # df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
                 df_coal_descendants = get_coal_descendants(ts, sample, bp_grid, ts.num_samples)
@@ -456,7 +468,7 @@ def get_target_branch_length(
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
                 for tid in tqdm(range(ts.num_trees)):
-                    if (tree.interval[1] // args.force_build - tree.interval[0] // args.force_build > 0):
+                    if (np.ceil(tree.interval[1] / args.force_build) - np.ceil(tree.interval[0] / args.force_build) > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
                             if args.hmm:
                                 number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, args.node_persist_thresh)
