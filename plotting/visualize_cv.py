@@ -35,6 +35,7 @@ print(df)
 fig, (ax2, ax1) = plt.subplots(2, 1, figsize=(7, 5), sharex=True)  # Share the x-axis
 
 # First subplot for ll values
+df['ll'] = df['ll'] - df['ll'].loc[0]  # Normalize log-likelihood values
 ax1.scatter(df['k'], df['ll'], s=150, c='olive', edgecolors='black', linewidths=2)  # Larger points
 ax1.plot(df['k'], df['ll'], linestyle='--', color='olive', linewidth=3)  # Fatter lines
 ax1.set_ylabel(None)
@@ -42,21 +43,24 @@ ax1.set_xlabel('Number of components', fontsize=22)
 min_lim_ll = df.ll.min() - 0.2 * (df.ll.max() - df.ll.min())
 max_lim_ll = df.ll.max() + 0.2 * (df.ll.max() - df.ll.min())
 ax1.set_ylim(min_lim_ll, max_lim_ll)
-ax1.set_title('Held-out log-likelihood', fontsize=20)
+ax1.set_title('Held-out log-likelihood improvement', fontsize=20)
 # ax1.legend(loc='upper right', fontsize=16, frameon=False)  # Smaller legend font
 ax1.set_xticks(args.k)  # Set xticks only at args.k
 
 # Second subplot for r2 values
-ax2.scatter(df['k'], df['r2'], s=150, c='brown', edgecolors='black', linewidths=2)  # Larger points
-ax2.plot(df['k'], df['r2'], linestyle='--', color='brown', linewidth=3)  # Fatter lines
+ax2.scatter(df['k'], df['r2'], s=150, c='brown', edgecolors='black', linewidths=2)
+ax2.plot(df['k'], df['r2'], linestyle='--', color='brown', linewidth=3)
 ax2.set_ylabel(None)
 ax2.set_xlabel(None)
-min_lim_r2 = df.r2.min() - 0.2 * (df.r2.max() - df.r2.min())
-max_lim_r2 = df.r2.max() + 0.2 * (df.r2.max() - df.r2.min())
-ax2.set_ylim(min_lim_r2, max_lim_r2)
+ax2.set_ylim(0, 1.05)
+r2_at_k2 = df[df['k'] == 2]['r2'].values[0]
+r2_at_max_k = df[df['k'] == df['k'].max()]['r2'].values[0]
+ax2.axhline(y=r2_at_k2, color='gray', linestyle='--', linewidth=1)
+ax2.axhline(y=r2_at_max_k, color='gray', linestyle='--', linewidth=1)
+ax2.text(1.4, r2_at_k2 + 0.02, f'{r2_at_k2:.2f}', color='gray', ha='center', fontsize=14)
+ax2.text(1.4, r2_at_max_k + 0.02, f'{r2_at_max_k:.2f}', color='gray', ha='center', fontsize=14)
 ax2.set_title(f'Expected $R^2$', fontsize=20)
-# ax2.legend(loc='upper right', fontsize=16, frameon=False)  # Smaller legend font
-ax2.set_xticks(args.k)  # Set xticks only at args.k
+ax2.set_xticks(args.k)
 
 # Common x-label
 # fig.text(0.5, 0.04, 'Number of clusters', ha='center', fontsize=22)  # Adjust position and size

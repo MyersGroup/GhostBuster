@@ -61,32 +61,38 @@ coal %>% filter(!is.na(haploid.coalescence.rate)) %>% group_by(epoch.start, grou
 coal$group1 <- paste0("comp", coal$group1)
 print(coal)
 
+## Generate global xlim and ylim based on all components
+global_xlim <- range(28 * coal$epoch.start, na.rm = TRUE)
+global_ylim <- range(0.5 / coal$mean, na.rm = TRUE)
+
+# Adjust the limits with a small padding for better visualization (optional)
+global_xlim <- c(max(5e2, global_xlim[1] * 0.5), min(2e6, global_xlim[2] * 2))
+global_ylim <- c(max(5e2, global_ylim[1] * 0.5), min(2e7, global_ylim[2] * 2))
+
 ## Generate plots based on the number of components
 for (i in 1:num_components){
   coal_subset <- subset(coal, group1 == paste0('comp', i))
   
   ## Get the corresponding proportion for this component
   proportion_value <- last_iter_prop %>% filter(Components == paste0("comp", i)) %>% pull(Proportion)
-  xlim_values <- range(28 * coal_subset$epoch.start, na.rm = TRUE)
-  ylim_values <- range(0.5 / coal_subset$mean, na.rm = TRUE)
-  
-  # Adjust the limits with a small padding for better visualization (optional)
-  xlim_values <- c(max(5e2, xlim_values[1] * 0.5), min(2e6, xlim_values[2] * 2))
-  ylim_values <- c(max(5e2, ylim_values[1] * 0.5), min(2e7, ylim_values[2] * 2))
 
-  coal_subset$mean <- pmin(pmax(0.5 / coal_subset$mean, ylim_values[1]), ylim_values[2])
+  coal_subset$mean <- pmin(pmax(0.5 / coal_subset$mean, global_ylim[1]), global_ylim[2])
 
   p <- ggplot(coal_subset) +
     geom_step(aes(x = 28*epoch.start, y = mean, color = Reference), lwd = 1.2) +
-    scale_x_continuous(trans = "log10", limits = xlim_values) +
-    scale_y_continuous(trans = "log10", limits = ylim_values) +
+    scale_x_continuous(trans = "log10", limits = global_xlim) +
+    scale_y_continuous(trans = "log10", limits = global_ylim) +
     xlab("years ago") + 
-    ylab(paste0("Component ", i, " (", round(proportion_value, 2), "%)")) + 
-    theme_classic(base_size = 18, base_family = "Helvetica")  # Explicitly setting the font
+    ylab(NULL) +   # Set 'Inverse Coalescence Rates' as the y-axis label
+    ggtitle(paste0("Component ", i, " (", round(proportion_value, 2), "%)")) +  # Set title
+    theme_classic(base_size = 18, base_family = "Helvetica") +  # Explicitly setting the font
+    theme(plot.title = element_text(hjust = 0.5))  + # Center the title
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
 
   ## Save each plot based on the filename path
   ggsave(p, file = paste0(filename, "_visual", i, ".svg"), width = 6, height = 4, device = "svg", dpi=400)
 }
+
 
 ## module load R/4.1.2-foss-2021b
 ## Usage: Rscript visualize_gamma.R ../../../denisovan_sim_2024_08/output_nonghost/relate_50_51_52_53_54_55_56_57_58_59
