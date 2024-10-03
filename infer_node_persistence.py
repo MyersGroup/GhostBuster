@@ -3,12 +3,21 @@ import numpy as np
 import pandas as pd
 import copy
 import numba
+from tqdm import tqdm
+import pdb
+import time
 
 def get_coal_times(ts, target, bp_grid):
     ### go along the tree and save the matrix of (t1,t2) for each coal. event on target lineage
     seq_all_trees = []
     tree_intervals = []
     for tree in ts.trees():
+        num_bp_grid = np.searchsorted(bp_grid, tree.interval[1]) - np.searchsorted(bp_grid, tree.interval[0])
+        if num_bp_grid == 0: continue
+        try:
+            tree.root
+        except:
+            import pdb; pdb.set_trace()
         seq_ = []
         p = copy.deepcopy(target)
         while p != tree.root:
@@ -27,7 +36,7 @@ def get_coal_times(ts, target, bp_grid):
 def get_true_node_persistence(df, pos, tree_window=100):
     left_array = df['left'].values
     right_array = df['right'].values
-    target_tree_idx = np.argmax((left_array <= pos) & (right_array >= pos))
+    target_tree_idx = np.argmax((left_array <= pos) & (right_array > pos))
     start_idx = max(0, target_tree_idx - tree_window)
     end_idx = min(len(df), target_tree_idx + tree_window + 1)
     df_subset = df.iloc[start_idx:end_idx]
@@ -53,7 +62,7 @@ def get_coal_descendants(ts, target, bp_grid, num_samples):
     tree_intervals = [] 
     num_bp_grid_all = []
     for tree in ts.trees():
-        num_bp_grid = np.searchsorted(bp_grid, tree.interval[1], side='right') - np.searchsorted(bp_grid, tree.interval[0])
+        num_bp_grid = np.searchsorted(bp_grid, tree.interval[1]) - np.searchsorted(bp_grid, tree.interval[0])
         if num_bp_grid == 0: continue
         seq_ = []
         p = copy.deepcopy(target)
@@ -155,20 +164,21 @@ if __name__ == "__main__":
     plt.rc('axes.spines', **{'bottom': True, 'left': True, 'right': False, 'top': False})
     sns.set_palette('colorblind')
     
-    ts = tskit.load("../../denisovan_sim_2024_08/trees/stdpopsim_homsap_chr1.trees")
+    ts = tskit.load("/well/myers/users/tgh473/workspace/ghost_buster/denisovan_sim_2024_08/trees/sparse_0.5_edge_stdpopsim_homsap_chr5.trees")
     bp_grid = np.arange(0, ts.sequence_length, 1e4)
     num_samples = ts.num_samples
     target = 0
     df1 = get_coal_times(ts, target, bp_grid)
-    df = get_coal_descendants(ts, target, bp_grid)
+    df = get_coal_descendants(ts, target, bp_grid, ts.num_samples)
     
-    for thresh in [0.5, 0.7, 0.8, 0.9]:
+    for thresh in [0.5]:
         b1, b2, b3 = [], [], []
         print("")
         print(thresh)
         for pos in tqdm(range(0, int(ts.sequence_length)-1000000, 1000000)):
+            print(pos)
             true_overlaps = get_true_node_persistence(df1, pos)
-            approx_overlaps = get_approx_node_persistence(df, pos, num_samples, thresh)
+            approx_overlaps = get_approx_node_persistence(df, pos, thresh)
             relate_overlaps = get_relate_node_persistence(ts, target, pos, bp_grid)
             b1.extend(true_overlaps)
             b2.extend(approx_overlaps)
@@ -176,7 +186,7 @@ if __name__ == "__main__":
         
         # Plotting subplots for b1 vs b2, b2 vs b3, and m1 vs m2
         plt.clf()
-        fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
         
         # Define a function to handle plotting for each pair
         def plot_comparison(ax, x_data, y_data, xlabel, ylabel, label_fit, label_yx):
@@ -211,10 +221,14 @@ if __name__ == "__main__":
         plot_comparison(axes[1], b1, b3, 'True overlaps', 'Relate overlaps', 'Linear Fit', 'y=x')
         print(stats.spearmanr(b1, b3))
         
+        # 2. Second subplot: b2 vs b3
+        plot_comparison(axes[2], b2, b3, 'Approx. overlaps', 'Relate overlaps', 'Linear Fit', 'y=x')
+        print(stats.spearmanr(b2, b3))
+
         # Overall title and save the figure
         plt.suptitle(f'Node Persistence Comparisons at Threshold {thresh}', fontsize=18)
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.savefig(f'node_persistence_comparisons_{thresh}.svg', dpi=300, transparent=True)
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
 
 ## maybe look for two consequtive mismatches ?
