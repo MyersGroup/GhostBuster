@@ -34,8 +34,8 @@ def process_epochs(
     epoch_index_in_tree = []
     denom_in_tree = []
 
+    event_count = 0
     for epoch in range(len(epoch_intervals_pow) - 1):
-        event_count = 0
         coal_events_submatrix = coal_events_matrix[
             (coal_events_matrix[:, 3] >= epoch_intervals_pow[epoch])
             & (coal_events_matrix[:, 3] < epoch_intervals_pow[epoch + 1])
@@ -115,6 +115,11 @@ def process_epochs(
                 max(epoch_intervals_pow[epoch + 1], target_sampling_time)
                 - max(tprev, target_sampling_time)
             ) * prev_branch_length
+        if (event_count == num_samples - 1) and epoch <= len(
+            epoch_intervals_pow
+        ) - 2:
+            opportunity[:, epoch + 1 :, count_mut_trees] = 0.0
+            break
 
     return (
         proportion_of_coalescing_in_tree,
@@ -222,9 +227,6 @@ def fixed_parameters(
                                     ]
                                 )
                         coal_events_matrix = np.array(coal_events_matrix, dtype="float64")
-                        # coal_events_matrix = coal_events_matrix[
-                        #     coal_events_matrix[:, 3].argsort()
-                        # ]  ## sorting based on coalescene times
                         target_seq = target_seq_
                         count_mut_trees += 1
                         if exact_pos is None:
@@ -249,185 +251,6 @@ def fixed_parameters(
                             for t in sample_list:
                                 lineage_content[t] = 0.0
 
-                        event_count = 0
-                        # for epoch in range(len(epoch_intervals_pow) - 1):
-                        #     coal_events_submatrix = coal_events_matrix[
-                        #         (
-                        #             coal_events_matrix[:, 3]
-                        #             >= epoch_intervals_pow[epoch]
-                        #         )
-                        #         & (
-                        #             coal_events_matrix[:, 3]
-                        #             < epoch_intervals_pow[epoch + 1]
-                        #         )
-                        #     ]
-                        #     tprev = max(
-                        #         epoch_intervals_pow[epoch],
-                        #         target_sampling_time,
-                        #     )  ##only considering coalescene events after the sampling time of the target
-                        #     if epoch == 0 and ignore_first_epoch:
-                        #         for i in range(len(lineage_content)):
-                        #             if lineage_content_sum[i] > 0:
-                        #                 lineage_content[i] /= np.sum(
-                        #                     lineage_content[i]
-                        #                 )
-                        #                 lineage_content_sum[i] = 1
-                        #     for (a, b, c, t) in coal_events_submatrix:
-                        #         event_count += 1
-                        #         a = int(a)
-                        #         b = int(b)
-                        #         c = int(c)
-                        #         opportunity[:, epoch, count_mut_trees] += (
-                        #             max(t, target_sampling_time) - tprev
-                        #         ) * (
-                        #             prev_branch_length
-                        #         )  ##only considering coalescene events after the sampling time of the target
-                        #         # print("pre: " + str(time.time() - st2))
-                        #         if (
-                        #             a in sample_list_tree and b in sample_list_tree
-                        #         ):  ## sometimes the target sequences coalesces with each other, in that case we append the coalesced node to the sample's list for that tree
-                        #             sample_list_tree.append(c)
-
-                        #         if (a == target_seq and b in sample_list_tree) or (
-                        #             b == target_seq and a in sample_list_tree
-                        #         ):  ## in case the target sequences coalesces with other target sequence, we don't count that coalescene count and opportunity
-                        #             target_seq = c
-                        #             lineage_content[c] = 0
-                        #             lineage_content_sum[c] = 0
-
-                        #         elif (
-                        #             a == target_seq and lineage_content_sum[b] == 0
-                        #         ) or (
-                        #             b == target_seq and lineage_content_sum[a] == 0
-                        #         ):
-                        #             ## This happens when target coalesces with a sample not included, in that case don't count that event
-                        #             target_seq = c
-                        #             lineage_content[c] = 0
-                        #             lineage_content_sum[c] = 0
-
-                        #         elif a == target_seq:
-                        #             proportion_of_coalescing = copy.deepcopy(
-                        #                 lineage_content[b]
-                        #             )  # / (sum(lineage_content[b]))
-                        #             coal_count[
-                        #                 count_mut_trees
-                        #             ] += 1
-                        #             target_seq = c
-                        #             lineage_content[c] = 0
-                        #             lineage_content_sum[c] = 0
-                        #             proportion_of_coalescing_in_tree.append(
-                        #                 proportion_of_coalescing
-                        #             )
-                        #             epoch_index_in_tree.append(epoch)
-                        #             denom_in_tree.append(
-                        #                 copy.deepcopy(
-                        #                     opportunity[:, :, count_mut_trees]
-                        #                 )
-                        #             )
-                        #             opportunity[:, :, count_mut_trees] = 0
-                        #             prev_branch_length = (
-                        #                 prev_branch_length
-                        #                 - lineage_content[b]
-                        #                 / (lineage_content_sum[b])
-                        #             )
-                        #         elif b == target_seq:
-                        #             proportion_of_coalescing = copy.deepcopy(
-                        #                 lineage_content[a]
-                        #             )  # / (sum(lineage_content[a]))
-                        #             ## sum() faster than np.sum()
-                        #             coal_count[
-                        #                 count_mut_trees
-                        #             ] += 1
-                        #             target_seq = c
-                        #             lineage_content[c] = 0
-                        #             lineage_content_sum[c] = 0
-                        #             proportion_of_coalescing_in_tree.append(
-                        #                 proportion_of_coalescing
-                        #             )
-                        #             epoch_index_in_tree.append(epoch)
-                        #             denom_in_tree.append(
-                        #                 copy.deepcopy(
-                        #                     opportunity[:, :, count_mut_trees]
-                        #                 )
-                        #             )
-                        #             opportunity[:, :, count_mut_trees] = 0
-                        #             prev_branch_length = (
-                        #                 prev_branch_length
-                        #                 - lineage_content[a]
-                        #                 / (lineage_content_sum[a])
-                        #             )
-
-                        #         else:  ## we don't count the branch lengths for the samples in sample_list_tree because they are the target sequences
-                        #             lineage_content[c] = (
-                        #                 lineage_content[a] + lineage_content[b]
-                        #             )
-                        #             lineage_content_sum[c] = (
-                        #                 lineage_content_sum[a]
-                        #                 + lineage_content_sum[b]
-                        #             )
-                        #             if (
-                        #                 lineage_content_sum[a] == 0
-                        #                 or lineage_content_sum[b] == 0
-                        #             ):
-                        #                 ### If a coalescene event involving atleast 1 non-included sequence, we ignore that event
-                        #                 pass
-
-                        #             elif (
-                        #                 a in sample_list_tree
-                        #                 and b not in sample_list_tree
-                        #             ):
-                        #                 prev_branch_length = (
-                        #                     prev_branch_length
-                        #                     - lineage_content[b]
-                        #                     / (lineage_content_sum[b])
-                        #                     + lineage_content[c]
-                        #                     / (lineage_content_sum[c])
-                        #                 )
-                        #             elif (
-                        #                 b in sample_list_tree
-                        #                 and a not in sample_list_tree
-                        #             ):
-                        #                 prev_branch_length = (
-                        #                     prev_branch_length
-                        #                     - lineage_content[a]
-                        #                     / (lineage_content_sum[a])
-                        #                     + lineage_content[c]
-                        #                     / (lineage_content_sum[c])
-                        #                 )
-                        #             elif (
-                        #                 a not in sample_list_tree
-                        #                 and b not in sample_list_tree
-                        #             ):
-                        #                 prev_branch_length = (
-                        #                     prev_branch_length
-                        #                     - lineage_content[a]
-                        #                     / (lineage_content_sum[a])
-                        #                     - lineage_content[b]
-                        #                     / (lineage_content_sum[b])
-                        #                     + lineage_content[c]
-                        #                     / (lineage_content_sum[c])
-                        #                 )
-                        #         lineage_content[a] = 0
-                        #         lineage_content[b] = 0
-                        #         lineage_content_sum[a] = 0
-                        #         lineage_content_sum[b] = 0
-                        #         tprev = max(t, target_sampling_time)
-                        #     if epoch < len(epoch_intervals_pow) - 2:
-                        #         opportunity[:, epoch, count_mut_trees] += (
-                        #             max(
-                        #                 epoch_intervals_pow[epoch + 1],
-                        #                 target_sampling_time,
-                        #             )
-                        #             - max(
-                        #                 tprev,
-                        #                 target_sampling_time,
-                        #             )
-                        #         ) * (prev_branch_length)
-                        #     if (event_count == num_samples - 1) and epoch <= len(
-                        #         epoch_intervals_pow
-                        #     ) - 2:
-                        #         opportunity[:, epoch + 1 :, count_mut_trees] = 0.0
-                        #         break
                         proportion_of_coalescing_in_tree, epoch_index_in_tree, denom_in_tree, coal_count = process_epochs(
                             epoch_intervals_pow,
                             coal_events_matrix,

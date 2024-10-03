@@ -16,7 +16,6 @@ from numba import jit
 from numba.typed import List
 import pickle
 import time 
-from infer_node_persistence import get_coal_descendants, get_approx_node_persistence, get_coal_times, get_true_node_persistence, get_relate_node_persistence
 
 def get_mut_scaling_grid():
     mut_scaling = {}
@@ -366,7 +365,6 @@ def get_target_branch_length(
         count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
         target_branch_length_sample = List()
         mutscale_sample = List()
-        leave_one_sample_out = list(set(sample_list) - set([sample]))
         
         for chr_no, chr in enumerate(chrs):
             if args.branch_persistence_file_prefix is not None:
@@ -437,7 +435,6 @@ def get_target_branch_length(
                 num_sites_per_tree = []
                 for i, (l, r) in enumerate(zip(tree_left_bp_chr, tree_right_bp_chr)):
                     if exact_pos is not None:
-                        # num_sites = len(exact_pos[(exact_pos['chr'] == chr) & (exact_pos['pos'] >= l) & (exact_pos['pos'] < r)])
                         num_sites = np.searchsorted(exact_pos_chr['pos'].values, r) - np.searchsorted(exact_pos_chr['pos'].values, l) 
                     else:
                         num_sites = np.ceil(r / args.force_build) - np.ceil(l / args.force_build)
@@ -463,17 +460,13 @@ def get_target_branch_length(
                 # num_sites_per_tree = np.array(num_sites_per_tree, dtype='int')
 
                 # df_coal_time_matrix = get_coal_times(ts, sample, bp_grid)
-                df_coal_descendants = get_coal_descendants(ts, sample, bp_grid, ts.num_samples)
+                # df_coal_descendants = get_coal_descendants(ts, sample, bp_grid, ts.num_samples)
 
                 tree = ts.first()
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
                 for tid in tqdm(range(ts.num_trees)):
                     if (np.ceil(tree.interval[1] / args.force_build) - np.ceil(tree.interval[0] / args.force_build) > 0):
                         if mask_dodgy[sample_no][count_all_tree2]:
-                            if args.hmm:
-                                number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, args.node_persist_thresh)
-                                # number_of_overlaps_list = get_true_node_persistence(df_coal_time_matrix, (tree.interval[0]+tree.interval[1])/2)
-                                # number_of_overlaps_list = get_relate_node_persistence(ts, sample, (tree.interval[0]+tree.interval[1])/2, bp_grid)
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             num_muts_list = []
@@ -484,7 +477,6 @@ def get_target_branch_length(
                                 poplabels_included_pos = poplabels[new_mask].index.values.copy()
                                 count_all_tree3 += 1
 
-                            edge_count = 0
                             while parent != tree.root:
                                 edge_id = tree.edge(parent)
                                 edge = ts_edges[edge_id]
@@ -494,24 +486,20 @@ def get_target_branch_length(
                                 tree_leaves_left = list(tree.leaves(tree_childrens[0]))
                                 tree_leaves_right = list(tree.leaves(tree_childrens[1]))
                                 if (
-                                    np.intersect1d(tree_leaves_left, poplabels_included_pos).size -
-                                    np.intersect1d(tree_leaves_left, leave_one_sample_out).size > 0
+                                    np.intersect1d(tree_leaves_left, poplabels_included_pos).size > 0
                                 ) and (
-                                    np.intersect1d(tree_leaves_right, poplabels_included_pos).size -
-                                    np.intersect1d(tree_leaves_right, leave_one_sample_out).size > 0
+                                    np.intersect1d(tree_leaves_right, poplabels_included_pos).size > 0
                                 ):
                                     num_muts_list.append(int(edpep.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
-                                        try:
-                                            number_of_overlaps = number_of_overlaps_list[edge_count]
-                                        except:
-                                            pdb.set_trace()
+                                        edge_left, edge_right, _ = edge.metadata.decode('utf-8').rstrip('\x00').split(" ")
+                                        edge_left, edge_right = min(tree.interval[0], float(edge_left)), max(tree.interval[1],float(edge_right))
+                                        # number_of_overlaps = np.sum((bp_grid >= edge_left) & (bp_grid < edge_right))
+                                        number_of_overlaps = np.searchsorted(bp_grid, edge_right) - np.searchsorted(bp_grid, edge_left)
                                         number_window_list.append(1.0 * number_of_overlaps)
                                     else:
                                         number_window_list.append(1.0)
-                                edge_count += 1
                             ## scale number_window_list by the number of mutations in the tree
-                            ## removing this for true trees as trees are accurate
                             if args.mut_scaling:
                                 number_window_list = scale_number_window_list(number_window_list, num_muts_list)
                                 mutscale_sample_chr.append(scale_number_window_list(np.ones_like(number_window_list), num_muts_list))
