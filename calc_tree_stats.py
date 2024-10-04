@@ -29,7 +29,6 @@ def compute_tree_stats(
     tree_left_bp_gen = []
     tree_right_bp_gen = []
     no_of_mutations = []
-    tmrca = []
     recomb_window_size = 50000  ## window size for measure recombination rates
     recomb_rates = []
     chr_map = []
@@ -83,7 +82,6 @@ def compute_tree_stats(
                 tree_left_bp_chr.append(tree.interval[0])
                 tree_right_bp_chr.append(tree.interval[1])
                 no_of_mutations.append(tree.num_mutations)
-                tmrca.append(tree.time(tree.root))
                 chr_map.append(chr)
                 recomb_events = recomb_map[
                     ~(
@@ -138,7 +136,6 @@ def compute_tree_stats(
         tree_left_bp_gen,
         tree_right_bp_gen,
         no_of_mutations,
-        tmrca,
         recomb_rates,
         chr_map,
     )
@@ -172,7 +169,6 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
                 tree_left_bp_gen,
                 tree_right_bp_gen,
                 no_of_mutations,
-                tmrca,
                 recomb_rates,
                 chr_map,
             ) = pickle.load(f_pkl)
@@ -188,7 +184,6 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
                 tree_left_bp_gen,
                 tree_right_bp_gen,
                 no_of_mutations,
-                tmrca,
                 recomb_rates,
                 chr_map,
             ) = compute_tree_stats(
@@ -210,7 +205,6 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
                     tree_left_bp_gen,
                     tree_right_bp_gen,
                     no_of_mutations,
-                    tmrca,
                     recomb_rates,
                     chr_map,
                 ],

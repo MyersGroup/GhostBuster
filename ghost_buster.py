@@ -845,10 +845,17 @@ def main(args):
                 recomb_rates,
                 chr_map
             )
+        count = 0
+        for chr_count, chr in enumerate(np.unique(chr_map)):
+            for tree_left_i, tree_right_i in zip(np.array(tree_left_bp)[chr_map == chr], np.array(tree_right_bp)[chr_map == chr]):
+                if not mask_dodgy_recomb[count]:
+                    exact_pos.loc[(exact_pos.pos >= tree_left_i) & (exact_pos.pos < tree_right_i),  'pos'] = np.nan
+                count +=1 
+        exact_pos = exact_pos.dropna()
         load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)
         mask_dodgy = []
         for sample_id in args.sample_id:
-            mask_dodgy.append(load_mask*mask_dodgy_recomb)
+            mask_dodgy.append(load_mask)
 
     num_trees_per_sample = [np.sum(mask_dodgy[sam]) for sam in range(len(args.sample_id))]
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
