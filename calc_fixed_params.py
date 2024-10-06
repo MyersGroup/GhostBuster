@@ -355,7 +355,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
             f_pkl.close()
             if exact_pos is not None:
-                if (exact_pos_file != exact_pos[exact_pos['chr'] == chr].values).any():
+                if (exact_pos_file[exact_pos_file[:,0] == chr] != exact_pos[exact_pos['chr'] == chr].values).any():
                     print("Exact position file doesn't match, calculating fixed parameters..")
                     raise Exception
             if gt_ref is not None and gt_ref_file is None:

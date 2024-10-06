@@ -849,7 +849,7 @@ def main(args):
         for chr_count, chr in enumerate(np.unique(chr_map)):
             for tree_left_i, tree_right_i in zip(np.array(tree_left_bp)[chr_map == chr], np.array(tree_right_bp)[chr_map == chr]):
                 if not mask_dodgy_recomb[count]:
-                    exact_pos.loc[(exact_pos.pos >= tree_left_i) & (exact_pos.pos < tree_right_i),  'pos'] = np.nan
+                    exact_pos.loc[(exact_pos.pos >= tree_left_i) & (exact_pos.pos < tree_right_i) & (exact_pos.chr == chr),  'pos'] = np.nan
                 count +=1 
         exact_pos = exact_pos.dropna()
         load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)

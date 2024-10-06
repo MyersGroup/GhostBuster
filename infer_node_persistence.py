@@ -164,7 +164,7 @@ if __name__ == "__main__":
     plt.rc('axes.spines', **{'bottom': True, 'left': True, 'right': False, 'top': False})
     sns.set_palette('colorblind')
     
-    ts = tskit.load("/well/myers/users/tgh473/workspace/ghost_buster/denisovan_sim_2024_08/trees/sparse_0.5_edge_stdpopsim_homsap_chr5.trees")
+    ts = tskit.load("/well/myers/users/tgh473/workspace/ghost_buster/denisovan_sim_2024_08/trees/stdpopsim_homsap_chr5.trees")
     bp_grid = np.arange(0, ts.sequence_length, 1e4)
     num_samples = ts.num_samples
     target = 0

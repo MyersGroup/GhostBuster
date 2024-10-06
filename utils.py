@@ -396,7 +396,7 @@ def get_target_branch_length(
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
                     if exact_pos is not None:
-                        if (exact_pos[(exact_pos['chr'] == chr)].values != exact_pos_file).any():
+                        if (exact_pos[(exact_pos['chr'] == chr)].values != exact_pos_file[exact_pos_file[:,0] == chr]).any():
                             print("Branch persistence statistics file does not match the current settings, recomputing...")
                             raise Exception
                     for i in target_branch_length_sample_chr:
