@@ -19,9 +19,7 @@ def process_epochs(
     coal_events_matrix,
     lineage_content,
     target_sampling_time,
-    sample_list_tree,
     target_seq,
-    sample_list,
     opportunity,
     count_mut_trees,
     num_samples,
@@ -53,18 +51,9 @@ def process_epochs(
             event_count += 1
             a, b, c = int(a), int(b), int(c)
             opportunity[:, epoch, count_mut_trees] += (max(t, target_sampling_time) - tprev) * prev_branch_length
-
-            # if (a in sample_list_tree and b in sample_list_tree):
-            #     sample_list_tree.append(c)
-
-            # if (a == target_seq and b in sample_list_tree) or (b == target_seq and a in sample_list_tree):
-            #     target_seq = c
-            #     lineage_content[c], lineage_content_sum[c] = 0, 0
-
             if (a == target_seq and lineage_content_sum[b] == 0) or (b == target_seq and lineage_content_sum[a] == 0):
                 target_seq = c
                 lineage_content[c], lineage_content_sum[c] = 0, 0
-
             elif a == target_seq:
                 proportion_of_coalescing = lineage_content[b].copy()
                 coal_count[count_mut_trees] += 1
@@ -75,7 +64,6 @@ def process_epochs(
                 denom_in_tree.append(opportunity[:, :, count_mut_trees].copy())
                 opportunity[:, :, count_mut_trees] = 0
                 prev_branch_length -= lineage_content[b] / lineage_content_sum[b]
-
             elif b == target_seq:
                 proportion_of_coalescing = lineage_content[a].copy()
                 coal_count[count_mut_trees] += 1
@@ -86,30 +74,23 @@ def process_epochs(
                 denom_in_tree.append(opportunity[:, :, count_mut_trees].copy())
                 opportunity[:, :, count_mut_trees] = 0
                 prev_branch_length -= lineage_content[a] / lineage_content_sum[a]
-
             else:
                 lineage_content[c] = lineage_content[a] + lineage_content[b]
                 lineage_content_sum[c] = lineage_content_sum[a] + lineage_content_sum[b]
-
                 if lineage_content_sum[a] == 0 or lineage_content_sum[b] == 0:
                     pass
-
                 elif a == target_seq and b != target_seq:
                     prev_branch_length -= lineage_content[b] / lineage_content_sum[b]
                     prev_branch_length += lineage_content[c] / lineage_content_sum[c]
-
                 elif b == target_seq and a != target_seq:
                     prev_branch_length -= lineage_content[a] / lineage_content_sum[a]
                     prev_branch_length += lineage_content[c] / lineage_content_sum[c]
-
                 elif a != target_seq and b != target_seq:
                     prev_branch_length -= (lineage_content[a] / lineage_content_sum[a]) + (lineage_content[b] / lineage_content_sum[b])
                     prev_branch_length += lineage_content[c] / lineage_content_sum[c]
-
             lineage_content[a], lineage_content[b] = 0, 0
             lineage_content_sum[a], lineage_content_sum[b] = 0, 0
             tprev = max(t, target_sampling_time)
-
         if epoch < len(epoch_intervals_pow) - 2:
             opportunity[:, epoch, count_mut_trees] += (
                 max(epoch_intervals_pow[epoch + 1], target_sampling_time)
@@ -135,7 +116,6 @@ def fixed_parameters(
     num_trees,
     mask_dodgy,
     sample,
-    sample_list,
     epoch_intervals_pow,
     target_branch_length_masked,
     mutscale_masked,
@@ -145,11 +125,6 @@ def fixed_parameters(
     gt_ref=None,
     exact_pos=None,
 ):
-    assert [
-        s in poplabels_orig[poplabels_orig.INCLUDE == 1].index.tolist()
-        for s in sample_list
-    ] == [True] * len(sample_list)
-    ### You have removed target samples from the poplabels file
     eps = 1e-20
     if exact_pos is not None:
         exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
@@ -185,7 +160,7 @@ def fixed_parameters(
         ## Only count lineage content for included samples
         if poplabels_orig.INCLUDE.iloc[m]:
             lineage_content_init[m, group_id[poplabels_orig.GROUP.iloc[m]]] = 1.0
-    for t in sample_list:
+    for t in [sample]:
         lineage_content_init[
             t
         ] = 0.0  ## setting lineage content of target sequences = 0
@@ -201,7 +176,6 @@ def fixed_parameters(
                     > 0
                 ):
                     if mask_dodgy[count_all_tree]:
-                        sample_list_tree = copy.deepcopy(sample_list)
                         ## Make the coalescene table and sort it
                         coal_events_matrix = []
                         mapping = {}
@@ -248,7 +222,7 @@ def fixed_parameters(
                                         lineage_content[m] = 0
                                     else:
                                         lineage_content[m, int(gt_ref[m,count_mut_trees])] = 1
-                            for t in sample_list:
+                            for t in [sample]:
                                 lineage_content[t] = 0.0
 
                         proportion_of_coalescing_in_tree, epoch_index_in_tree, denom_in_tree, coal_count = process_epochs(
@@ -256,9 +230,7 @@ def fixed_parameters(
                             coal_events_matrix,
                             lineage_content,
                             target_sampling_time,
-                            sample_list_tree,
                             target_seq,
-                            sample_list,
                             opportunity,
                             count_mut_trees,
                             num_samples,
@@ -270,14 +242,13 @@ def fixed_parameters(
                         )
                         epoch_index_all.append(epoch_index_in_tree)
                         denom_all.append(denom_in_tree)
-                        sample_list_tree = copy.deepcopy(sample_list)
 
                     count_all_tree += 1
                 tree.next()
 
         ## correcting opportunity for ancestral reference samples
         for m in range(len(poplabels)):
-            if (not m in sample_list) and (poplabels.INCLUDE.iloc[m]):
+            if (not m in [sample]) and (poplabels.INCLUDE.iloc[m]):
                 for epoch in range(len(epoch_intervals_pow) - 1):
                     if (
                         epoch_intervals_pow[epoch + 1]
@@ -420,7 +391,6 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 num_trees,
                 mask_dodgy_sam_chr,
                 sample,
-                args.sample_id,
                 epoch_intervals_pow,
                 target_branch_length_masked_chr,
                 mutscale_masked_chr,
