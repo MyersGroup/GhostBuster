@@ -84,35 +84,42 @@ def get_overlap(set1, set2, num_samples):
     p2 = len(set2)/num_samples
     return (len(set1 & set2)/num_samples - p1*p2)/np.sqrt(p1-p1**2)/np.sqrt(p2-p2**2)
 
+@numba.jit(nopython=True)
 def update_intervals(target_seq, sequence, num_bp_grid, number_of_overlaps, found_mismatch, overlap_threshold):
-    ncoal1 = len(target_seq)
-    overlap_matrix = np.zeros((ncoal1, len(sequence)))
+    mismatch_indices = [i for i, mismatch in enumerate(found_mismatch) if not mismatch]
+    target_seq_filtered = target_seq[~found_mismatch]
+    ncoal1_filtered = len(target_seq_filtered)
+    overlap_matrix = np.zeros((ncoal1_filtered, len(sequence)))
     num_samples = len(target_seq[0])
-    overlap_matrix = (target_seq @ sequence.T) / num_samples
-    p1_num = np.mean(target_seq, axis=1, keepdims=True)
-    p2_num = np.mean(sequence, axis=1, keepdims=True)
+    overlap_matrix = (target_seq_filtered @ sequence.T) / num_samples
+    p1_num = target_seq_filtered.sum(axis=1)/target_seq_filtered.shape[1] #np.mean(target_seq_filtered, axis=1, keepdims=True)
+    p2_num = sequence.sum(axis=1)/sequence.shape[1] #np.mean(sequence, axis=1, keepdims=True)
     p1_denom = np.sqrt(p1_num - p1_num**2)
     p2_denom = np.sqrt(p2_num - p2_num**2)
-    overlap_matrix = (overlap_matrix - p1_num @ p2_num.T) / (p1_denom @ p2_denom.T)
+    overlap_matrix = (overlap_matrix - np.outer(p1_num, p2_num)) / np.outer(p1_denom, p2_denom)
+    # for j in range(overlap_matrix.shape[0]):
+    #     for k in range(overlap_matrix.shape[1]):
+    #         overlap_matrix[j, k] = (overlap_matrix[j, k] - p1_num[j]*p2_num[k]) / (p1_denom[j]*p2_denom[k])
     candidate_pairs = []
-    for j in range(ncoal1):
+    for j in range(ncoal1_filtered):
         for k in range(len(sequence)):
             if overlap_matrix[j, k] >= overlap_threshold:
                 candidate_pairs.append((j, k, overlap_matrix[j, k]))
     candidate_pairs.sort(key=lambda x: x[2], reverse=True)
     assigned_nodes_target = set()
     assigned_nodes_other = set()
-    for j, k, overlap_value in candidate_pairs:
-        if not found_mismatch[j]: 
-            if j not in assigned_nodes_target:
-                if k not in assigned_nodes_other:
-                    assigned_nodes_target.add(j)
-                    assigned_nodes_other.add(k)
-                    number_of_overlaps[j] += num_bp_grid
-    found_mismatch = np.ones(ncoal1, dtype='bool')
+    for j_filtered, k, overlap_value in candidate_pairs:
+        j = mismatch_indices[j_filtered]
+        if not found_mismatch[j]:
+            if j not in assigned_nodes_target and k not in assigned_nodes_other:
+                assigned_nodes_target.add(j)
+                assigned_nodes_other.add(k)
+                number_of_overlaps[j] += num_bp_grid
+    found_mismatch[:] = True
     for j in assigned_nodes_target:
         found_mismatch[j] = False
     return found_mismatch, number_of_overlaps
+
 
 def get_approx_node_persistence(df, pos, overlap_threshold=0.8, tree_window=100):
     left_array = df['left'].values
@@ -122,17 +129,17 @@ def get_approx_node_persistence(df, pos, overlap_threshold=0.8, tree_window=100)
     end_idx = min(len(df), target_tree_idx + tree_window + 1)
     df_subset_forward = df.iloc[target_tree_idx:end_idx]
     df_subset_backward = df.iloc[start_idx:target_tree_idx]
-    target_seq = df.iloc[target_tree_idx]['sequence']
+    target_seq = np.array(df.iloc[target_tree_idx]['sequence'], dtype='float')
     number_of_overlaps = np.zeros(len(target_seq))
     ncoal1 = len(target_seq)
     found_mismatch_forward, found_mismatch_backward = np.zeros(ncoal1, dtype=bool), np.zeros(ncoal1, dtype=bool)
     # Forward pass
     for i, row in df_subset_forward.iterrows():
-        found_mismatch_forward, number_of_overlaps = update_intervals(target_seq, row['sequence'], row['num_bp_grid'], number_of_overlaps, found_mismatch_forward, overlap_threshold)
+        found_mismatch_forward, number_of_overlaps = update_intervals(target_seq, np.array(row['sequence'], dtype='float'), row['num_bp_grid'], number_of_overlaps, found_mismatch_forward, overlap_threshold)
         if np.all(found_mismatch_forward): break
     # Backward pass
     for i, row in df_subset_backward.iloc[::-1].iterrows():
-        found_mismatch_backward, number_of_overlaps = update_intervals(target_seq, row['sequence'], row['num_bp_grid'], number_of_overlaps, found_mismatch_backward, overlap_threshold)
+        found_mismatch_backward, number_of_overlaps = update_intervals(target_seq, np.array(row['sequence'], dtype='float'), row['num_bp_grid'], number_of_overlaps, found_mismatch_backward, overlap_threshold)
         if np.all(found_mismatch_backward): break
     return number_of_overlaps
 
@@ -145,7 +152,15 @@ def get_relate_node_persistence(ts, target, pos, bp_grid):
         edge = ts_edges[tree.edge(p)]
         edge_right = max(float(edge.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
         edge_left = min(float(edge.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
-        number_of_overlaps.append(np.sum((bp_grid >= edge_left) & (bp_grid <= edge_right)))
+        if tree.parent(p) == tree.root:
+            number_of_overlaps.append(np.sum((bp_grid >= edge_left) & (bp_grid < edge_right)))
+            break
+        edgep = ts_edges[tree.edge(tree.parent(p))]
+        edgep_right = max(float(edgep.metadata.decode('utf-8').split(" ")[1]), tree.interval[1])
+        edgep_left = min(float(edgep.metadata.decode('utf-8').split(" ")[0]), tree.interval[0])
+        edge_left = min(edge_left, edgep_left)
+        edge_right = max(edge_right, edgep_right)
+        number_of_overlaps.append(np.sum((bp_grid >= edge_left) & (bp_grid < edge_right)))
         p = tree.parent(p)
     return number_of_overlaps
 
@@ -164,7 +179,7 @@ if __name__ == "__main__":
     plt.rc('axes.spines', **{'bottom': True, 'left': True, 'right': False, 'top': False})
     sns.set_palette('colorblind')
     
-    ts = tskit.load("/well/myers/users/tgh473/workspace/ghost_buster/denisovan_sim_2024_08/trees/stdpopsim_homsap_chr5.trees")
+    ts = tskit.load("/well/myers/users/tgh473/workspace/ghost_buster/denisovan_sim_2024_08/trees/0.7_stdpopsim_homsap_chr5.trees")
     bp_grid = np.arange(0, ts.sequence_length, 1e4)
     num_samples = ts.num_samples
     target = 0
@@ -175,14 +190,14 @@ if __name__ == "__main__":
         b1, b2, b3 = [], [], []
         print("")
         print(thresh)
-        for pos in tqdm(range(0, int(ts.sequence_length)-1000000, 1000000)):
+        for pos in tqdm(range(0, 30*1000000, 100000)):
             print(pos)
             true_overlaps = get_true_node_persistence(df1, pos)
             approx_overlaps = get_approx_node_persistence(df, pos, thresh)
             relate_overlaps = get_relate_node_persistence(ts, target, pos, bp_grid)
-            b1.extend(true_overlaps)
-            b2.extend(approx_overlaps)
-            b3.extend(relate_overlaps)
+            b1.append(true_overlaps[-1])
+            b2.append(approx_overlaps[-1])
+            b3.append(relate_overlaps[-1])
         
         # Plotting subplots for b1 vs b2, b2 vs b3, and m1 vs m2
         plt.clf()
@@ -191,7 +206,7 @@ if __name__ == "__main__":
         # Define a function to handle plotting for each pair
         def plot_comparison(ax, x_data, y_data, xlabel, ylabel, label_fit, label_yx):
             df = pd.DataFrame({xlabel: x_data, ylabel: y_data})
-            df = df[(df[xlabel] < 100) & (df[ylabel] < 100)]
+            # df = df[(df[xlabel] < 500) & (df[ylabel] < 500)]
             # Fit linear regression line
             x_data = df[xlabel].values.reshape(-1, 1)
             y_data = df[ylabel].values
