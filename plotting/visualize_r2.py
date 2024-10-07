@@ -90,7 +90,7 @@ def plot_results(gt_file_name, relate_file_name, true_file_name=None, skov_file_
 
     if skov_file_name:
         r2_skov, precision_skov, recall_skov, ap_skov, prob_pred_skov, prob_true_skov, ece_skov = get_pr_calibration(skov_file_name, gt_file_name, sample_list)
-        results.append(("Skov et al.", r2_skov, precision_skov, recall_skov, ap_skov, prob_pred_skov, prob_true_skov, ece_skov))
+        results.append(("HMMIX", r2_skov, precision_skov, recall_skov, ap_skov, prob_pred_skov, prob_true_skov, ece_skov))
     
     # Sort results by R²
     results = sorted(results, key=lambda x: x[1], reverse=True)

@@ -53,13 +53,13 @@ ax2.plot(df['k'], df['r2'], linestyle='--', color='brown', linewidth=3)
 ax2.set_ylabel(None)
 ax2.set_xlabel(None)
 ax2.set_ylim(0, 1.05)
-r2_at_k2 = df[df['k'] == 2]['r2'].values[0]
-r2_at_max_k = df[df['k'] == df['k'].max()]['r2'].values[0]
-ax2.axhline(y=r2_at_k2, color='gray', linestyle='--', linewidth=1)
-ax2.axhline(y=r2_at_max_k, color='gray', linestyle='--', linewidth=1)
-ax2.text(1.4, r2_at_k2 + 0.02, f'{r2_at_k2:.2f}', color='gray', ha='center', fontsize=14)
-ax2.text(1.4, r2_at_max_k + 0.02, f'{r2_at_max_k:.2f}', color='gray', ha='center', fontsize=14)
-ax2.set_title(f'Expected $R^2$', fontsize=20)
+# r2_at_k2 = df[df['k'] == 2]['r2'].values[0]
+# r2_at_max_k = df[df['k'] == df['k'].max()]['r2'].values[0]
+# ax2.axhline(y=r2_at_k2, color='gray', linestyle='--', linewidth=1)
+# ax2.axhline(y=r2_at_max_k, color='gray', linestyle='--', linewidth=1)
+# ax2.text(1.4, r2_at_k2 + 0.02, f'{r2_at_k2:.2f}', color='gray', ha='center', fontsize=14)
+# ax2.text(1.4, r2_at_max_k + 0.02, f'{r2_at_max_k:.2f}', color='gray', ha='center', fontsize=14)
+ax2.set_title(f'Expected $R$', fontsize=20)
 ax2.set_xticks(args.k)
 
 # Common x-label
