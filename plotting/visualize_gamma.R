@@ -61,12 +61,15 @@ coal %>% filter(!is.na(haploid.coalescence.rate)) %>% group_by(epoch.start, grou
 coal$group1 <- paste0("comp", coal$group1)
 print(coal)
 
+coal <- coal %>% filter(Reference != "focal")
+coal <- coal %>% filter(Reference != "gbr")
+coal <- coal %>% filter(Reference != "WolfNorth_America")
 ## Generate global xlim and ylim based on all components
 global_xlim <- range(28 * coal$epoch.start, na.rm = TRUE)
 global_ylim <- range(0.5 / coal$mean, na.rm = TRUE)
 
 # Adjust the limits with a small padding for better visualization (optional)
-global_xlim <- c(max(5e2, global_xlim[1] * 0.5), min(2e6, global_xlim[2] * 2))
+global_xlim <- c(max(5e1, global_xlim[1] * 0.5), min(2e6, global_xlim[2] * 2))
 global_ylim <- c(max(5e2, global_ylim[1] * 0.5), min(2e7, global_ylim[2] * 2))
 
 ## Generate plots based on the number of components
