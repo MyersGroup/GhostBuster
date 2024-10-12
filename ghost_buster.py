@@ -851,6 +851,10 @@ def main(args):
                 if not mask_dodgy_recomb[count]:
                     exact_pos.loc[(exact_pos.pos >= tree_left_i) & (exact_pos.pos < tree_right_i) & (exact_pos.chr == chr),  'pos'] = np.nan
                 count +=1 
+            tree_first_pos = np.array(tree_left_bp)[chr_map == chr][0]
+            tree_last_pos = np.array(tree_right_bp)[chr_map == chr][-1]
+            exact_pos[(exact_pos.chr == chr) & (exact_pos.pos > tree_last_pos)] = np.nan
+            exact_pos[(exact_pos.chr == chr) & (exact_pos.pos < tree_first_pos)] = np.nan
         exact_pos = exact_pos.dropna()
         load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)
         mask_dodgy = []

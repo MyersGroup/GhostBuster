@@ -245,43 +245,34 @@ def fixed_parameters(
 
                     count_all_tree += 1
                 tree.next()
-
-        ## correcting opportunity for ancestral reference samples
+        sampling_time = poplabels.SAMPLING_TIME.values
+        group_ids = poplabels.GROUP.values
+        include_flags = poplabels.INCLUDE.values
         for m in range(len(poplabels)):
-            if (not m in [sample]) and (poplabels.INCLUDE.iloc[m]):
+            if m != sample and include_flags[m]:
+                m_sampling_time = sampling_time[m]
+                group_id_m = group_id[group_ids[m]]
                 for epoch in range(len(epoch_intervals_pow) - 1):
-                    if (
-                        epoch_intervals_pow[epoch + 1]
-                        < poplabels.SAMPLING_TIME.iloc[target_seq_]
-                    ):
+                    if epoch_intervals_pow[epoch + 1] < sampling_time[target_seq_]:
                         continue
-                    if poplabels.SAMPLING_TIME.iloc[m] > epoch_intervals_pow[epoch]:
+                    if m_sampling_time > epoch_intervals_pow[epoch]:
+                        epoch_diff = max(min(m_sampling_time, epoch_intervals_pow[epoch + 1]) - epoch_intervals_pow[epoch], 0)
                         for tid, denom_tree in enumerate(denom_all):
                             for denom_coal in denom_tree:
                                 if gt_ref is None:
-                                    if (denom_coal[group_id[poplabels.GROUP.iloc[m]],epoch]
-                                        > min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
-                                        - epoch_intervals_pow[epoch]
-                                    ):
-                                        denom_coal[group_id[poplabels.GROUP.iloc[m]],epoch] -= (
-                                            min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
-                                            - epoch_intervals_pow[epoch]
-                                        )
-                                    else:
-                                        denom_coal[group_id[poplabels.GROUP.iloc[m]],epoch] = 0
+                                    denom_value = denom_coal[group_id_m, epoch]
                                 else:
-                                    if (denom_coal[int(gt_ref[m, tid]),epoch]
-                                        > min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
-                                        - epoch_intervals_pow[epoch]
-                                    ):
-                                        denom_coal[int(gt_ref[m, tid]),epoch] -= (
-                                            min(poplabels.SAMPLING_TIME.iloc[m],epoch_intervals_pow[epoch + 1])
-                                            - epoch_intervals_pow[epoch]
-                                        )
+                                    denom_value = denom_coal[int(gt_ref[m, tid]), epoch]
+                                if denom_value > epoch_diff:
+                                    if gt_ref is None:
+                                        denom_coal[group_id_m, epoch] -= epoch_diff
                                     else:
-                                        denom_coal[int(gt_ref[m, tid]),epoch] = 0
-
-
+                                        denom_coal[int(gt_ref[m, tid]), epoch] -= epoch_diff
+                                else:
+                                    if gt_ref is None:
+                                        denom_coal[group_id_m, epoch] = 0
+                                    else:
+                                        denom_coal[int(gt_ref[m, tid]), epoch] = 0
 
     proportion_of_coalescing_all = [sublist for sublist, count in zip(proportion_of_coalescing_all, num_sites_per_tree) for _ in range(count)]
     epoch_index_all = [sublist for sublist, count in zip(epoch_index_all, num_sites_per_tree) for _ in range(count)]

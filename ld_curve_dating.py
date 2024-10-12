@@ -58,7 +58,8 @@ def plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix):
 def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
     num_sam = len(means_all)
     num_clusters = len(means_all[0])
-    fig, ax = plt.subplots(num_clusters, num_clusters, figsize=(10, 10), dpi=300)
+    fig, ax = plt.subplots(num_clusters, num_clusters, figsize=(13, 13), dpi=300)
+    fig.subplots_adjust(hspace=0.4, wspace=0.4)  # Add space between subplots
     for sam in range(num_sam):
         for i in range(num_clusters):
             for j in range(num_clusters):
@@ -89,7 +90,7 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
         fig.suptitle(
             "Co-ancestry curves (admix time = {0:.1f} generations)".format(admixtimes)
         )
-    plt.savefig(output_prefix + "ld_curve.svg", dpi=300)
+    plt.savefig(output_prefix + "ld_curve.pdf", dpi=300)
     plt.show()
     if not refit:
         plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix)
