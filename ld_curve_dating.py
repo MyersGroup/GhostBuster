@@ -28,13 +28,14 @@ mpl.rcParams['ytick.major.size'] = 10         # Set global length for major y-ti
 mpl.rcParams['xtick.major.width'] = 2         # Set global width for major x-ticks
 mpl.rcParams['ytick.major.width'] = 2         # Set global width for major y-ticks
 
-def func(dist, a, c):
-    return a * np.exp(-dist / 100) + c
+def func(sum_of_exp, c, a):
+    return c*sum_of_exp + a
 
-from scipy.interpolate import make_interp_spline
-from scipy.optimize import curve_fit
-import numpy as np
-import matplotlib.pyplot as plt
+def get_exp(dist, t_admix):
+    return np.exp(-t_admix*dist/100)
+
+def transform_admixtime(t_admix):
+    return 1 + t_admix**2
 
 def plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix):
     num_sam = len(means_all)
@@ -46,11 +47,13 @@ def plot_ld_curve_comp1(dist, means_all, admixtimes, output_prefix):
     mean_of_all_sam = np.mean(means_all, axis=0)
     spl = make_interp_spline(dist, mean_of_all_sam[0, 0])
     ax.plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
-    popt, pcov = curve_fit(func, dist * admixtimes, mean_of_all_sam[0, 0], maxfev=5000)
-    ax.plot(dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1)
+    sum_of_exp = get_exp(dist, admixtimes)
+    popt, pcov = curve_fit(func, sum_of_exp, mean_of_all_sam[0, 0], maxfev=5000)
+    ax.plot(dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1)
     ax.text(0.4, 0.8, '{:.1f} gens.'.format(admixtimes), transform=ax.transAxes, fontsize=26, verticalalignment='top', color="green")
     ax.set_xlabel("Genetic distance (cM)")
     ax.set_ylabel("Relative probability")
+    ax.set_title("Co-ancestry curve for single-date fit")
     plt.tight_layout()
     plt.savefig(output_prefix + "ld_curve_comp1.svg", dpi=300, transparent=True)
     plt.show()
@@ -71,25 +74,18 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
             spl = make_interp_spline(dist, mean_of_all_sam[i, j])
             ax[i, j].plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
             if refit:
-                initial_values = (np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000)))))
-                admixtimes = get_admixtimes(initial_values, dist, np.array(means_all)[:,i:i+1,j:j+1])
+                admixtimes, _ = get_admixtimes(dist, np.array(means_all)[:,i:i+1,j:j+1])
+            sum_of_exp = get_exp(dist, admixtimes)
             popt, pcov = curve_fit(
-                func, dist * admixtimes, mean_of_all_sam[i, j], maxfev=5000
+                func, sum_of_exp, mean_of_all_sam[i, j], maxfev=5000
             )
             ax[i, j].plot(
-                dist, func(dist * admixtimes, *popt), "--", color="green", linewidth=1
+                dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1
             )
             if refit:
                 y_cord = 0.5
                 ax[i, j].text(0.35, y_cord, '{0:.1f} gens'.format(admixtimes), transform=ax[i, j].transAxes, fontsize=14, verticalalignment='bottom')
     fig.text(0.5, 0.04, "Genetic distance (cM)", ha="center", va="center")
-    # fig.text(
-    #     0.03, 0.5, "Relative probability", ha="center", va="center", rotation="vertical"
-    # )
-    if not refit:
-        fig.suptitle(
-            "Co-ancestry curves (admix time = {0:.1f} generations)".format(admixtimes)
-        )
     plt.savefig(output_prefix + "ld_curve.pdf", dpi=300)
     plt.show()
     if not refit:
@@ -97,24 +93,34 @@ def plot_ld_curves(dist, means_all, admixtimes, output_prefix, refit=False):
 
 
 def get_admixtime_lhood(admixtimes, dist, means_all):
+    admixtimes = transform_admixtime(admixtimes)
     lhood = 0
+    sum_of_exp = get_exp(dist, admixtimes)
     for means in means_all:
         for i in range(means.shape[0]):
             for j in range(means.shape[1]):
                 popt, pcov = curve_fit(
-                    func, dist * admixtimes, means[i, j], maxfev=5000
+                    func, sum_of_exp, means[i, j], maxfev=5000
                 )
-                res = (means[i, j] - func(dist * admixtimes, *popt)) ** 2
+                res = (means[i, j] - func(sum_of_exp, *popt)) ** 2
                 lhood += len(res) * np.log(np.mean(res)) / 2
     return lhood
 
 
-def get_admixtimes(initial_guess, dist, means):
-    res = minimize(
-        get_admixtime_lhood, initial_guess, method="Nelder-Mead", args=(dist, means)
-    )
-    admixtimes = res.x[0]
-    return admixtimes
+def get_admixtimes(dist, means):
+    res_x_min = None
+    res_fun_min = np.inf
+    for _ in range(10):
+        initial_guess = np.sqrt(np.power(10, (np.random.uniform(np.log10(20), np.log10(2000)))))
+        res = minimize(
+            get_admixtime_lhood, initial_guess, method="Nelder-Mead", args=(dist, means)
+        )
+        if res.fun < res_fun_min:
+            res_x_min = res.x[0]
+            res_fun_min = res.fun
+    
+    res_x_min = transform_admixtime(res_x_min)
+    return res_x_min, res_fun_min
 
 def simulate_local_ancestry_markov(output, generations, n_samples=10, total_length_cm=250, bin_size_cm=0.05, a=0.5):
     ### Simulates local ancestry under the model
@@ -260,14 +266,13 @@ def run_ld_curve_dating(args):
     bin_min = args.bin_min
     output_prefix = args.output
     jn_blocks = 20
-    initial_values = (
-        np.sqrt(np.power(10, np.random.uniform(np.log10(20), np.log10(2000))))
-    )
+    
     means_all_blocks = []
-    admixtimes_all_blocks = []
-    cent_telo_hla = pd.read_csv(
-        os.path.dirname(os.path.abspath(__file__)) + "/" + str(args.genome_build) + "_real_data_mask.txt", sep="\t"
-    )
+    admixture_params_all_blocks = []
+    if args.genome_build is not None:
+        cent_telo_hla = pd.read_csv(
+            os.path.dirname(os.path.abspath(__file__)) + "/" + str(args.genome_build) + "_real_data_mask.txt", sep="\t"
+        )
     for jn_block in range(jn_blocks):
         means_all = []
         means_all_norm = []    
@@ -296,9 +301,10 @@ def run_ld_curve_dating(args):
                 # dfc = dfc.drop(dfc[(dfc.chr == chr) & (dfc.block == jn_block)].index)                
 
             ## remove cent_telo_hla
-            for chr in np.unique(dfc.chr):
-                for (start, end) in zip(cent_telo_hla[cent_telo_hla.chr == str(chr)].start, cent_telo_hla[cent_telo_hla.chr == str(chr)].end):
-                    dfc.loc[(dfc.chr == chr) & (dfc.pos >= (start-5e5)) & (dfc.pos <= (end+5e5)), ["prob_" + str(i) for i in range(dfc.shape[1] - 4)]] = np.nan
+            if args.genome_build is not None:
+                for chr in np.unique(dfc.chr):
+                    for (start, end) in zip(cent_telo_hla[cent_telo_hla.chr == str(chr)].start, cent_telo_hla[cent_telo_hla.chr == str(chr)].end):
+                        dfc.loc[(dfc.chr == chr) & (dfc.pos >= (start-5e5)) & (dfc.pos <= (end+5e5)), ["prob_" + str(i) for i in range(dfc.shape[1] - 4)]] = np.nan
             
             ## remove regions where genpos is bin_size away
             # dfc['genpos_diff'] = np.abs(dfc.genpos.diff())
@@ -350,19 +356,20 @@ def run_ld_curve_dating(args):
 
         means_whole_genome = means_whole_genome_num / means_whole_genome_denom
         means_whole_genome = means_whole_genome / means_whole_genome_norm
-        admixtimes = get_admixtimes(initial_values, dist, [means_whole_genome])
-        print("Block: " + str(jn_block) +  ", Admixture time: " + str(admixtimes))
-        admixtimes_all_blocks.append(admixtimes)
+        t_admix1, _ = get_admixtimes(dist, [means_whole_genome])
+        print("Block: " + str(jn_block) +  ", t_admix1: " + str(t_admix1))
+        admixture_params_all_blocks.append(t_admix1)
         means_all_blocks.append(means_whole_genome)
         # avg_ = 0
         # for _ in range(100):
         #     means_all_test = np.array([[[1 + np.exp(-dist*20) + 0.1*np.random.randn(len(dist))]]])
-        #     admixtimes_test = get_admixtimes(initial_values, dist, means_all_test)
+        #     admixtimes_test = get_admixtimes(dist, means_all_test)
         #     print(admixtimes_test)
         #     avg_ += admixtimes_test
-    print((np.mean(admixtimes_all_blocks), np.std(admixtimes_all_blocks)))
-    plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix, refit=False)
-    plot_ld_curves(dist, means_all_blocks, np.mean(admixtimes_all_blocks), output_prefix+'_refit', refit=True)
+    t_admix1, negloglike = get_admixtimes(dist, means_all_blocks)
+    print("Overall, t_admix1: " + str(t_admix1) + ", negloglike: " + str(negloglike))
+    plot_ld_curves(dist, means_all_blocks, t_admix1, output_prefix + '_1date', refit=False)
+    plot_ld_curves(dist, means_all_blocks, t_admix1, output_prefix+'_1date_refit', refit=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
