@@ -106,16 +106,20 @@ def compute_tree_stats(
                         )
                     ).any():
                     recomb_rate = np.nan
-                elif len(recomb_events) > 1:
-                    recomb_rate = (
-                        recomb_events.iloc[-1][recomb_map.columns[3]] ##map(cm)
-                        - recomb_events.iloc[0][recomb_map.columns[3]]
-                    ) / (
-                        recomb_events.iloc[-1][recomb_map.columns[1]] ##position(bp)
-                        - recomb_events.iloc[0][recomb_map.columns[1]]
-                    )
+                # elif len(recomb_events) > 1:
+                #     recomb_rate = (
+                #         recomb_events.iloc[-1][recomb_map.columns[3]] ##map(cm)
+                #         - recomb_events.iloc[0][recomb_map.columns[3]]
+                #     ) / (
+                #         recomb_events.iloc[-1][recomb_map.columns[1]] ##position(bp)
+                #         - recomb_events.iloc[0][recomb_map.columns[1]]
+                #     )
+                # else:
+                #     recomb_rate = np.nan  # recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
                 else:
-                    recomb_rate = np.nan  # recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
+                    start_recomb_window = np.clip(tree.interval[0] - recomb_window_size, recomb_map_msprime.position.min(), recomb_map_msprime.position.max())
+                    end_recomb_window = np.clip(tree.interval[1] + recomb_window_size, recomb_map_msprime.position.min(), recomb_map_msprime.position.max())
+                    recomb_rate = 100*(recomb_map_msprime.get_cumulative_mass(end_recomb_window) - recomb_map_msprime.get_cumulative_mass(start_recomb_window))/(end_recomb_window - start_recomb_window)
                 recomb_rates.append(recomb_rate)
             tree.next()
         del tree
