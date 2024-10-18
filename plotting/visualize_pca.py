@@ -36,6 +36,7 @@ for file in glob.glob(output_file_name + "_fixed_params_chr*_sample*.pkl"):
 
 sample_list = np.unique(sample_list)
 chr_list = np.unique(chr_list)
+# chr_list = [2]
 
 post_overall = []
 num_overall = []
@@ -50,11 +51,14 @@ for sample in sample_list:
             _, num_groups, num_epochs = denom.shape
             start_index = 1 if ignore_first_epoch else 0
             end_index = num_epochs-2 if ignore_last_epoch else num_epochs-1
+            # end_index = int((end_time - start_time)*num_epochs/4)  ### use this when coal rates supplied while running GB !!caution!!
+            ### change end-index based on end_time and start_time
             for i in range(len(proportion_of_coalescing)):
                 sum_prop_coal = np.zeros(num_groups)
                 for c in range(len(proportion_of_coalescing[i])):
                     if epoch_index[i][c] >= start_index and epoch_index[i][c] <= end_index:
-                        sum_prop_coal += np.array(proportion_of_coalescing[i][c])
+                        ratio_prop_of_coal = np.array(proportion_of_coalescing[i][c])/np.sum(proportion_of_coalescing[i][c])
+                        sum_prop_coal = sum_prop_coal + ratio_prop_of_coal
                 num_overall.append(sum_prop_coal)
                 denom_overall.append(np.sum(denom[i,:,start_index:end_index+1], axis=1))
 
@@ -73,6 +77,10 @@ denom -= np.mean(denom, axis=0)
 
 num /= np.std(num, axis=0)
 denom /= np.std(denom, axis=0)
+
+## Removing columns where there are nan
+num = num[:, ~np.isnan(num).any(axis=0)]
+denom = denom[:, ~np.isnan(denom).any(axis=0)]
 
 # Combine num and denom to form the feature matrix
 X = np.hstack((num, denom))
