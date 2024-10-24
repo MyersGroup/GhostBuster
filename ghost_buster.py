@@ -159,13 +159,13 @@ def e_m_step(
     n_epochs = len(epoch_intervals)
     n_unique_groups = len(unique_groups)
     
-    if args.load_gamma != None:
+    if args.load_gamma is not None:
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         for epoch in range(gamma_arr.shape[2]):
             if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
 
     if args.load_gamma is None or iter == args.num_iters - 1:
@@ -179,7 +179,7 @@ def e_m_step(
         )
         if prev_gamma is None:
             prev_gamma = np.ones_like(n)
-        prev_gamma = np.nan_to_num(prev_gamma, nan=1)    
+        prev_gamma = np.nan_to_num(prev_gamma, nan=0)    
         
         for sample_no in range(n_samples):
             start = int(np.sum(n_sites[0:sample_no]))
@@ -205,8 +205,17 @@ def e_m_step(
                 )
                 n[j] += n_j
                 d[j] += d_j
-        if args.load_gamma is None:
-            gamma_arr = n / d
+        
+        gamma_arr = n / d
+        
+        ### run with inferred gamma for the very last iteration
+        if args.load_gamma is not None:
+            for epoch in range(gamma_arr.shape[2]):
+                if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
+                    gamma_arr[:,:,epoch] = np.nan
+                if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
+                    gamma_arr[:,:,epoch] = np.nan
+
     if args.load_props != None:
         print("Using initial props specified in file: " + str(args.load_props))        
         tau = load_props(
@@ -221,8 +230,8 @@ def e_m_step(
 
     gamma_arr = np.maximum(gamma_arr, 0)
     prev_gamma = copy.deepcopy(gamma_arr)
-    if np.isnan(gamma_arr).any():
-        print(gamma_arr)
+    # if np.isnan(gamma_arr).any():
+    #     print(gamma_arr)
 
     log_num_em = np.zeros((args.num_clusters, np.sum(n_sites)), dtype="float64")
     log_denom_em = np.zeros((args.num_clusters, np.sum(n_sites)), dtype="float64")
@@ -293,6 +302,7 @@ def e_m_step(
     if np.isnan(log_likelihood_hmm):
         pdb.set_trace()
     
+    ## when load_gamma this plots coal. rates for all epochs
     if iter == args.num_iters - 1:
         gamma_arr = n/d
 
@@ -330,7 +340,7 @@ def random_sweep_iter(
         for epoch in range(gamma_arr.shape[2]):
             if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
     else:
         gamma_arr = np.power(
@@ -934,7 +944,7 @@ def main(args):
 
     st = time.time()
     target_branch_length_masked, mutscale_masked = get_target_branch_length(
-        args, poplabels, ts_list, chrs, mask_dodgy, args.sample_id, gt_ref=gt_ref, exact_pos=exact_pos
+        args, poplabels, ts_list, chrs, chr_map, mask_dodgy, args.sample_id, gt_ref=gt_ref, exact_pos=exact_pos
     )
     print("target branch length: " + str(time.time() - st))
 
@@ -976,7 +986,7 @@ def main(args):
         for epoch in range(gamma_arr.shape[2]):
             if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch+1]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
     else:
         gamma_arr = None
@@ -1079,7 +1089,7 @@ def main(args):
         epoch_intervals,
         n_sites,
         len(args.sample_id),
-        epoch,
+        epoch, ## should this be 0 or epoch (last iteration)?
         mutscale_masked,
         tree_left_bp,
         tree_right_bp,
@@ -1269,6 +1279,12 @@ if __name__ == "__main__":
     parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
     parser.add_argument("--node_persist_thresh", type=float, default=0.5, help="Correlation coefficient threshold above which nodes are considered equivalent")
     parser.add_argument("--cm_grid", type=float, default=None, help="Store local ancestry information per cM instead")
+    parser.add_argument(
+        "--ignore_coal_between_targets",
+        help="Whether to ignore coalescene events between target samples",
+        type=boolean,
+        default=False,
+    )
     args = parser.parse_args()
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)

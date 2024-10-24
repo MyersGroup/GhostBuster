@@ -41,7 +41,8 @@ def process_epochs(
 
         tprev = max(epoch_intervals_pow[epoch], target_sampling_time)  ## Only considering coalescence events after the sampling time of the target
 
-        if epoch == 0 and ignore_first_epoch:
+        ### shouldn't this be epoch == 1? 
+        if epoch == 1 and ignore_first_epoch:
             for i in range(len(lineage_content)):
                 if lineage_content_sum[i] > 0:
                     lineage_content[i] /= np.sum(lineage_content[i])
@@ -124,6 +125,7 @@ def fixed_parameters(
     ignore_first_epoch=False,
     gt_ref=None,
     exact_pos=None,
+    targets_considered=None
 ):
     eps = 1e-20
     if exact_pos is not None:
@@ -160,7 +162,7 @@ def fixed_parameters(
         ## Only count lineage content for included samples
         if poplabels_orig.INCLUDE.iloc[m]:
             lineage_content_init[m, group_id[poplabels_orig.GROUP.iloc[m]]] = 1.0
-    for t in [sample]:
+    for t in targets_considered:
         lineage_content_init[
             t
         ] = 0.0  ## setting lineage content of target sequences = 0
@@ -222,7 +224,7 @@ def fixed_parameters(
                                         lineage_content[m] = 0
                                     else:
                                         lineage_content[m, int(gt_ref[m,count_mut_trees])] = 1
-                            for t in [sample]:
+                            for t in targets_considered:
                                 lineage_content[t] = 0.0
 
                         proportion_of_coalescing_in_tree, epoch_index_in_tree, denom_in_tree, coal_count = process_epochs(
@@ -261,17 +263,18 @@ def fixed_parameters(
                             for denom_coal in denom_tree:
                                 if gt_ref is None:
                                     denom_value = denom_coal[group_id_m, epoch]
-                                else:
+                                ### does it handle when gt_ref[m, tid] is nan?
+                                elif not np.isnan(gt_ref[m, tid]):
                                     denom_value = denom_coal[int(gt_ref[m, tid]), epoch]
                                 if denom_value > epoch_diff:
                                     if gt_ref is None:
                                         denom_coal[group_id_m, epoch] -= epoch_diff
-                                    else:
+                                    elif not np.isnan(gt_ref[m, tid]):
                                         denom_coal[int(gt_ref[m, tid]), epoch] -= epoch_diff
                                 else:
                                     if gt_ref is None:
                                         denom_coal[group_id_m, epoch] = 0
-                                    else:
+                                    elif not np.isnan(gt_ref[m, tid]):
                                         denom_coal[int(gt_ref[m, tid]), epoch] = 0
 
     proportion_of_coalescing_all = [sublist for sublist, count in zip(proportion_of_coalescing_all, num_sites_per_tree) for _ in range(count)]
@@ -314,14 +317,20 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
 
         try:
             f_pkl = open(fixed_params_file_name, "rb")
-            (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
+            if args.ignore_coal_between_targets:
+                (sample_id_file, mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
+            else:
+                (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
+                sample_id_file = args.sample_id
             f_pkl.close()
             if exact_pos is not None:
                 if (exact_pos_file[exact_pos_file[:,0] == chr] != exact_pos[exact_pos['chr'] == chr].values).any():
                     print("Exact position file doesn't match, calculating fixed parameters..")
                     raise Exception
-            if gt_ref is not None and gt_ref_file is None:
-                if (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) & (gt_ref_file == gt_ref).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+            if gt_ref is not None and gt_ref_file is not None:
+                gt_ref_chr = gt_ref[:, np.array(chr_map) == chr]
+                gt_ref_file_chr = gt_ref_file[:, np.array(chr_map) == chr]    
+                if (sample_id_file == args.sample_id) & (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) & (gt_ref_file_chr == gt_ref_chr).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     denom_all_unscaled.extend(denom_unscaled)
@@ -333,7 +342,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                     print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
                     raise Exception
             elif gt_ref is None and gt_ref_file is None:
-                if (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))]) & (denom.shape[2] == args.num_epochs):
+                if (sample_id_file == args.sample_id) & (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     denom_all_unscaled.extend(denom_unscaled)
@@ -352,7 +361,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
             target_branch_length_masked_chr = []
             mutscale_masked_chr = []
             # make faster #
-            if chr_no == 0:
+            if 'chr_map_masked' not in locals():
                 num_sites_per_tree = np.zeros(np.sum(mask_dodgy), dtype='int32')            
                 i, count_i  = 0,0 
                 for chr_, tseq in zip(chrs, ts_list):
@@ -375,6 +384,15 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                     target_branch_length_masked_chr.append(target_branch_length_masked[t])
                     mutscale_masked_chr.append(mutscale_masked[t])
             
+            if gt_ref is not None:
+                gt_ref_chr = gt_ref[:, np.array(chr_map)[mask_dodgy] == chr]
+            else:
+                gt_ref_chr = None
+
+            if args.ignore_coal_between_targets:
+                targets_considered = args.sample_id
+            else:
+                targets_considered = [sample]
             (coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index) = fixed_parameters(
                 ts_list[chr_no:chr_no + 1],
                 poplabels,
@@ -388,11 +406,15 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 chr,
                 args.force_build,
                 ignore_first_epoch=args.ignore_first_epoch,
-                gt_ref=gt_ref,
-                exact_pos=exact_pos
+                gt_ref=gt_ref_chr,
+                exact_pos=exact_pos,
+                targets_considered=targets_considered
             )
             f_pkl = open(fixed_params_file_name, "wb")
-            pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
+            if args.ignore_coal_between_targets:
+                pickle.dump([args.sample_id, args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_chr, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
+            else:
+                pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_chr, unique_groups, exact_pos.values if exact_pos is not None else None], f_pkl)
             f_pkl.close()
             denom_all.extend(denom)
             denom_all_unscaled.extend(denom_unscaled)

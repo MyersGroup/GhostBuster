@@ -350,6 +350,7 @@ def get_target_branch_length(
     poplabels,
     ts_list,
     chrs,
+    chr_map,
     mask_dodgy,
     sample_list,
     gt_ref=None,
@@ -363,9 +364,9 @@ def get_target_branch_length(
     mutscale = []
     
     for sample_no, sample in enumerate(sample_list):
-        count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
         target_branch_length_sample = List()
         mutscale_sample = List()
+        leave_one_sample_out = list(set(sample_list) - set([sample]))
         
         for chr_no, chr in enumerate(chrs):
             if args.branch_persistence_file_prefix is not None:
@@ -374,23 +375,32 @@ def get_target_branch_length(
                 branch_persistence_file_name = args.output + "_branch_persistence_chr" + str(chr) + "_sample" + str(sample) + ".pkl"
                 
             try:
-                with open(branch_persistence_file_name, "rb") as f_pkl:
-                    (
-                        mut_scaling_file, hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
-                        ignore_last_epoch, masking_threshold, poplabels_file,
-                        target_branch_length_sample_chr, mutscale_sample_chr, gt_ref_na_sum, exact_pos_file
-                    ) = pickle.load(f_pkl)
-                
+                if args.ignore_coal_between_targets:
+                    with open(branch_persistence_file_name, "rb") as f_pkl:
+                        (
+                            sample_id_file, mut_scaling_file, hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
+                            ignore_last_epoch, masking_threshold, poplabels_file,
+                            target_branch_length_sample_chr, mutscale_sample_chr, gt_ref_na_sum, exact_pos_file
+                        ) = pickle.load(f_pkl)
+                else:
+                    with open(branch_persistence_file_name, "rb") as f_pkl:
+                        (
+                            mut_scaling_file, hmm_file, force_build_file, start_time, end_time, ignore_first_epoch,
+                            ignore_last_epoch, masking_threshold, poplabels_file,
+                            target_branch_length_sample_chr, mutscale_sample_chr, gt_ref_na_sum, exact_pos_file
+                        ) = pickle.load(f_pkl)
+                        sample_id_file = args.sample_id  
                 if (
+                    (sample_id_file == args.sample_id) &
                     (mut_scaling_file == args.mut_scaling) &
                     (hmm_file == args.hmm) &
                     (force_build_file == args.force_build) &
-                    (start_time == args.start_time) &
-                    (end_time == args.end_time) &
-                    (ignore_first_epoch == args.ignore_first_epoch) &
-                    (ignore_last_epoch == args.ignore_last_epoch) &
+                    # (start_time == args.start_time) &
+                    # (end_time == args.end_time) &
+                    # (ignore_first_epoch == args.ignore_first_epoch) &
+                    # (ignore_last_epoch == args.ignore_last_epoch) &
                     (masking_threshold == args.masking_threshold) &
-                    np.all(poplabels_file[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))] == poplabels.values[list(set(np.arange(len(poplabels_file))) - set(args.sample_id))])
+                    np.all(poplabels_file == poplabels.values)
                 ):
                     if gt_ref is not None: 
                         if gt_ref_na_sum != np.sum(np.isnan(gt_ref)):
@@ -416,7 +426,14 @@ def get_target_branch_length(
                     print("Branch persistence statistics file does not match the current settings, recomputing...")
                     raise Exception
             except:
+                count_all_tree, count_all_tree2, count_all_tree3 = 0, 0, 0
                 print(f"Saving branch persistence statistics to: {branch_persistence_file_name}")
+                mask_dodgy_sam_chr = mask_dodgy[sample_no][np.array(chr_map) == chr]
+                if gt_ref is not None:
+                    gt_ref_chr = gt_ref[:, np.array(chr_map)[mask_dodgy[sample_no]] == chr]
+                else:
+                    gt_ref_chr = None
+
                 target_branch_length_sample_chr = []
                 mutscale_sample_chr = []
                 ts = ts_list[chr_no]
@@ -427,7 +444,7 @@ def get_target_branch_length(
                 tree_left_bp_chr, tree_right_bp_chr = [], []
                 for tree in ts.trees():
                     if (np.ceil(tree.interval[1]/args.force_build) - np.ceil(tree.interval[0]/args.force_build) > 0):
-                        if mask_dodgy[sample_no][count_all_tree]:
+                        if mask_dodgy_sam_chr[count_all_tree]:
                             tree_left_bp_chr.append(tree.interval[0])
                             tree_right_bp_chr.append(tree.interval[1])
                         count_all_tree += 1
@@ -467,15 +484,15 @@ def get_target_branch_length(
                 poplabels_included = poplabels[poplabels.INCLUDE == 1].index.values
                 for tid in tqdm(range(ts.num_trees)):
                     if (np.ceil(tree.interval[1] / args.force_build) - np.ceil(tree.interval[0] / args.force_build) > 0):
-                        if mask_dodgy[sample_no][count_all_tree2]:
+                        if mask_dodgy_sam_chr[count_all_tree2]:
                             number_of_overlaps_list = get_approx_node_persistence(df_coal_descendants, (tree.interval[0]+tree.interval[1])/2, args.node_persist_thresh)
                             poplabels_included_pos = poplabels_included.copy()
                             number_window_list = [] #List().empty_list(nb.types.float64)
                             num_muts_list = []
                             parent = copy.deepcopy(sample)
                             if gt_ref is not None:
-                                gt_ref_nt = gt_ref[:, count_all_tree3]
-                                new_mask = (poplabels.INCLUDE == 1) & (~np.isnan(gt_ref_nt))
+                                gt_ref_nt = gt_ref_chr[:, count_all_tree3]
+                                new_mask = (poplabels.INCLUDE == 1) & (~np.isnan(gt_ref_nt) | (poplabels.index == sample))
                                 poplabels_included_pos = poplabels[new_mask].index.values.copy()
                                 count_all_tree3 += 1
 
@@ -488,11 +505,12 @@ def get_target_branch_length(
                                 tree_childrens = tree.children(parent)
                                 tree_leaves_left = list(tree.leaves(tree_childrens[0]))
                                 tree_leaves_right = list(tree.leaves(tree_childrens[1]))
-                                if (
-                                    np.intersect1d(tree_leaves_left, poplabels_included_pos).size > 0
-                                ) and (
-                                    np.intersect1d(tree_leaves_right, poplabels_included_pos).size > 0
-                                ):
+                                left_check = np.intersect1d(tree_leaves_left, poplabels_included_pos).size
+                                right_check = np.intersect1d(tree_leaves_right, poplabels_included_pos).size
+                                if args.ignore_coal_between_targets:
+                                    left_check = left_check - np.intersect1d(tree_leaves_left, leave_one_sample_out).size
+                                    right_check = right_check - np.intersect1d(tree_leaves_right, leave_one_sample_out).size
+                                if left_check > 0 and right_check > 0:
                                     num_muts_list.append(int(edgep.metadata.decode('utf-8').rstrip('\x00').split(" ")[2]))
                                     if args.hmm:
                                         # edge_left, edge_right, _ = edge.metadata.decode('utf-8').rstrip('\x00').split(" ")
@@ -520,8 +538,12 @@ def get_target_branch_length(
                                 
                 target_branch_length_sample_chr = [sublist for sublist, count in zip(target_branch_length_sample_chr, num_sites_per_tree) for _ in range(count)]
                 mutscale_sample_chr = [sublist for sublist, count in zip(mutscale_sample_chr, num_sites_per_tree) for _ in range(count)]
-                with open(branch_persistence_file_name, "wb") as f_pkl:
-                    pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, mutscale_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
+                if args.ignore_coal_between_targets:
+                    with open(branch_persistence_file_name, "wb") as f_pkl:
+                        pickle.dump([args.sample_id, args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, mutscale_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
+                else:
+                    with open(branch_persistence_file_name, "wb") as f_pkl:
+                        pickle.dump([args.mut_scaling, args.hmm, args.force_build, args.start_time, args.end_time, args.ignore_first_epoch, args.ignore_last_epoch, args.masking_threshold, poplabels.values, target_branch_length_sample_chr, mutscale_sample_chr, np.isnan(gt_ref).sum() if gt_ref is not None else None, exact_pos.values if exact_pos is not None else None], f_pkl) 
                 for i in target_branch_length_sample_chr:
                     numba_i = List().empty_list(nb.types.float64)
                     for j in i:
