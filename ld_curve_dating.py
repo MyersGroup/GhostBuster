@@ -37,7 +37,7 @@ def transform_admixtime(t_admix):
     return 1 + t_admix**2
 
 def transform_weight(weight):
-    return np.exp(weight) / (1 + np.exp(weight))
+    return 1e-8 + np.exp(weight) / (1 + np.exp(weight))
 
 def get_sum_of_exp(dist, t_admix1, t_admix2, weight):
     sum_of_exp1 = get_exp(dist, t_admix1)
@@ -55,10 +55,12 @@ def get_sum_of_exp_continuous(dist, t_admix1, t_admix2, mu):
     power_term = (1 - mu) ** (t_admix2 - j_vals)
     normalization_factor = 1 - (1 - mu) ** (t_admix2 - t_admix1 + 1)
     weights = mu * power_term / normalization_factor
+    weights = weights / np.sum(weights)
+    if np.isnan(weights).any():
+        return np.zeros(len(dist))
     exp_terms = np.exp(-np.outer(j_vals, dist) / 100)
     output = np.dot(weights, exp_terms)    
     return output
-
 
 def plot_ld_curve_comp1(dist, means_all, output_prefix, negloglike=None, t_admix1=None, t_admix2=None, weight=None, admixtimes=None, mode='1date'):
     num_sam = len(means_all)
@@ -76,7 +78,7 @@ def plot_ld_curve_comp1(dist, means_all, output_prefix, negloglike=None, t_admix
         popt, pcov = curve_fit(func, sum_of_exp, mean_of_all_sam[0, 0], maxfev=5000)
         ax.plot(dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1)
         ax.text(0.4, 0.8, '{:.1f} gens.'.format(admixtimes), transform=ax.transAxes, fontsize=26, verticalalignment='top', color="green")
-        ax.set_title("One-date fit, -logl = {:.2f}".format(negloglike), fontsize=18)
+        ax.set_title("One-date fit, logl = {:.2f}".format(-negloglike), fontsize=16)
     elif t_admix1 is not None and t_admix2 is not None and weight is not None:
         # Two-date fit with weight
         if mode == '2date':
@@ -90,11 +92,16 @@ def plot_ld_curve_comp1(dist, means_all, output_prefix, negloglike=None, t_admix
                 transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
         ax.text(0.3, 0.75, r'$\lambda_2 = {:.1f}$'.format(t_admix2), 
                 transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
-        ax.text(0.3, 0.7, r'$\mathrm{{weight}}_1 = {:.2f}$'.format(weight), 
-                transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
-        ax.text(0.3, 0.65, r'$\mathrm{{weight}}_2 = {:.2f}$'.format(1 - weight), 
-                transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
-        ax.set_title("Two-date fit, log(MSE) = {:.2f}".format(negloglike), fontsize=18)
+        if mode == '2date':
+            ax.text(0.3, 0.7, r'$\mathrm{{weight}}_1 = {:.2f}$'.format(weight), 
+                    transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
+            ax.text(0.3, 0.65, r'$\mathrm{{weight}}_2 = {:.2f}$'.format(1 - weight), 
+                    transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
+            ax.set_title("Two-date fit, logl = {:.2f}".format(-negloglike), fontsize=16)
+        else:
+            ax.text(0.3, 0.7, r'$\mu = {:.1e}$'.format(weight), 
+                    transform=ax.transAxes, fontsize=22, verticalalignment='top', color="green")
+            ax.set_title("Continuous admix. fit, logl = {:.2f}".format(-negloglike), fontsize=16)
     else:
         raise ValueError("Invalid input: provide either 'admixtimes' for single-date or 't_admix1', 't_admix2', and 'weight' for two-date.")
     ax.set_xlabel("Genetic distance (cM)")
@@ -173,7 +180,7 @@ def get_admixtime_lhood(params, dist, means_all, mode="1date"):
                 popt, pcov = curve_fit(func, sum_of_exp, means[i, j], maxfev=5000)
                 output = func(sum_of_exp, *popt)
                 res = (means[i, j] - output) ** 2
-                lhood += len(res) * np.log(np.mean(res)) / 2
+                lhood += len(res) * (np.log(np.mean(res)) + 1 + np.log(2*np.pi)) / 2
     return lhood
 
 def get_admixtimes(dist, means, mode="1date"):
