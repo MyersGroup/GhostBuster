@@ -47,20 +47,24 @@ for sample in sample_list:
     for chr in chr_list:
         fixed_params_file_name = output_file_name + "_fixed_params_chr{0}_sample{1}.pkl".format(chr, sample)
         with open(fixed_params_file_name, "rb") as f_pkl:
-            (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = pickle.load(f_pkl)
-            _, num_groups, num_epochs = denom.shape
-            start_index = 1 if ignore_first_epoch else 0
-            end_index = num_epochs-2 if ignore_last_epoch else num_epochs-1
-            # end_index = int((end_time - start_time)*num_epochs/4)  ### use this when coal rates supplied while running GB !!caution!!
-            ### change end-index based on end_time and start_time
-            for i in range(len(proportion_of_coalescing)):
-                sum_prop_coal = np.zeros(num_groups)
-                for c in range(len(proportion_of_coalescing[i])):
-                    if epoch_index[i][c] >= start_index and epoch_index[i][c] <= end_index:
-                        ratio_prop_of_coal = np.array(proportion_of_coalescing[i][c])/np.sum(proportion_of_coalescing[i][c])
-                        sum_prop_coal = sum_prop_coal + ratio_prop_of_coal
-                num_overall.append(sum_prop_coal)
-                denom_overall.append(np.sum(denom[i,:,start_index:end_index+1], axis=1))
+            data = pickle.load(f_pkl)
+        try:
+            (mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = data
+        except:
+            (sample_id_file, mut_scaling_file, hmm_file, force_build, start_time, end_time, ignore_first_epoch, ignore_last_epoch, masking_threshold, poplabels_file, coal_count, denom, denom_unscaled, proportion_of_coalescing, epoch_index, gt_ref_file, unique_groups_file, exact_pos_file) = data 
+        _, num_groups, num_epochs = denom.shape
+        start_index = 1 if ignore_first_epoch else 0
+        end_index = num_epochs-2 if ignore_last_epoch else num_epochs-1
+        # end_index = int((end_time - start_time)*num_epochs/4)  ### use this when coal rates supplied while running GB !!caution!!
+        ### change end-index based on end_time and start_time
+        for i in range(len(proportion_of_coalescing)):
+            sum_prop_coal = np.zeros(num_groups)
+            for c in range(len(proportion_of_coalescing[i])):
+                if epoch_index[i][c] >= start_index and epoch_index[i][c] <= end_index:
+                    ratio_prop_of_coal = np.array(proportion_of_coalescing[i][c])/np.sum(proportion_of_coalescing[i][c])
+                    sum_prop_coal = sum_prop_coal + ratio_prop_of_coal
+            num_overall.append(sum_prop_coal)
+            denom_overall.append(np.sum(denom[i,:,start_index:end_index+1], axis=1))
 
 # Process data
 post_overall = np.array(post_overall)
@@ -84,6 +88,8 @@ denom = denom[:, ~np.isnan(denom).any(axis=0)]
 
 # Combine num and denom to form the feature matrix
 X = np.hstack((num, denom))
+model = sm.OLS(post_overall[:, 1], sm.add_constant(X)).fit()
+print(model.summary())
 
 # PCA Transformation
 pca = PCA(n_components=4)

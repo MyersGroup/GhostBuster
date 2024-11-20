@@ -217,6 +217,9 @@ def fixed_parameters(
                                 (2 * num_samples - 1, len(unique_groups)),
                                 dtype="float64",
                             )
+                            # valid_indices = ~np.isnan(gt_ref[included_samples, count_mut_trees])
+                            # lineage_content[included_samples[valid_indices], gt_ref[included_samples[valid_indices].astype(int), count_mut_trees].astype(int)] = 1
+                            # lineage_content[targets_considered] = 0.0
                             for m in range(len(poplabels)):
                                 ## Only count lineage content for included samples
                                 if poplabels.INCLUDE.iloc[m]:

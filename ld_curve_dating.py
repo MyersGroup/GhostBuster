@@ -251,6 +251,8 @@ def simulate_local_ancestry_markov(output, generations, n_samples=10, total_leng
             'prob_0': prob_0,
             'prob_1': prob_1
         })
+        # mask = np.random.rand(len(df_sample)) > 0.5
+        # df_sample.loc[mask, ['prob_0', 'prob_1']] = np.nan
         output_file = f"{output}_overall_membership_{sample + 1}_sample_id_{sample}.csv"
         df_sample.to_csv(output_file, sep="\t", index=False)
         print(f"Sample {sample + 1} saved to {output_file}")
@@ -350,7 +352,7 @@ def get_means_whole_genome(jn_block, jn_blocks, cent_telo_hla, output_prefix, bi
     df = pd.DataFrame()
     for hap_no in np.sort(sorted_hap_no):
         file = glob.glob(output_prefix + '_overall_membership_*' + str(hap_no) + '.csv')[0]
-        dfc = pd.read_csv(file, sep='\s+')
+        dfc = pd.read_csv(file, sep='\t')
         dfc['genpos'] = 100 * dfc['genpos'] ## converting M to cM
         dfc = dfc.drop_duplicates(subset=['genpos', 'chr'])
         dfc = dfc.sort_values(by=['chr', 'genpos'])
@@ -370,24 +372,29 @@ def get_means_whole_genome(jn_block, jn_blocks, cent_telo_hla, output_prefix, bi
     prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
     len_all_cumsum = np.cumsum(len_all)
     ## First calculate the normalization
-    means_whole_genome_num_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
-    means_whole_genome_denom_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
-    for sam in range(0,num_hap,2):
-        for sam2 in range(0,num_hap,2):
-            if sam-sam2 > 1 or sam2-sam > 1:
-                df_sam_hap1 = read_df_per_sam(df, len_all_cumsum, sam)
-                df_sam_hap2 = read_df_per_sam(df, len_all_cumsum, sam+1)
-                df_sam2_hap1 = read_df_per_sam(df, len_all_cumsum, sam2)
-                df_sam2_hap2 = read_df_per_sam(df, len_all_cumsum, sam2+1)
-                for prob_col in prob_labels:
-                    df_sam_hap1.loc[:, prob_col] = (df_sam_hap1[prob_col] + df_sam_hap2[prob_col]) / 2
-                    df_sam2_hap1.loc[:, prob_col] = (df_sam2_hap1[prob_col] + df_sam2_hap2[prob_col]) / 2
-                for chr in np.unique(df_sam_hap1.chr):
-                    means_num, means_denom, dist, props_num, props_denom = get_coancestry_per_pair_sample(
-                        df_sam_hap1[df_sam_hap1['chr'] == chr], df_sam2_hap1[df_sam2_hap1['chr'] == chr], bin_size, bin_max, bin_min, num_clusters, prob_labels
-                    )
-                    means_whole_genome_num_norm += means_num
-                    means_whole_genome_denom_norm += means_denom
+    if num_hap > 3:
+        means_whole_genome_num_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+        means_whole_genome_denom_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+        for sam in range(0,num_hap,2):
+            for sam2 in range(0,num_hap,2):
+                if sam-sam2 > 1 or sam2-sam > 1:
+                    df_sam_hap1 = read_df_per_sam(df, len_all_cumsum, sam)
+                    df_sam_hap2 = read_df_per_sam(df, len_all_cumsum, sam+1)
+                    df_sam2_hap1 = read_df_per_sam(df, len_all_cumsum, sam2)
+                    df_sam2_hap2 = read_df_per_sam(df, len_all_cumsum, sam2+1)
+                    for prob_col in prob_labels:
+                        df_sam_hap1.loc[:, prob_col] = (df_sam_hap1[prob_col] + df_sam_hap2[prob_col]) / 2
+                        df_sam2_hap1.loc[:, prob_col] = (df_sam2_hap1[prob_col] + df_sam2_hap2[prob_col]) / 2
+                    for chr in np.unique(df_sam_hap1.chr):
+                        means_num, means_denom, dist, props_num, props_denom = get_coancestry_per_pair_sample(
+                            df_sam_hap1[df_sam_hap1['chr'] == chr], df_sam2_hap1[df_sam2_hap1['chr'] == chr], bin_size, bin_max, bin_min, num_clusters, prob_labels
+                        )
+                        means_whole_genome_num_norm += means_num
+                        means_whole_genome_denom_norm += means_denom
+    else:
+        means_whole_genome_num_norm = np.ones((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+        means_whole_genome_denom_norm = np.ones((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
+    
     means_whole_genome_norm = means_whole_genome_num_norm / means_whole_genome_denom_norm
     means_whole_genome_num = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
     means_whole_genome_denom = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
@@ -409,6 +416,10 @@ def get_means_whole_genome(jn_block, jn_blocks, cent_telo_hla, output_prefix, bi
     means_whole_genome = means_whole_genome_num / means_whole_genome_denom
     means_whole_genome = means_whole_genome / means_whole_genome_norm
     props_whole_genome = props_whole_genome_num / props_whole_genome_denom
+    if num_hap <= 3:
+        for i in range(means_whole_genome.shape[0]):
+            for j in range(means_whole_genome.shape[1]):
+                means_whole_genome[i,j] = means_whole_genome[i,j] / (props_whole_genome[i]*props_whole_genome[j])
     return means_whole_genome, dist
 
 def run_ld_curve_dating(args):
@@ -456,6 +467,35 @@ def run_ld_curve_dating(args):
         else:
             print("Overall, t_admix1: " + str(t_admix1) + " t_admix2: " + str(t_admix2) + ", mu: " + str(weight) + ", negloglike: " + str(negloglike))
 
+
+def run_get_segment_length(args):
+    bin_size = args.bin_size
+    bin_max = args.bin_max
+    bin_min = 0
+    output_prefix = args.output
+    jn_blocks = 20
+    if args.genome_build is not None:
+        cent_telo_hla = pd.read_csv(
+            os.path.dirname(os.path.abspath(__file__)) + "/" + str(args.genome_build) + "_real_data_mask.txt", sep="\t"
+        )
+    else:
+        cent_telo_hla = None
+ 
+    means_whole_genome, dist = get_means_whole_genome(jn_blocks + 1, jn_blocks, cent_telo_hla, output_prefix, bin_size, bin_max, bin_min) ## no removing of blocks
+    for comp in range(means_whole_genome.shape[0]):
+        co_ancestry = means_whole_genome[comp, comp]
+        pdf = -np.diff(co_ancestry)
+        # pdf = np.maximum(pdf,0) 
+        pdf = pdf / np.sum(pdf)
+        df = pd.DataFrame({
+            'dist_start': dist[:-1],
+            'dist_end': dist[1:],
+            'number_segments': pdf
+        })
+        mean_segment_length = np.sum(pdf * (dist[:-1] + dist[1:]) / 2)
+        print("Mean segment length for component " + str(comp) + ": " + str(mean_segment_length))
+        df.to_csv(output_prefix + '_segment_length_comp' + str(comp) + '.csv', sep='\t', index=False)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--bin_size", help="Bin size in ld curves (in cM)", default=0.05, type=float)
@@ -473,6 +513,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", help="Single-date or two-date fit", type=str, default=None, choices=["1date", "2date", "continuous"])
     args = parser.parse_args()
     print(args)
+    # run_get_segment_length(args)
     if args.test:
         print("Simulating local ancestry under the model...")
         simulate_local_ancestry_markov(args.output, generations=500, n_samples=10, total_length_cm=250, bin_size_cm=args.bin_size, a=0.05)

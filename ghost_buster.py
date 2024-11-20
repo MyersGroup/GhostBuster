@@ -159,16 +159,16 @@ def e_m_step(
     n_epochs = len(epoch_intervals)
     n_unique_groups = len(unique_groups)
     
-    if args.load_gamma is not None:
+    if args.load_gamma is not None and (not (iter == args.num_iters - 1 and iter > 0)):
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         for epoch in range(gamma_arr.shape[2]):
             if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
 
-    if args.load_gamma is None or iter == args.num_iters - 1:
+    if args.load_gamma is None or (iter == args.num_iters - 1 and iter > 0):
         n = np.zeros(
             (args.num_clusters, n_unique_groups, n_epochs - 1),
             dtype="float64",
@@ -213,7 +213,7 @@ def e_m_step(
             for epoch in range(gamma_arr.shape[2]):
                 if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                     gamma_arr[:,:,epoch] = np.nan
-                if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
+                if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
                     gamma_arr[:,:,epoch] = np.nan
 
     if args.load_props != None:
@@ -303,7 +303,7 @@ def e_m_step(
         pdb.set_trace()
     
     ## when load_gamma this plots coal. rates for all epochs
-    if iter == args.num_iters - 1:
+    if iter == args.num_iters - 1 and iter > 0:
         gamma_arr = n/d
 
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
@@ -340,7 +340,7 @@ def random_sweep_iter(
         for epoch in range(gamma_arr.shape[2]):
             if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
     else:
         gamma_arr = np.power(
@@ -434,10 +434,10 @@ def random_sweep_iter(
             gen_grid_all,
         )
  
-    if args.load_membership != None:
-        own_membership_trial = np.load(args.load_membership)
-        trans_prop = load_tadmix(args.t_admix_guess)
-        tau = np.load(args.load_props)
+    if args.load_membership is not None:
+        own_membership_trial = np.load(args.load_membership)            
+        # trans_prop = load_tadmix(args.t_admix_guess)
+        # tau = np.load(args.load_props)
    
     return (
         log_likelihood,
@@ -986,7 +986,7 @@ def main(args):
         for epoch in range(gamma_arr.shape[2]):
             if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) < epoch_intervals[epoch]:
+            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
                 gamma_arr[:,:,epoch] = np.nan
     else:
         gamma_arr = None
