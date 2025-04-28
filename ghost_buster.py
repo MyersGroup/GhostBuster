@@ -17,7 +17,7 @@ import warnings
 from numba import jit
 import numba as nb
 import glob
-import os 
+import os
 import msprime
 import bisect
 import statsmodels.api as sm
@@ -40,6 +40,7 @@ from hmm_decode import Decode_grid
 
 warnings.filterwarnings("ignore")
 
+
 def load_trees(args):
     chrs = list(map(int, args.chrs.split(",")))
     ts_list = []
@@ -51,7 +52,9 @@ def load_trees(args):
     return ts_list
 
 
-def update_membership_eventwise_denom(gamma_arr, denom, ignore_first_epoch, ignore_last_epoch, n_epochs):
+def update_membership_eventwise_denom(
+    gamma_arr, denom, ignore_first_epoch, ignore_last_epoch, n_epochs
+):
     log_denom_em = np.zeros((gamma_arr.shape[0], denom.shape[0]), dtype="float64")
     start_end_mask = np.ones(n_epochs - 1, dtype=bool)
     start_end_mask[0] = False if ignore_first_epoch else True
@@ -62,10 +65,12 @@ def update_membership_eventwise_denom(gamma_arr, denom, ignore_first_epoch, igno
         nan_mask = np.isnan(gamma_arr[j]).sum(axis=0) == 0
         combined_mask = np.logical_and(start_end_mask, nan_mask)
         gamma_arr_nan_removed = gamma_arr[j][:, combined_mask]
-        denom_nan_removed = denom[:, :,  combined_mask]
-        log_denom_em[j] = -np.sum(gamma_arr_nan_removed * denom_nan_removed, axis=(1,2))
+        denom_nan_removed = denom[:, :, combined_mask]
+        log_denom_em[j] = -np.sum(
+            gamma_arr_nan_removed * denom_nan_removed, axis=(1, 2)
+        )
     return log_denom_em
-   
+
 
 @jit(nopython=True, fastmath=True)
 def update_membership_eventwise_numba(
@@ -78,7 +83,9 @@ def update_membership_eventwise_numba(
     target_branch_length,
     num_clusters,
 ):
-    log_num_em = np.zeros((num_clusters, len(proportion_of_coalescing_all)), dtype="float64")
+    log_num_em = np.zeros(
+        (num_clusters, len(proportion_of_coalescing_all)), dtype="float64"
+    )
     for n_site in range(len(proportion_of_coalescing_all)):
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[n_site]
         epoch_index_in_tree = epoch_index_all[n_site]
@@ -88,7 +95,10 @@ def update_membership_eventwise_numba(
             for i in range(len(proportion_of_coalescing_in_tree)):
                 if (not ignore_first_epoch) or epoch_index_in_tree[i] >= 1:
                     if (not ignore_last_epoch) or epoch_index_in_tree[i] < n_epochs - 2:
-                        if not (gamma_arr[j][:, epoch_index_in_tree[i]] == -9223372036854775808).any():
+                        if not (
+                            gamma_arr[j][:, epoch_index_in_tree[i]]
+                            == -9223372036854775808
+                        ).any():
                             log_num_em_j += (
                                 np.log(
                                     sum(
@@ -101,6 +111,7 @@ def update_membership_eventwise_numba(
             log_num_em[j, n_site] = log_num_em_j
     return log_num_em
 
+
 def update_membership_eventwise_numpy(
     proportion_of_coalescing_all,
     epoch_index_all,
@@ -111,8 +122,10 @@ def update_membership_eventwise_numpy(
     target_branch_length,
     num_clusters,
 ):
-    log_num_em = np.zeros((num_clusters, len(proportion_of_coalescing_all)), dtype="float64")
-    
+    log_num_em = np.zeros(
+        (num_clusters, len(proportion_of_coalescing_all)), dtype="float64"
+    )
+
     for n_site in range(len(proportion_of_coalescing_all)):
         proportion_of_coalescing_in_tree = proportion_of_coalescing_all[n_site]
         epoch_index_in_tree = epoch_index_all[n_site]
@@ -136,6 +149,7 @@ def update_membership_eventwise_numpy(
             log_num_em[j, n_site] = log_num_em_j
     return log_num_em
 
+
 def e_m_step(
     args,
     own_membership,  ##now is n_clusters x n_sites
@@ -158,15 +172,21 @@ def e_m_step(
     st = time.time()
     n_epochs = len(epoch_intervals)
     n_unique_groups = len(unique_groups)
-    
+
     if args.load_gamma is not None and (not (iter == args.num_iters - 1 and iter > 0)):
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         for epoch in range(gamma_arr.shape[2]):
-            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
-                gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
-                gamma_arr[:,:,epoch] = np.nan
+            if (
+                args.ignore_first_epoch
+                and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]
+            ):
+                gamma_arr[:, :, epoch] = np.nan
+            if (
+                args.ignore_last_epoch
+                and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]
+            ):
+                gamma_arr[:, :, epoch] = np.nan
 
     if args.load_gamma is None or (iter == args.num_iters - 1 and iter > 0):
         n = np.zeros(
@@ -179,14 +199,19 @@ def e_m_step(
         )
         if prev_gamma is None:
             prev_gamma = np.ones_like(n)
-        prev_gamma = np.nan_to_num(prev_gamma, nan=0)    
-        
+        prev_gamma = np.nan_to_num(prev_gamma, nan=0)
+
+        ### caution: for finding nea ancestry in eurasian segments
+        # eurasian_ancestry = np.load(args.output + '_eurasian_ancestry.npy')
+        # # eurasian_ancestry = np.load('nea_in_afr_eurasian_segments/bantukenya_eurasian_ancestry.npy')[0:1]
+        # eurasian_ancestry = (eurasian_ancestry > 0.5).flatten()
+        # for j in range(args.num_clusters):
+        #     own_membership[j] = own_membership[j] * eurasian_ancestry
+
         for sample_no in range(n_samples):
             start = int(np.sum(n_sites[0:sample_no]))
-            end = int(np.sum(n_sites[0:sample_no+1]))
-            own_membership_sample = own_membership[
-                :, start:end
-            ]
+            end = int(np.sum(n_sites[0 : sample_no + 1]))
+            own_membership_sample = own_membership[:, start:end]
             for j in range(len(own_membership_sample)):
                 n_j = compute_gamma_num(
                     own_membership_sample[j],
@@ -205,19 +230,27 @@ def e_m_step(
                 )
                 n[j] += n_j
                 d[j] += d_j
-        
+
         gamma_arr = n / d
-        
+
         ### run with inferred gamma for the very last iteration
         if args.load_gamma is not None:
             for epoch in range(gamma_arr.shape[2]):
-                if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
-                    gamma_arr[:,:,epoch] = np.nan
-                if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
-                    gamma_arr[:,:,epoch] = np.nan
+                if (
+                    args.ignore_first_epoch
+                    and (args.start_time - math.log(args.ypg, 10))
+                    > epoch_intervals[epoch]
+                ):
+                    gamma_arr[:, :, epoch] = np.nan
+                if (
+                    args.ignore_last_epoch
+                    and (args.end_time - math.log(args.ypg, 10))
+                    <= epoch_intervals[epoch]
+                ):
+                    gamma_arr[:, :, epoch] = np.nan
 
     if args.load_props != None:
-        print("Using initial props specified in file: " + str(args.load_props))        
+        print("Using initial props specified in file: " + str(args.load_props))
         tau = load_props(
             args.load_props
         )  ### load taus only works for not(props_per_chrs)
@@ -257,11 +290,9 @@ def e_m_step(
             n_epochs,
         )
         start = int(np.sum(n_sites[0:sample_no]))
-        end = int(np.sum(n_sites[0:sample_no+1]))
+        end = int(np.sum(n_sites[0 : sample_no + 1]))
         log_num_em[:, start:end] = log_num_em_sam
-        log_denom_em[
-            :, start:end
-        ] = log_denom_em_sam
+        log_denom_em[:, start:end] = log_denom_em_sam
     loglikelihood_per_comp = log_num_em + log_denom_em
     # print("log-like time: " + str(time.time() - st))
 
@@ -270,8 +301,14 @@ def e_m_step(
     own_membership_hmm = np.zeros((args.num_clusters, np.sum(n_sites)), dtype="float64")
     for sample_no in range(n_samples):
         start = int(np.sum(n_sites[0:sample_no]))
-        end = int(np.sum(n_sites[0:sample_no+1]))
-        own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
+        end = int(np.sum(n_sites[0 : sample_no + 1]))
+        (
+            own_membership_sam,
+            trans_num_sam,
+            trans_denom_sam,
+            tau_sam,
+            log_likelihood_sam,
+        ) = Decode_grid(
             tree_left_bp[sample_no],
             tree_right_bp[sample_no],
             gen_grid_all[sample_no],
@@ -280,7 +317,7 @@ def e_m_step(
             tau,
             window_size=args.force_build,
         )
-        own_membership_hmm[:, start:end] = own_membership_sam 
+        own_membership_hmm[:, start:end] = own_membership_sam
         if sample_no == 0:
             trans_num = trans_num_sam
             trans_denom = trans_denom_sam
@@ -289,22 +326,22 @@ def e_m_step(
         else:
             trans_num += trans_num_sam
             trans_denom += trans_denom_sam
-            tau_update += tau_sam 
+            tau_update += tau_sam
             log_likelihood_hmm += log_likelihood_sam
 
-    trans_prop = trans_num/trans_denom
-    tau = tau_update/np.sum(tau_update)
-    tau = np.minimum(np.maximum(tau, 1e-11), 1-1e-11)
+    trans_prop = trans_num / trans_denom
+    tau = tau_update / np.sum(tau_update)
+    tau = np.minimum(np.maximum(tau, 1e-11), 1 - 1e-11)
 
-    print("props: " + str(np.mean(own_membership_hmm, axis= 1)))
+    print("props: " + str(np.mean(own_membership_hmm, axis=1)))
     print("admix time: " + str(trans_prop))
     # print("HMM time: " + str(time.time() - st))
     if np.isnan(log_likelihood_hmm):
         pdb.set_trace()
-    
+
     ## when load_gamma this plots coal. rates for all epochs
     if iter == args.num_iters - 1 and iter > 0:
-        gamma_arr = n/d
+        gamma_arr = n / d
 
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
 
@@ -332,16 +369,22 @@ def random_sweep_iter(
     n_sites,
 ):
     epoch_intervals = np.log10(epoch_intervals_pow)
-    
+
     n_unique_groups = len(unique_groups)
     if args.load_gamma is not None:
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch in range(gamma_arr.shape[2]):
-            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
-                gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
-                gamma_arr[:,:,epoch] = np.nan
+            if (
+                args.ignore_first_epoch
+                and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]
+            ):
+                gamma_arr[:, :, epoch] = np.nan
+            if (
+                args.ignore_last_epoch
+                and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]
+            ):
+                gamma_arr[:, :, epoch] = np.nan
     else:
         gamma_arr = np.power(
             np.e,
@@ -351,7 +394,7 @@ def random_sweep_iter(
         )
         gamma_arr = np.array(gamma_arr, dtype="float64")
 
-    if args.load_props is not None:  
+    if args.load_props is not None:
         tau = load_props(args.load_props)
 
     else:
@@ -387,7 +430,13 @@ def random_sweep_iter(
             args.ignore_last_epoch,
             n_epochs,
         )
-        own_membership_sam, trans_num_sam, trans_denom_sam, tau_sam, log_likelihood_sam = Decode_grid(
+        (
+            own_membership_sam,
+            trans_num_sam,
+            trans_denom_sam,
+            tau_sam,
+            log_likelihood_sam,
+        ) = Decode_grid(
             tree_left_bp[sample_no],
             tree_right_bp[sample_no],
             gen_grid_all[sample_no],
@@ -406,13 +455,13 @@ def random_sweep_iter(
         else:
             trans_num += trans_num_sam
             trans_denom += trans_denom_sam
-            tau_update += tau_sam 
+            tau_update += tau_sam
             log_likelihood += log_likelihood_sam
 
-    trans_prop = trans_num/trans_denom
-    tau = tau_update/np.sum(tau_update)
-    own_membership_trial = np.array(own_membership_trial, dtype='float64')
-    
+    trans_prop = trans_num / trans_denom
+    tau = tau_update / np.sum(tau_update)
+    own_membership_trial = np.array(own_membership_trial, dtype="float64")
+
     for epoch in range(args.sweep_num_iters):
         own_membership_trial, trans_prop, gamma_arr, tau, log_likelihood = e_m_step(
             args,
@@ -433,12 +482,12 @@ def random_sweep_iter(
             tree_right_bp,
             gen_grid_all,
         )
- 
+
     if args.load_membership is not None:
-        own_membership_trial = np.load(args.load_membership)            
+        own_membership_trial = np.load(args.load_membership)
         # trans_prop = load_tadmix(args.t_admix_guess)
         # tau = np.load(args.load_props)
-   
+
     return (
         log_likelihood,
         own_membership_trial,
@@ -473,7 +522,13 @@ def random_sweep(
     epoch_intervals_pow = np.power(10, epoch_intervals)
 
     st = time.time()
-    num, denom, denom_unscaled, proportion_of_coalescing_all, epoch_index_all = [], [], [], [], []
+    num, denom, denom_unscaled, proportion_of_coalescing_all, epoch_index_all = (
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
     for sample_no, sample in enumerate(args.sample_id):
         (
             num1,
@@ -481,7 +536,20 @@ def random_sweep(
             denom1_unscaled,
             proportion_of_coalescing_all1,
             epoch_index_all1,
-        ) = load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy[sample_no], chr_map, epoch_intervals, target_branch_length_masked[sample_no], mutscale_masked[sample_no], gt_ref, unique_groups, exact_pos)
+        ) = load_fixed_params(
+            args,
+            ts_list,
+            sample,
+            poplabels,
+            mask_dodgy[sample_no],
+            chr_map,
+            epoch_intervals,
+            target_branch_length_masked[sample_no],
+            mutscale_masked[sample_no],
+            gt_ref,
+            unique_groups,
+            exact_pos,
+        )
         num.append(num1)
         denom.append(denom1)
         denom_unscaled.append(denom1_unscaled)
@@ -499,7 +567,7 @@ def random_sweep(
         if (mask_dodgy[sample_no] == mask_dodgy[0]).all():
             count_matching_mask += 1
 
-    if count_matching_mask == len(args.sample_id): 
+    if count_matching_mask == len(args.sample_id):
         effective_number_samples = 1
         print("All samples have the same mask")
     else:
@@ -510,14 +578,23 @@ def random_sweep(
         chr_map_masked = np.array(chr_map)[mask_dodgy[sample_no]]
         for chr in np.unique(chr_map_masked):
             if exact_pos is not None:
-                exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
-            for i, (l, r) in enumerate(zip(tree_left_bp[sample_no][chr_map_masked == chr], tree_right_bp[sample_no][chr_map_masked == chr])):
+                exact_pos_chr = exact_pos[exact_pos["chr"] == chr]
+            for i, (l, r) in enumerate(
+                zip(
+                    tree_left_bp[sample_no][chr_map_masked == chr],
+                    tree_right_bp[sample_no][chr_map_masked == chr],
+                )
+            ):
                 if exact_pos is None:
-                    n_sites_sam += int(np.ceil(r/args.force_build)) - int(np.ceil(l/args.force_build))
+                    n_sites_sam += int(np.ceil(r / args.force_build)) - int(
+                        np.ceil(l / args.force_build)
+                    )
                 else:
-                    n_sites_sam += np.searchsorted(exact_pos_chr['pos'], r) - np.searchsorted(exact_pos_chr['pos'], l)
+                    n_sites_sam += np.searchsorted(
+                        exact_pos_chr["pos"], r
+                    ) - np.searchsorted(exact_pos_chr["pos"], l)
         n_sites.append(copy.deepcopy(n_sites_sam))
-    
+
     if count_matching_mask == len(args.sample_id):
         n_sites = [n_sites[0]] * len(args.sample_id)
 
@@ -543,7 +620,7 @@ def random_sweep(
             tree_right_bp,
             gen_grid_all,
             chr_map,
-            n_sites
+            n_sites,
         )
         for n_iters in range(n_repeats)
     )
@@ -561,7 +638,7 @@ def random_sweep(
             own_membership = own_membership_trial
             trans_prop = trans_prop_trial
             tau = tau_trial
-    
+
     return (
         own_membership,
         trans_prop,
@@ -572,8 +649,9 @@ def random_sweep(
         proportion_of_coalescing_all,
         epoch_index_all,
         unique_groups,
-        n_sites
+        n_sites,
     )
+
 
 def get_expected_r2(own_membership, num_samples):
     if num_samples % 2 == 0:
@@ -581,22 +659,27 @@ def get_expected_r2(own_membership, num_samples):
         own_membership = own_membership.reshape(num_clusters, num_samples, -1)
         num_sites = own_membership.shape[2]
         diploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))
-        cross_haploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))  
+        cross_haploid_membership = np.zeros((num_clusters, num_samples // 2, num_sites))
         for sample in range(0, num_samples, 2):
             hap1 = own_membership[:, sample, :]
             hap2 = own_membership[:, sample + 1, :]
             diploid_membership[:, sample // 2, :] = hap1 + hap2
             cross_haploid_membership[:, sample // 2, :] = hap1 * hap2
-        sum_diploid = diploid_membership.sum(axis=(1,2))
-        sum_diploid_squared = (diploid_membership ** 2).sum(axis=(1,2))
-        sum_cross_haploid = cross_haploid_membership.sum(axis=(1,2))
-        num = sum_diploid_squared - (sum_diploid ** 2) / num_sites / (num_samples // 2)
-        denom = sum_diploid + 2 * sum_cross_haploid - (sum_diploid ** 2) / num_sites / (num_samples // 2)
+        sum_diploid = diploid_membership.sum(axis=(1, 2))
+        sum_diploid_squared = (diploid_membership**2).sum(axis=(1, 2))
+        sum_cross_haploid = cross_haploid_membership.sum(axis=(1, 2))
+        num = sum_diploid_squared - (sum_diploid**2) / num_sites / (num_samples // 2)
+        denom = (
+            sum_diploid
+            + 2 * sum_cross_haploid
+            - (sum_diploid**2) / num_sites / (num_samples // 2)
+        )
         expected_r2 = num / denom
-        print("Final expected R2 = " + str(np.sum(num)/np.sum(denom)))
+        print("Final expected R2 = " + str(np.sum(num) / np.sum(denom)))
         print("Per ancestry expected R2 = " + str(expected_r2))
     else:
         print("Not calculating expected R2 as both haploids not present....")
+
 
 def write_membership_grid(
     args,
@@ -611,7 +694,7 @@ def write_membership_grid(
     sample_id_list,
     output,
     window_size=1e3,
-    exact_pos=None
+    exact_pos=None,
 ):
     assert len(tree_left_bp) == len(tree_right_bp)
     count_i = 0
@@ -619,27 +702,38 @@ def write_membership_grid(
         if exact_pos is None:
             chr_map_ = chr_map[mask_dodgy[k]]
             res = []
-            for i, (c, l, r) in enumerate(zip(chr_map_, tree_left_bp[k], tree_right_bp[k])):
-                for j in range(int(np.ceil(l / window_size)), int(np.ceil(r / window_size))):
+            for i, (c, l, r) in enumerate(
+                zip(chr_map_, tree_left_bp[k], tree_right_bp[k])
+            ):
+                for j in range(
+                    int(np.ceil(l / window_size)), int(np.ceil(r / window_size))
+                ):
                     res.append(
-                        [c, j* window_size] +  own_membership[:, count_i].tolist()
+                        [c, j * window_size] + own_membership[:, count_i].tolist()
                     )
                     count_i += 1
             df = pd.DataFrame(
                 data=np.array(res),
-                columns=["chr", "pos"]
-                + ["prob_" + str(i) for i in range(n_clusters)],
+                columns=["chr", "pos"] + ["prob_" + str(i) for i in range(n_clusters)],
             )
         else:
             df = exact_pos.copy()
-            df[["prob_" + str(i) for i in range(n_clusters)]] = own_membership[:, k*len(df):(k+1)*len(df)].T
-        
-        df['genpos'] = gen_grid_all[k] ## unit in morgans 
+            df[["prob_" + str(i) for i in range(n_clusters)]] = own_membership[
+                :, k * len(df) : (k + 1) * len(df)
+            ].T
+
+        df["genpos"] = gen_grid_all[k]  ## unit in morgans
         df.to_csv(
-            output + "_overall_membership_" + str(sample_name) + "_sample_id_" + str(sample_id) + ".csv",
+            output
+            + "_overall_membership_"
+            + str(sample_name)
+            + "_sample_id_"
+            + str(sample_id)
+            + ".csv",
             index=False,
             sep="\t",
         )
+
 
 def write_membership_gamma(
     args,
@@ -657,7 +751,7 @@ def write_membership_gamma(
     sample_id_label,
     sample_name_list,
     exact_pos,
-    output=None
+    output=None,
 ):
     ## gamma and membership plots
     filename = (
@@ -680,7 +774,7 @@ def write_membership_gamma(
         args.sample_id,
         args.output if output is None else output,
         args.force_build,
-        exact_pos
+        exact_pos,
     )
 
     write_coal(
@@ -692,22 +786,23 @@ def write_membership_gamma(
     )
 
     with open(
-        args.output + "_gamma_" + sample_id_label +  ".npy",
+        args.output + "_gamma_" + sample_id_label + ".npy",
         "wb",
     ) as f:
         np.save(f, gamma_arr)
 
     with open(
-        args.output + "_props_" + sample_id_label +  ".npy",
+        args.output + "_props_" + sample_id_label + ".npy",
         "wb",
     ) as f:
         np.save(f, tau)
 
     with open(
-        args.output + "_tadmix_" + sample_id_label +  ".npy",
+        args.output + "_tadmix_" + sample_id_label + ".npy",
         "wb",
     ) as f:
         np.save(f, trans_prop)
+
 
 def main(args):
     if args.load_mask is not None or args.cm_grid is not None:
@@ -725,18 +820,27 @@ def main(args):
         + [np.inf],
         dtype="float64",
     )
-    if args.load_gamma is not None and args.load_props is not None and (args.t_admix_guess is not None or args.hmm is False):
+    if (
+        args.load_gamma is not None
+        and args.load_props is not None
+        and (args.t_admix_guess is not None or args.hmm is False)
+    ):
         args.num_iters = 1
         args.sweep_num_iters = 0
         args.n_repeats = 1
-        print("Setting num_iters, num_iters and n_repeats to 1 as initial gamma and props are provided")
-        
+        print(
+            "Setting num_iters, num_iters and n_repeats to 1 as initial gamma and props are provided"
+        )
+
     if args.load_gamma is not None:
         if ".coal" in args.load_gamma:
             second_line = (
                 open(args.load_gamma).readlines()[1].strip("\n").split(" ")[:-1]
             )
-            epoch_intervals = np.array(np.log10(np.array(second_line, dtype="float64")).tolist() + [np.inf], dtype='float64')
+            epoch_intervals = np.array(
+                np.log10(np.array(second_line, dtype="float64")).tolist() + [np.inf],
+                dtype="float64",
+            )
             args.num_epochs = len(epoch_intervals) - 1
 
     poplabels = pd.read_csv(args.poplabels, sep="\s+")
@@ -759,7 +863,7 @@ def main(args):
             np.repeat(poplabels.values, 2, axis=0), columns=poplabels.columns
         )
 
-    ### Setting the target sample ids 
+    ### Setting the target sample ids
     sample_id = []
     for i in range(len(args.sample_id)):
         if "-" in args.sample_id[i]:
@@ -773,7 +877,14 @@ def main(args):
             try:
                 sample_id.append(int(args.sample_id[i]))
             except:
-                sample_id.extend(poplabels[((poplabels.INCLUDE == 1)&(poplabels.GROUP == args.sample_id[i]))].index.tolist())
+                sample_id.extend(
+                    poplabels[
+                        (
+                            (poplabels.INCLUDE == 1)
+                            & (poplabels.GROUP == args.sample_id[i])
+                        )
+                    ].index.tolist()
+                )
     sample_id = np.unique(sample_id).tolist()
     print(sample_id)
     args.sample_id = sample_id
@@ -781,7 +892,8 @@ def main(args):
     if len(sample_id_label) > 100:
         print("Truncating sample_id_label to 100 characters to avoid long file names")
         sample_id_label = sample_id_label[0:100]
-    sample_name_list = poplabels.loc[args.sample_id].ID.tolist(); print(sample_name_list)
+    sample_name_list = poplabels.loc[args.sample_id].ID.tolist()
+    print(sample_name_list)
 
     poplabels.loc[args.sample_id, "INCLUDE"] = 1
     unique_groups = np.unique(poplabels[poplabels.INCLUDE == 1].GROUP)
@@ -789,10 +901,10 @@ def main(args):
     num_samples = len(poplabels)
     for sample in args.sample_id:
         if sample >= num_samples or sample < 0:
-            raise ValueError("The sample ids are out of range") 
+            raise ValueError("The sample ids are out of range")
         else:
             print(str(sample) + " is: " + str(poplabels.GROUP.iloc[sample]))
-    
+
     ### Load tree stats
     (
         recomb_rates,
@@ -801,6 +913,7 @@ def main(args):
         tree_left_bp_gen,
         tree_right_bp_gen,
         chr_map,
+        frac_branches_with_snp_all,
     ) = load_tree_stats(args, ts_list, poplabels, args.tree_stats_file_prefix)
 
     ## cM grid option
@@ -817,107 +930,185 @@ def main(args):
             else:
                 print(f"Recombination map for chromosome {chr} not found!")
                 continue
-            df = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], 1), columns=['pos'])
-            df['genpos'] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(df['pos'].values, recomb_map_msprime.position.min()), recomb_map_msprime.position.max())) 
+            df = pd.DataFrame(
+                np.arange(
+                    np.array(tree_left_bp)[np.array(chr_map) == chr][0],
+                    np.array(tree_right_bp)[np.array(chr_map) == chr][-1],
+                    1,
+                ),
+                columns=["pos"],
+            )
+            df["genpos"] = recomb_map_msprime.get_cumulative_mass(
+                np.minimum(
+                    np.maximum(df["pos"].values, recomb_map_msprime.position.min()),
+                    recomb_map_msprime.position.max(),
+                )
+            )
             m_grid = args.cm_grid / 100
-            df['genpos_rounded'] = (df['genpos'] / m_grid).astype('int') * m_grid
-            df = df.groupby('genpos_rounded').first().reset_index()
-            df = df.drop(columns=['genpos_rounded'])
-            df['chr'] = chr
-            df_kb = pd.DataFrame(np.arange(np.array(tree_left_bp)[np.array(chr_map) == chr][0], np.array(tree_right_bp)[np.array(chr_map) == chr][-1], force_build_orig), columns=['pos'])
-            df_kb['chr'] = chr
-            df_union = pd.concat([df[['chr', 'pos']], df_kb[['chr', 'pos']]]).drop_duplicates().sort_values(by='pos').reset_index(drop=True)
+            df["genpos_rounded"] = (df["genpos"] / m_grid).astype("int") * m_grid
+            df = df.groupby("genpos_rounded").first().reset_index()
+            df = df.drop(columns=["genpos_rounded"])
+            df["chr"] = chr
+            df_kb = pd.DataFrame(
+                np.arange(
+                    np.array(tree_left_bp)[np.array(chr_map) == chr][0],
+                    np.array(tree_right_bp)[np.array(chr_map) == chr][-1],
+                    force_build_orig,
+                ),
+                columns=["pos"],
+            )
+            df_kb["chr"] = chr
+            df_union = (
+                pd.concat([df[["chr", "pos"]], df_kb[["chr", "pos"]]])
+                .drop_duplicates()
+                .sort_values(by="pos")
+                .reset_index(drop=True)
+            )
             df_all = pd.concat([df_all, df_union], ignore_index=True)
         print("Saving the mask file corresponding to the cM grid...")
-        df_all.to_csv(args.output + '.cm.mask', sep='\t', index=None)
-        args.load_mask = args.output + '.cm.mask'
+        df_all.to_csv(args.output + ".cm.mask", sep="\t", index=None)
+        args.load_mask = args.output + ".cm.mask"
 
     ### Filter based on recombination rates
     if args.load_mask is None:
         mask_dodgy = []
         for sample_id in args.sample_id:
             mask_dodgy_sam = filter_recomb_rate(
-                args.masking_threshold,
-                tree_left_bp,
-                recomb_rates,
-                chr_map
+                args.masking_threshold, tree_left_bp, recomb_rates, chr_map
             )
             mask_dodgy.append(mask_dodgy_sam)
         exact_pos = None
     else:
         exact_pos = pd.read_csv(args.load_mask, sep="\s+")
-        exact_pos = exact_pos[exact_pos['chr'].isin(list(map(int, args.chrs.split(","))))]
-        exact_pos = exact_pos.sort_values(by=['chr', 'pos'])
+        exact_pos = exact_pos[
+            exact_pos["chr"].isin(list(map(int, args.chrs.split(","))))
+        ]
+        exact_pos = exact_pos.sort_values(by=["chr", "pos"])
         exact_pos = exact_pos.reset_index(drop=True)
         mask_dodgy_recomb = filter_recomb_rate(
-                args.masking_threshold,
-                tree_left_bp,
-                recomb_rates,
-                chr_map
-            )
+            args.masking_threshold, tree_left_bp, recomb_rates, chr_map
+        )
         count = 0
         for chr_count, chr in enumerate(np.unique(chr_map)):
-            for tree_left_i, tree_right_i in zip(np.array(tree_left_bp)[chr_map == chr], np.array(tree_right_bp)[chr_map == chr]):
+            for tree_left_i, tree_right_i in zip(
+                np.array(tree_left_bp)[chr_map == chr],
+                np.array(tree_right_bp)[chr_map == chr],
+            ):
                 if not mask_dodgy_recomb[count]:
-                    exact_pos.loc[(exact_pos.pos >= tree_left_i) & (exact_pos.pos < tree_right_i) & (exact_pos.chr == chr),  'pos'] = np.nan
-                count +=1 
+                    exact_pos.loc[
+                        (exact_pos.pos >= tree_left_i)
+                        & (exact_pos.pos < tree_right_i)
+                        & (exact_pos.chr == chr),
+                        "pos",
+                    ] = np.nan
+                count += 1
             tree_first_pos = np.array(tree_left_bp)[chr_map == chr][0]
             tree_last_pos = np.array(tree_right_bp)[chr_map == chr][-1]
             exact_pos[(exact_pos.chr == chr) & (exact_pos.pos > tree_last_pos)] = np.nan
-            exact_pos[(exact_pos.chr == chr) & (exact_pos.pos < tree_first_pos)] = np.nan
+            exact_pos[(exact_pos.chr == chr) & (exact_pos.pos < tree_first_pos)] = (
+                np.nan
+            )
         exact_pos = exact_pos.dropna()
-        load_mask = load_mask_csv(args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map)
+        load_mask = load_mask_csv(
+            args, exact_pos, tree_left_bp, tree_right_bp, recomb_rates, chr_map
+        )
         mask_dodgy = []
         for sample_id in args.sample_id:
             mask_dodgy.append(load_mask)
 
-    num_trees_per_sample = [np.sum(mask_dodgy[sam]) for sam in range(len(args.sample_id))]
+    num_trees_per_sample = [
+        np.sum(mask_dodgy[sam]) for sam in range(len(args.sample_id))
+    ]
     poplabels_included = poplabels[poplabels.INCLUDE == 1]
     tree_left_bp = np.array(
-        [np.array(tree_left_bp)[mask_dodgy[sam]].tolist() for sam in range(len(args.sample_id))]
+        [
+            np.array(tree_left_bp)[mask_dodgy[sam]].tolist()
+            for sam in range(len(args.sample_id))
+        ]
     )
     tree_right_bp = np.array(
-        [np.array(tree_right_bp)[mask_dodgy[sam]].tolist() for sam in range(len(args.sample_id))]
+        [
+            np.array(tree_right_bp)[mask_dodgy[sam]].tolist()
+            for sam in range(len(args.sample_id))
+        ]
     )
     tree_left_bp_gen = np.array(
-        [np.array(tree_left_bp_gen)[mask_dodgy[sam]].tolist() for sam in range(len(args.sample_id))]
+        [
+            np.array(tree_left_bp_gen)[mask_dodgy[sam]].tolist()
+            for sam in range(len(args.sample_id))
+        ]
     )
     tree_right_bp_gen = np.array(
-        [np.array(tree_right_bp_gen)[mask_dodgy[sam]].tolist() for sam in range(len(args.sample_id))]
+        [
+            np.array(tree_right_bp_gen)[mask_dodgy[sam]].tolist()
+            for sam in range(len(args.sample_id))
+        ]
     )
 
-    ## generate gen_grid for each sample 
+    ## generate gen_grid for each sample
     gen_grid_kb = {}
     for chr in list(map(int, args.chrs.split(","))):
         if os.path.isfile(args.rec + str(chr) + ".txt"):
-            recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(chr) + ".txt")
+            recomb_map_msprime = msprime.RateMap.read_hapmap(
+                args.rec + str(chr) + ".txt"
+            )
         elif os.path.isfile(args.rec + str(chr) + ".txt.gz"):
-            recomb_map_msprime = msprime.RateMap.read_hapmap(args.rec + str(chr) + ".txt.gz")
+            recomb_map_msprime = msprime.RateMap.read_hapmap(
+                args.rec + str(chr) + ".txt.gz"
+            )
         else:
-            raise "Recomb map format not identified"   
-        
-        if args.load_mask is not None:
-            exact_pos_chr = exact_pos[exact_pos['chr'] == chr]
-            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(exact_pos_chr['pos'].values, recomb_map_msprime.position.min()), recomb_map_msprime.position.max()))
-        else:
-            grid_ = np.arange(0, int(np.ceil(tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max())), args.force_build)
-            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(grid_, recomb_map_msprime.position.min()), recomb_map_msprime.position.max()))
+            raise "Recomb map format not identified"
 
+        if args.load_mask is not None:
+            exact_pos_chr = exact_pos[exact_pos["chr"] == chr]
+            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(
+                np.minimum(
+                    np.maximum(
+                        exact_pos_chr["pos"].values, recomb_map_msprime.position.min()
+                    ),
+                    recomb_map_msprime.position.max(),
+                )
+            )
+        else:
+            grid_ = np.arange(
+                0,
+                int(
+                    np.ceil(
+                        tree_right_bp[0][np.array(chr_map)[mask_dodgy[0]] == chr].max()
+                    )
+                ),
+                args.force_build,
+            )
+            gen_grid_kb[chr] = recomb_map_msprime.get_cumulative_mass(
+                np.minimum(
+                    np.maximum(grid_, recomb_map_msprime.position.min()),
+                    recomb_map_msprime.position.max(),
+                )
+            )
 
     gen_grid_all = []
     for sample_no in range(len(args.sample_id)):
         gen_grid_sam = []
-        if args.load_mask is None: 
-            for i, (c, l, r) in enumerate(zip(np.array(chr_map)[mask_dodgy[sample_no]], tree_left_bp[sample_no], tree_right_bp[sample_no])):
-                for j in range(int(np.ceil(l/args.force_build)), int(np.ceil(r/args.force_build))):
+        if args.load_mask is None:
+            for i, (c, l, r) in enumerate(
+                zip(
+                    np.array(chr_map)[mask_dodgy[sample_no]],
+                    tree_left_bp[sample_no],
+                    tree_right_bp[sample_no],
+                )
+            ):
+                for j in range(
+                    int(np.ceil(l / args.force_build)),
+                    int(np.ceil(r / args.force_build)),
+                ):
                     if args.hmm is False:
-                        gen_grid_sam.append(j*1e3)
+                        gen_grid_sam.append(j * 1e3)
                     else:
                         gen_grid_sam.append(gen_grid_kb[c][j])
         else:
             for c in list(map(int, args.chrs.split(","))):
                 if args.hmm is False:
-                    gen_grid_sam.extend(np.arange(0, len(gen_grid_kb[c]))*1e3)
+                    gen_grid_sam.extend(np.arange(0, len(gen_grid_kb[c])) * 1e3)
                 else:
                     gen_grid_sam.extend(gen_grid_kb[c])
         gen_grid_all.append(np.array(gen_grid_sam))
@@ -927,24 +1118,34 @@ def main(args):
         ## Currently assuming all target samples have same masking
         print("Loading the local ancestry information of the reference panel")
         with open(args.gt_ref) as f:
-            unique_groups = f.readline().strip('\n').split(' ')        
+            unique_groups = f.readline().strip("\n").split(" ")
         gt_ref_df = pd.read_csv(args.gt_ref, sep=" ", skiprows=[0], header=None)
-        gt_ref_df = gt_ref_df.rename(columns={0:'chr', 1:'pos'})
+        gt_ref_df = gt_ref_df.rename(columns={0: "chr", 1: "pos"})
 
         ## convert from bp to trees
-        gt_ref = np.zeros((len(poplabels.GROUP), num_trees_per_sample[0]), dtype="float")
+        gt_ref = np.zeros((len(poplabels), num_trees_per_sample[0]), dtype="float")
         for n_t in range(num_trees_per_sample[0]):
             chr_ = np.array(chr_map)[mask_dodgy[0]][n_t]
-            tree_pos = (tree_left_bp[0][n_t] + tree_right_bp[0][n_t])/2
-            gt_ref_chr = gt_ref_df[gt_ref_df['chr'] == chr_]
-            gt_ref_nt = gt_ref_chr.iloc[(gt_ref_chr['pos']-tree_pos).abs().argsort()[:1]][gt_ref_chr.columns[2:]].values[0]
+            tree_pos = (tree_left_bp[0][n_t] + tree_right_bp[0][n_t]) / 2
+            gt_ref_chr = gt_ref_df[gt_ref_df["chr"] == chr_]
+            gt_ref_nt = gt_ref_chr.iloc[
+                (gt_ref_chr["pos"] - tree_pos).abs().argsort()[:1]
+            ][gt_ref_chr.columns[2:]].values[0]
             gt_ref[:, n_t] = gt_ref_nt
     else:
         gt_ref = None
 
     st = time.time()
     target_branch_length_masked, mutscale_masked = get_target_branch_length(
-        args, poplabels, ts_list, chrs, chr_map, mask_dodgy, args.sample_id, gt_ref=gt_ref, exact_pos=exact_pos
+        args,
+        poplabels,
+        ts_list,
+        chrs,
+        chr_map,
+        mask_dodgy,
+        args.sample_id,
+        gt_ref=gt_ref,
+        exact_pos=exact_pos,
     )
     print("target branch length: " + str(time.time() - st))
 
@@ -958,7 +1159,7 @@ def main(args):
         proportion_of_coalescing_all,
         epoch_index_all,
         unique_groups,
-        n_sites
+        n_sites,
     ) = random_sweep(
         args,
         args.num_clusters,
@@ -979,18 +1180,24 @@ def main(args):
         gt_ref=gt_ref,
         exact_pos=exact_pos,
     )
-    
+
     if args.load_gamma:
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
         for epoch in range(gamma_arr.shape[2]):
-            if args.ignore_first_epoch and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]:
-                gamma_arr[:,:,epoch] = np.nan
-            if args.ignore_last_epoch and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]:
-                gamma_arr[:,:,epoch] = np.nan
+            if (
+                args.ignore_first_epoch
+                and (args.start_time - math.log(args.ypg, 10)) > epoch_intervals[epoch]
+            ):
+                gamma_arr[:, :, epoch] = np.nan
+            if (
+                args.ignore_last_epoch
+                and (args.end_time - math.log(args.ypg, 10)) <= epoch_intervals[epoch]
+            ):
+                gamma_arr[:, :, epoch] = np.nan
     else:
         gamma_arr = None
-    
+
     if args.load_props:
         tau = load_props(args.load_props)
 
@@ -1063,9 +1270,9 @@ def main(args):
         unique_groups,
         sample_id_label,
         sample_name_list,
-        exact_pos
+        exact_pos,
     )
-    
+
     print("Saving the coal. rates and proportions without using HMM")
     # target_branch_length_masked_unity = target_branch_length_masked
     # for i in range(len(target_branch_length_masked_unity)):
@@ -1074,8 +1281,10 @@ def main(args):
     #             target_branch_length_masked_unity[i][j][k] = 1
     gen_grid_all_unscaled = copy.deepcopy(gen_grid_all)
     for sample_no in range(len(args.sample_id)):
-        gen_grid_all_unscaled[sample_no] = 1e3*np.arange(0,len(gen_grid_all[sample_no]))
-    
+        gen_grid_all_unscaled[sample_no] = 1e3 * np.arange(
+            0, len(gen_grid_all[sample_no])
+        )
+
     own_membership_nohmm, _, gamma_arr_nohmm, tau_nohmm, _ = e_m_step(
         args,
         own_membership,
@@ -1089,7 +1298,7 @@ def main(args):
         epoch_intervals,
         n_sites,
         len(args.sample_id),
-        epoch, ## should this be 0 or epoch (last iteration)?
+        epoch,  ## should this be 0 or epoch (last iteration)?
         mutscale_masked,
         tree_left_bp,
         tree_right_bp,
@@ -1111,9 +1320,10 @@ def main(args):
         "nohmm_" + sample_id_label,
         sample_name_list,
         exact_pos,
-        output=args.output + "_nohmm"
+        output=args.output + "_nohmm",
     )
     return
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -1270,15 +1480,54 @@ if __name__ == "__main__":
         type=boolean,
         default=True,
     )
-    parser.add_argument("--ypg", type=float, default=28, help="years per generation, 28 years default")
-    parser.add_argument("--tree_stats_file_prefix", type=str, default=None, help="file prefix for the tree stats file")
-    parser.add_argument("--branch_persistence_file_prefix", type=str, default=None, help="file prefix for the branch persistence file")
-    parser.add_argument("--fixed_params_file_prefix", type=str, default=None, help="file prefix for the fixed params file")
-    parser.add_argument("--load_membership", help = "Load the membership from a .npy file", type=str, default=None)
-    parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
-    parser.add_argument("--gt_ref", help="Local ancestry of the reference panel", type=str, default=None)
-    parser.add_argument("--node_persist_thresh", type=float, default=0.5, help="Correlation coefficient threshold above which nodes are considered equivalent")
-    parser.add_argument("--cm_grid", type=float, default=None, help="Store local ancestry information per cM instead")
+    parser.add_argument(
+        "--ypg", type=float, default=28, help="years per generation, 28 years default"
+    )
+    parser.add_argument(
+        "--tree_stats_file_prefix",
+        type=str,
+        default=None,
+        help="file prefix for the tree stats file",
+    )
+    parser.add_argument(
+        "--branch_persistence_file_prefix",
+        type=str,
+        default=None,
+        help="file prefix for the branch persistence file",
+    )
+    parser.add_argument(
+        "--fixed_params_file_prefix",
+        type=str,
+        default=None,
+        help="file prefix for the fixed params file",
+    )
+    parser.add_argument(
+        "--load_membership",
+        help="Load the membership from a .npy file",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--genome_build",
+        help="Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--gt_ref", help="Local ancestry of the reference panel", type=str, default=None
+    )
+    parser.add_argument(
+        "--node_persist_thresh",
+        type=float,
+        default=0.5,
+        help="Correlation coefficient threshold above which nodes are considered equivalent",
+    )
+    parser.add_argument(
+        "--cm_grid",
+        type=float,
+        default=None,
+        help="Store local ancestry information per cM instead",
+    )
     parser.add_argument(
         "--ignore_coal_between_targets",
         help="Whether to ignore coalescene events between target samples",
@@ -1288,5 +1537,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     np.random.seed(args.seed)  ## fix the random seed
     random.seed(args.seed)
-    print(args)    
+    print(args)
     main(args)
