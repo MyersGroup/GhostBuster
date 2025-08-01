@@ -11,6 +11,7 @@ import argparse
 import os 
 from utils import boolean
 import numba
+from tqdm import tqdm
 
 import matplotlib as mpl
 font = {'size' : 22}
@@ -26,6 +27,10 @@ mpl.rcParams['ytick.major.size'] = 10         # Set global length for major y-ti
 mpl.rcParams['xtick.major.width'] = 2         # Set global width for major x-ticks
 mpl.rcParams['ytick.major.width'] = 2         # Set global width for major y-ticks
 mpl.rcParams['font.family'] = 'DejaVu Sans' 
+
+def make_interp_spline_(x,y):
+    nan_mask = ~np.isnan(y) & ~np.isinf(y) & ~np.isnan(x) & ~np.isinf(x)
+    return make_interp_spline(x[nan_mask], y[nan_mask])
 
 def func(sum_of_exp, c, a):
     return c*sum_of_exp + a
@@ -65,17 +70,18 @@ def get_sum_of_exp_continuous(dist, t_admix1, t_admix2, mu):
 def plot_ld_curve_comp1(dist, means_all, output_prefix, negloglike=None, t_admix1=None, t_admix2=None, weight=None, admixtimes=None, mode='1date'):
     num_sam = len(means_all)
     plt.clf()
-    fig, ax = plt.subplots(figsize=(7, 7), dpi=300)
+    fig, ax = plt.subplots(figsize=(7, 3.5), dpi=300)
     for sam in range(num_sam):
-        spl = make_interp_spline(dist, means_all[sam][0, 0])
+        spl = make_interp_spline_(dist, means_all[sam][0, 0])
         ax.plot(dist, spl(dist), color="gray", alpha=0.3, linewidth=0.5)
     mean_of_all_sam = np.mean(means_all, axis=0)
-    spl = make_interp_spline(dist, mean_of_all_sam[0, 0])
+    spl = make_interp_spline_(dist, mean_of_all_sam[0, 0])
     ax.plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
     if admixtimes is not None:
         # Single-date fit
         sum_of_exp = get_exp(dist, admixtimes)
-        popt, pcov = curve_fit(func, sum_of_exp, mean_of_all_sam[0, 0], maxfev=5000)
+        nan_mask = ~np.isnan(mean_of_all_sam[0, 0]) & ~np.isinf(mean_of_all_sam[0, 0])
+        popt, pcov = curve_fit(func, sum_of_exp[nan_mask], mean_of_all_sam[0, 0][nan_mask], maxfev=5000)
         ax.plot(dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1)
         ax.text(0.4, 0.8, '{:.1f} gens.'.format(admixtimes), transform=ax.transAxes, fontsize=26, verticalalignment='top', color="green")
         ax.set_title("One-date fit, logl = {:.2f}".format(-negloglike), fontsize=16)
@@ -85,7 +91,8 @@ def plot_ld_curve_comp1(dist, means_all, output_prefix, negloglike=None, t_admix
             sum_of_exp = get_sum_of_exp(dist, t_admix1, t_admix2, weight)
         elif mode == 'continuous':
             sum_of_exp = get_sum_of_exp_continuous(dist, t_admix1, t_admix2, weight)
-        popt, pcov = curve_fit(func, sum_of_exp, mean_of_all_sam[0, 0], maxfev=5000)
+        nan_mask = ~np.isnan(mean_of_all_sam[0, 0]) & ~np.isinf(mean_of_all_sam[0, 0])
+        popt, pcov = curve_fit(func, sum_of_exp[nan_mask], mean_of_all_sam[0, 0][nan_mask], maxfev=5000)
         ax.plot(dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1)
         
         ax.text(0.3, 0.8, r'$\lambda_1 = {:.1f}$'.format(t_admix1), 
@@ -118,12 +125,12 @@ def plot_ld_curves(dist, means_all, output_prefix, negloglike=None, t_admix1=Non
     for sam in range(num_sam):
         for i in range(num_clusters):
             for j in range(num_clusters):
-                spl = make_interp_spline(dist, means_all[sam][i, j])
+                spl = make_interp_spline_(dist, means_all[sam][i, j])
                 ax[i, j].plot(dist, spl(dist), color="gray", alpha=0.3, linewidth=0.5)
     mean_of_all_sam = np.mean(means_all, axis=0)
     for i in range(num_clusters):
         for j in range(num_clusters):
-            spl = make_interp_spline(dist, mean_of_all_sam[i, j])
+            spl = make_interp_spline_(dist, mean_of_all_sam[i, j])
             ax[i, j].plot(dist, spl(dist), color="black", alpha=1, linewidth=1)
             if refit:
                 if t_admix1 is not None and t_admix2 is not None and weight is not None:
@@ -132,7 +139,8 @@ def plot_ld_curves(dist, means_all, output_prefix, negloglike=None, t_admix1=Non
                     admixtimes, _ = get_admixtimes(dist, np.array(means_all)[:, i:i+1, j:j+1], mode='1date')
             if admixtimes is not None:
                 sum_of_exp = get_exp(dist, admixtimes)
-                popt, pcov = curve_fit(func, sum_of_exp, mean_of_all_sam[i, j], maxfev=5000)
+                nan_mask = ~np.isnan(mean_of_all_sam[i, j]) & ~np.isinf(mean_of_all_sam[i, j])
+                popt, pcov = curve_fit(func, sum_of_exp[nan_mask], mean_of_all_sam[i, j][nan_mask], maxfev=5000)
                 ax[i, j].plot(dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1)
                 if refit:
                     ax[i, j].text(0.35, 0.5, '{0:.1f} gens'.format(admixtimes), transform=ax[i, j].transAxes, fontsize=14, verticalalignment='bottom')
@@ -141,7 +149,8 @@ def plot_ld_curves(dist, means_all, output_prefix, negloglike=None, t_admix1=Non
                     sum_of_exp = get_sum_of_exp(dist, t_admix1, t_admix2, weight)
                 elif mode == 'continuous':
                     sum_of_exp = get_sum_of_exp_continuous(dist, t_admix1, t_admix2, weight)
-                popt, pcov = curve_fit(func, sum_of_exp, mean_of_all_sam[i, j], maxfev=5000)
+                nan_mask = ~np.isnan(mean_of_all_sam[i, j]) & ~np.isinf(mean_of_all_sam[i, j])
+                popt, pcov = curve_fit(func, sum_of_exp[nan_mask], mean_of_all_sam[i, j][nan_mask], maxfev=5000)
                 ax[i, j].plot(dist, func(sum_of_exp, *popt), "--", color="green", linewidth=1)
                 if refit:
                     ax[i, j].text(0.35, 0.5, '{:.1f}, {:.1f}, {:.2f}, {:.2f}'.format(t_admix1, t_admix2, weight, 1-weight), transform=ax[i, j].transAxes, fontsize=14, verticalalignment='bottom')
@@ -177,9 +186,12 @@ def get_admixtime_lhood(params, dist, means_all, mode="1date"):
     for means in means_all:
         for i in range(means.shape[0]):
             for j in range(means.shape[1]):
-                popt, pcov = curve_fit(func, sum_of_exp, means[i, j], maxfev=5000)
-                output = func(sum_of_exp, *popt)
-                res = (means[i, j] - output) ** 2
+                nan_mask = ~np.isnan(means[i, j]) & ~np.isinf(means[i, j])
+                sum_of_exp_ = sum_of_exp[nan_mask]
+                means_i_j = means[i, j][nan_mask]
+                popt, pcov = curve_fit(func, sum_of_exp_, means_i_j, maxfev=5000)
+                output = func(sum_of_exp_, *popt)
+                res = (means_i_j - output) ** 2
                 lhood += len(res) * (np.log(np.mean(res)) + 1 + np.log(2*np.pi)) / 2
     return lhood
 
@@ -251,8 +263,8 @@ def simulate_local_ancestry_markov(output, generations, n_samples=10, total_leng
             'prob_0': prob_0,
             'prob_1': prob_1
         })
-        # mask = np.random.rand(len(df_sample)) > 0.5
-        # df_sample.loc[mask, ['prob_0', 'prob_1']] = np.nan
+        mask = np.random.rand(len(df_sample)) > 0.8
+        df_sample.loc[mask, ['prob_0', 'prob_1']] = np.nan
         output_file = f"{output}_overall_membership_{sample + 1}_sample_id_{sample}.csv"
         df_sample.to_csv(output_file, sep="\t", index=False)
         print(f"Sample {sample + 1} saved to {output_file}")
@@ -371,21 +383,33 @@ def get_means_whole_genome(jn_block, jn_blocks, cent_telo_hla, output_prefix, bi
     num_clusters = df.shape[1] - 4
     prob_labels = ["prob_" + str(i) for i in range(num_clusters)]
     len_all_cumsum = np.cumsum(len_all)
+    if args.haploid:
+        sam_range = range(0,num_hap,1)
+    else:
+        sam_range = range(0,num_hap,2)
+
     ## First calculate the normalization
-    if num_hap > 3:
+    if num_hap > 3 and args.normalize:
         means_whole_genome_num_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
         means_whole_genome_denom_norm = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
-        for sam in range(0,num_hap,2):
-            for sam2 in range(0,num_hap,2):
+        ### only calculate normalization based on the first 100 samples
+        for sam in tqdm(sam_range[0:100]):
+            for sam2 in sam_range[0:100]:
                 if sam-sam2 > 1 or sam2-sam > 1:
                     df_sam_hap1 = read_df_per_sam(df, len_all_cumsum, sam)
-                    df_sam_hap2 = read_df_per_sam(df, len_all_cumsum, sam+1)
                     df_sam2_hap1 = read_df_per_sam(df, len_all_cumsum, sam2)
-                    df_sam2_hap2 = read_df_per_sam(df, len_all_cumsum, sam2+1)
+                    if args.haploid:
+                        df_sam_hap2 = df_sam_hap1
+                        df_sam2_hap2 = df_sam2_hap1
+                    else:
+                        df_sam_hap2 = read_df_per_sam(df, len_all_cumsum, sam+1)
+                        df_sam2_hap2 = read_df_per_sam(df, len_all_cumsum, sam2+1)
                     for prob_col in prob_labels:
                         df_sam_hap1.loc[:, prob_col] = (df_sam_hap1[prob_col] + df_sam_hap2[prob_col]) / 2
                         df_sam2_hap1.loc[:, prob_col] = (df_sam2_hap1[prob_col] + df_sam2_hap2[prob_col]) / 2
                     for chr in np.unique(df_sam_hap1.chr):
+                        if (np.mean(df_sam_hap1[df_sam_hap1['chr'] == chr][prob_labels]) == 0).any() or (np.mean(df_sam_hap1[df_sam2_hap1['chr'] == chr][prob_labels]) == 1).any():
+                            continue
                         means_num, means_denom, dist, props_num, props_denom = get_coancestry_per_pair_sample(
                             df_sam_hap1[df_sam_hap1['chr'] == chr], df_sam2_hap1[df_sam2_hap1['chr'] == chr], bin_size, bin_max, bin_min, num_clusters, prob_labels
                         )
@@ -399,13 +423,18 @@ def get_means_whole_genome(jn_block, jn_blocks, cent_telo_hla, output_prefix, bi
     means_whole_genome_num = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
     means_whole_genome_denom = np.zeros((num_clusters, num_clusters, int(bin_max / bin_size) - int(bin_min / bin_size)))
     props_whole_genome_num = np.zeros(num_clusters)
-    props_whole_genome_denom = np.zeros(num_clusters)
-    for sam in range(0,num_hap,2):
+    props_whole_genome_denom = np.zeros(num_clusters)        
+    for sam in sam_range:
         df_sam_hap1 = read_df_per_sam(df, len_all_cumsum, sam)
-        df_sam_hap2 = read_df_per_sam(df, len_all_cumsum, sam+1)
+        if args.haploid:
+            df_sam_hap2 = df_sam_hap1
+        else:
+            df_sam_hap2 = read_df_per_sam(df, len_all_cumsum, sam+1)
         for prob_col in prob_labels:
             df_sam_hap1.loc[:, prob_col] = (df_sam_hap1[prob_col] + df_sam_hap2[prob_col])/2
         for chr in np.unique(df_sam_hap1.chr):
+            if (np.mean(df_sam_hap1[df_sam_hap1['chr'] == chr][prob_labels]) == 0).any():
+                continue
             means_num, means_denom, dist, props_num, props_denom = get_coancestry_per_sample(
                 df_sam_hap1[df_sam_hap1['chr'] == chr], bin_size, bin_max, bin_min, num_clusters, prob_labels
             )
@@ -416,7 +445,7 @@ def get_means_whole_genome(jn_block, jn_blocks, cent_telo_hla, output_prefix, bi
     means_whole_genome = means_whole_genome_num / means_whole_genome_denom
     means_whole_genome = means_whole_genome / means_whole_genome_norm
     props_whole_genome = props_whole_genome_num / props_whole_genome_denom
-    if num_hap <= 3:
+    if num_hap <= 3 or not args.normalize:
         for i in range(means_whole_genome.shape[0]):
             for j in range(means_whole_genome.shape[1]):
                 means_whole_genome[i,j] = means_whole_genome[i,j] / (props_whole_genome[i]*props_whole_genome[j])
@@ -511,6 +540,9 @@ if __name__ == "__main__":
     parser.add_argument("--genome_build", help = "Which genome build to use for filtering centromere/telomere/hla (hg38/hg37/None)", type=str, default=None)
     parser.add_argument("--test", help="Only for debugging purpose, test with simulated local ancestry", type=boolean, default=False)
     parser.add_argument("--mode", help="Single-date or two-date fit", type=str, default=None, choices=["1date", "2date", "continuous"])
+    parser.add_argument("--normalize", help="Perform pseudo individual based normalization of coancestry curves", type=boolean, default=True)
+    parser.add_argument("--haploid", help="Use haploid data", type=boolean, default=False)
+
     args = parser.parse_args()
     print(args)
     # run_get_segment_length(args)

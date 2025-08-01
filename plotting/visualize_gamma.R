@@ -9,8 +9,13 @@ library(ggplotify)
 library(nls2)
 library(ggthemes)
 library(reticulate)
+virtualenv_create(envname = "python_environment",python= "/apps/eb/2020b/skylake/software/Python/3.9.6-GCCcore-11.2.0/bin/python")
+reticulate::use_virtualenv("python_environment", required = TRUE)
+np <- import("numpy")
 
-filename <- commandArgs(trailingOnly = TRUE)[1]
+args <- commandArgs(trailingOnly = TRUE)
+filename         <- args[1]
+sample_id_label  <- args[2]
 
 colours <- c("#FF5CA8", "#FAF19E", "#BDEFD0", "#8DD4F7", "#CF90F4", "#d0f4de")
 
@@ -35,23 +40,22 @@ read.coal <- function(filename){
 }
 
 ## Read and reshape .tau file
-foo <- read.table(paste0(filename, ".tau"))
-colnames(foo) <- paste0("comp", 1:ncol(foo))
-prop <- data.frame(iters = 1:nrow(foo), foo)
-prop_long <- prop %>% 
-  pivot_longer(cols = !iters, names_to = "Components", values_to = "Proportion")
-
-## Filter for the last iteration's proportions
-last_iter_prop <- prop_long %>% filter(iters == max(iters))
-last_iter_prop$Proportion <- last_iter_prop$Proportion * 100  # Convert to percentage
+prop <- 100*np$load(paste0(filename, '_props_nohmm_', sample_id_label, '.npy'))
 
 ## Infer number of components from .tau file
-num_components <- ncol(foo)
+num_components <- length(prop)
 print(paste("Number of components:", num_components))
 
 ## Prepare the coal data
 coal <- data.frame()
-coal <- rbind(coal, cbind(read.coal(paste0(filename, ".coal"))))
+filename_coal <- paste0(filename, '_nohmm_', sample_id_label, '.coal.all')
+if (file.exists(filename_coal)) {
+  coal <- rbind(coal, cbind(read.coal(filename_coal)))
+} else {
+  filename_coal <- paste0(filename, '_nohmm_', sample_id_label, '.coal')
+  coal <- rbind(coal, cbind(read.coal(filename_coal)))
+}
+# coal <- rbind(coal, cbind(read.coal(paste0(filename, ".coal"))))
 coal$group1 <- as.numeric(as.factor(coal$group1))
 coal$haploid.coalescence.rate[which(coal$haploid.coalescence.rate == 0 & coal$epoch.start > 2e7/28)] <- coal$haploid.coalescence.rate[which(coal$haploid.coalescence.rate == 0 & coal$epoch.start > 2e7/28)-1]
 coal$epoch.start[is.infinite(coal$epoch.start)] <- 1e8
@@ -64,6 +68,10 @@ print(coal)
 coal <- coal %>% filter(Reference != "focal")
 coal <- coal %>% filter(Reference != "gbr")
 coal <- coal %>% filter(Reference != "WolfNorth_America")
+# coal <- coal %>% filter(Reference != "yoruba")
+# coal <- coal %>% filter(Reference == "eurasian" | Reference == 'esn' )
+
+
 ## Generate global xlim and ylim based on all components
 global_xlim <- range(28 * coal$epoch.start, na.rm = TRUE)
 global_ylim <- range(0.5 / coal$mean, na.rm = TRUE)
@@ -77,13 +85,14 @@ for (i in 1:num_components){
   coal_subset <- subset(coal, group1 == paste0('comp', i))
   
   ## Get the corresponding proportion for this component
-  proportion_value <- last_iter_prop %>% filter(Components == paste0("comp", i)) %>% pull(Proportion)
+  proportion_value <- prop[i]
 
-  coal_subset$mean <- pmin(pmax(0.5 / coal_subset$mean, global_ylim[1]), global_ylim[2])
+  coal_subset$mean_inv <- pmin(pmax(0.5 / coal_subset$mean, global_ylim[1]), global_ylim[2])
 
   p <- ggplot(coal_subset) +
-    geom_step(aes(x = 28*epoch.start, y = mean, color = Reference), lwd = 1.2) +
+    geom_step(aes(x = 28*epoch.start, y = mean_inv, color = Reference), lwd = 1.2) +
     scale_x_continuous(trans = "log10", limits = global_xlim) +
+    #                   breaks = c(5e4, 3e5, 2e6)) +  # Set custom x-ticks    
     scale_y_continuous(trans = "log10", limits = global_ylim) +
     xlab("years ago") + 
     ylab(NULL) +   # Set 'Inverse Coalescence Rates' as the y-axis label
@@ -95,6 +104,73 @@ for (i in 1:num_components){
   ## Save each plot based on the filename path
   ggsave(p, file = paste0(filename, "_visual", i, ".svg"), width = 6, height = 4, device = "svg", dpi=400)
 }
+
+weights <- prop/100
+names(weights) <- paste0("comp", seq_along(weights))
+coal$weight <- weights[coal$group1]
+weighted <- coal %>% 
+  group_by(epoch.start, Reference) %>% 
+  summarize(weighted_rate = sum(mean * weight), .groups = 'drop') %>%
+  mutate(inverse = pmin(pmax(0.5/weighted_rate, global_ylim[1]), global_ylim[2]))
+p_gw <- ggplot(weighted) +
+  geom_step(aes(x = 28 * epoch.start, y = inverse, color = Reference), lwd = 1.2) +
+  scale_x_continuous(trans = "log10", limits = global_xlim) +
+  scale_y_continuous(trans = "log10", limits = global_ylim) +
+  xlab("years ago") +
+  ylab(NULL) +
+  ggtitle("Genome-wide ICRs") +
+  theme_classic(base_size = 18, base_family = "Helvetica") +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+ggsave(p_gw, file = paste0(filename, "_gw.svg"), width = 6, height = 4, device = "svg", dpi = 400)
+
+for (i in 1:num_components){
+  coal_subset <- subset(coal, group1 == paste0('comp', i))
+  proportion_value <- prop[i]
+  coal_subset$mean_inv <- pmin(pmax(0.5 / coal_subset$mean, global_ylim[1]), global_ylim[2])
+
+  p <- ggplot(coal_subset) +
+    # component-specific curve
+    geom_step(aes(x = 28 * epoch.start, y = mean_inv, color = Reference),
+              lwd = 1.2) +
+    # overlay the GW curve in grey
+    geom_step(
+      data      = weighted,
+      aes(x = 28 * epoch.start, y = inverse),
+      color     = "grey",
+      alpha     = 0.6,
+      lwd       = 1,
+      inherit.aes = FALSE
+    ) +
+    scale_x_continuous(trans = "log10", limits = global_xlim) +
+    scale_y_continuous(trans = "log10", limits = global_ylim) +
+    xlab("years ago") +
+    ylab(NULL) +
+    ggtitle(paste0("Component ", i, " (", round(proportion_value, 2), "%)")) +
+    theme_classic(base_size = 18, base_family = "Helvetica") +
+    theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+  ggsave(p, file = paste0(filename, "_gw_visual", i, ".svg"),
+         width = 6, height = 4, device = "svg", dpi = 400)
+}
+
+## Now adjust the standalone GW plot:
+p_gw <- ggplot(weighted) +
+  geom_step(
+    aes(x = 28 * epoch.start, y = inverse),
+    color = "grey",
+    alpha = 1.0,
+    lwd   = 1.2
+  ) +
+  scale_x_continuous(trans = "log10", limits = global_xlim) +
+  scale_y_continuous(trans = "log10", limits = global_ylim) +
+  xlab("years ago") +
+  ylab(NULL) +
+  ggtitle("Genome-wide ICRs") +
+  theme_classic(base_size = 18, base_family = "Helvetica") +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+ggsave(p_gw, file = paste0(filename, "_gw.svg"),
+       width = 6, height = 4, device = "svg", dpi = 400)
 
 
 ## module load R/4.1.2-foss-2021b

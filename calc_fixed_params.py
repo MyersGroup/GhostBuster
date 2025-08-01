@@ -327,13 +327,16 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                 sample_id_file = args.sample_id
             f_pkl.close()
             if exact_pos is not None:
+                if (len(exact_pos[(exact_pos['chr'] == chr)]) != len(exact_pos_file[exact_pos_file[:,0] == chr])):
+                    print("Branch persistence statistics file does not match the current settings, recomputing...")
+                    raise Exception
                 if (exact_pos_file[exact_pos_file[:,0] == chr] != exact_pos[exact_pos['chr'] == chr].values).any():
                     print("Exact position file doesn't match, calculating fixed parameters..")
                     raise Exception
             if gt_ref is not None and gt_ref_file is not None:
-                gt_ref_chr = gt_ref[:, np.array(chr_map) == chr]
-                gt_ref_file_chr = gt_ref_file[:, np.array(chr_map) == chr]    
-                if (sample_id_file == args.sample_id) & (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) & (gt_ref_file_chr == gt_ref_chr).all() & (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values) & (denom.shape[2] == args.num_epochs):
+                gt_ref_chr = gt_ref[:, np.array(chr_map)[mask_dodgy] == chr]
+                gt_ref_file_chr = gt_ref_file#[:, np.array(chr_map)[mask_dodgy] == chr]    
+                if (sample_id_file == args.sample_id) & (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) & np.array_equal(gt_ref_file_chr, gt_ref_chr, equal_nan=True) & (unique_groups_file == unique_groups) & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     denom_all_unscaled.extend(denom_unscaled)
@@ -345,7 +348,7 @@ def load_fixed_params(args, ts_list, sample, poplabels, mask_dodgy, chr_map, epo
                     print("Fixed parameters file found but parameters don't match, calculating fixed parameters..")
                     raise Exception
             elif gt_ref is None and gt_ref_file is None:
-                if (sample_id_file == args.sample_id) & (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & np.all(poplabels_file == poplabels.values) & (denom.shape[2] == args.num_epochs):
+                if ((sample_id_file == args.sample_id) | args.ignore_coal_between_targets) & (mut_scaling_file == args.mut_scaling) & (hmm_file == args.hmm) &  (unique_groups_file == unique_groups).all() & (force_build == args.force_build) & (start_time == args.start_time) & (end_time == args.end_time) & (ignore_first_epoch == args.ignore_first_epoch) & (ignore_last_epoch == args.ignore_last_epoch) & (masking_threshold==args.masking_threshold) & (np.all(poplabels_file == poplabels.values) | args.ignore_coal_between_targets) & (denom.shape[2] == args.num_epochs):
                     ##convert to numba list
                     denom_all.extend(denom)
                     denom_all_unscaled.extend(denom_unscaled)

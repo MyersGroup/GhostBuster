@@ -126,6 +126,8 @@ def plot_results(gt_file_name, relate_file_name, true_file_name=None, skov_file_
     plt.figure(figsize=(5, 8))
     data = {'Scenario': [res[0] for res in results], 'R2': [res[1] for res in results]}
     r2_values = pd.DataFrame(data)
+    ### bootstrap this to get SE with R2 
+    print("R2 = " + str(r2_values.loc[:, 'R2'].values))
     ax = sns.barplot(x='Scenario', y='R2', data=r2_values, palette=colors[:len(results)], width=0.4, dodge=False, edgecolor='black')
 
     # Adjust the positioning of the tick labels

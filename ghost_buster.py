@@ -913,7 +913,7 @@ def main(args):
         tree_left_bp_gen,
         tree_right_bp_gen,
         chr_map,
-        frac_branches_with_snp_all,
+        frac_branches_with_snp,
     ) = load_tree_stats(args, ts_list, poplabels, args.tree_stats_file_prefix)
 
     ## cM grid option
@@ -974,7 +974,12 @@ def main(args):
         mask_dodgy = []
         for sample_id in args.sample_id:
             mask_dodgy_sam = filter_recomb_rate(
-                args.masking_threshold, tree_left_bp, recomb_rates, chr_map
+                args.masking_threshold,
+                tree_left_bp,
+                tree_right_bp,
+                recomb_rates,
+                frac_branches_with_snp,
+                chr_map,
             )
             mask_dodgy.append(mask_dodgy_sam)
         exact_pos = None
@@ -986,7 +991,12 @@ def main(args):
         exact_pos = exact_pos.sort_values(by=["chr", "pos"])
         exact_pos = exact_pos.reset_index(drop=True)
         mask_dodgy_recomb = filter_recomb_rate(
-            args.masking_threshold, tree_left_bp, recomb_rates, chr_map
+            args.masking_threshold,
+            tree_left_bp,
+            tree_right_bp,
+            recomb_rates,
+            frac_branches_with_snp,
+            chr_map,
         )
         count = 0
         for chr_count, chr in enumerate(np.unique(chr_map)):
@@ -1410,7 +1420,7 @@ if __name__ == "__main__":
         "--num_iters",
         help="Number of iterations for EM",
         type=int,
-        default=200,
+        default=300,
     )
     parser.add_argument(
         "-k",

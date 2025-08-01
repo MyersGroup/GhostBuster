@@ -22,6 +22,7 @@ parser.add_argument('--k', nargs='+', type=int, help='Cluster numbers (k)')
 parser.add_argument('--ll', nargs='+', type=float, help='Log-likelihood values')
 parser.add_argument('--r2', nargs='+', type=float, help='R² values')
 parser.add_argument('--output', type=str, help='Output file name')
+parser.add_argument('--title', type=str, help='Title of the plot')
 
 args = parser.parse_args()
 assert len(args.k) == len(args.ll) == len(args.r2)
@@ -59,11 +60,14 @@ ax2.set_ylim(0, 1.05)
 # ax2.axhline(y=r2_at_max_k, color='gray', linestyle='--', linewidth=1)
 # ax2.text(1.4, r2_at_k2 + 0.02, f'{r2_at_k2:.2f}', color='gray', ha='center', fontsize=14)
 # ax2.text(1.4, r2_at_max_k + 0.02, f'{r2_at_max_k:.2f}', color='gray', ha='center', fontsize=14)
-ax2.set_title(f'Expected $R$', fontsize=20)
+ax2.set_title(f'Expected $R^2$', fontsize=20)
 ax2.set_xticks(args.k)
 
 # Common x-label
 # fig.text(0.5, 0.04, 'Number of clusters', ha='center', fontsize=22)  # Adjust position and size
+
+if args.title is not None:
+    plt.suptitle(args.title.upper(), fontsize=24)
 
 # Adjust layout
 plt.tight_layout(rect=[0, 0.04, 1, 1])  # Adjust the bottom space for the common xlabel

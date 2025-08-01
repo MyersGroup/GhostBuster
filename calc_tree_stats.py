@@ -14,6 +14,7 @@ import pdb
 import os
 import bisect
 
+
 def compute_tree_stats(
     args,
     poplabels,
@@ -36,17 +37,22 @@ def compute_tree_stats(
     num_nodes = len(list(ts_list[0].first().nodes()))
     first_tree_nodes = list(ts_list[0].first().nodes())[0:-1]
 
-    if args.genome_build in ['hg37', 'hg38']:
+    if args.genome_build in ["hg37", "hg38"]:
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__)) + "/" + str(args.genome_build) + "_real_data_mask.txt", sep="\t"
+            os.path.dirname(os.path.abspath(__file__))
+            + "/"
+            + str(args.genome_build)
+            + "_real_data_mask.txt",
+            sep="\t",
         )
-    elif args.genome_build is 'hg19':
+    elif args.genome_build is "hg19":
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__)) + "/hg37_real_data_mask.txt", sep="\t"
-        )    
+            os.path.dirname(os.path.abspath(__file__)) + "/hg37_real_data_mask.txt",
+            sep="\t",
+        )
     elif args.genome_build is None:
         print("Caution: Not using any filter to remove HLA/Centromere/Telomere regions")
-        cent_telo_hla = pd.DataFrame(columns=['chr', 'start', 'end', 'description'])
+        cent_telo_hla = pd.DataFrame(columns=["chr", "start", "end", "description"])
     else:
         print("Make sure to use genome_build either hg37 or hg38")
         cent_telo_hla = pd.read_csv(
@@ -76,59 +82,79 @@ def compute_tree_stats(
         ts = ts_list[count]
         count += 1
         tree = ts.first()
+        ts_edges = ts.edges()
         for tid in tqdm(range(ts.num_trees)):  # len(list(ts.trees()))
-            if np.ceil(tree.interval[1] / force_build) - np.ceil(tree.interval[0] / force_build) > 0:
+            if (
+                np.ceil(tree.interval[1] / force_build)
+                - np.ceil(tree.interval[0] / force_build)
+                > 0
+            ):
                 tree_size.append(tree.interval[1] - tree.interval[0])
                 tree_left_bp_chr.append(tree.interval[0])
                 tree_right_bp_chr.append(tree.interval[1])
-                no_of_mutations.append(tree.num_mutations)
-                chr_map.append(chr)
-                recomb_events = recomb_map[
-                    ~(
-                        (
-                            recomb_map["Start Position(bp)"]
-                            > tree.interval[1] + recomb_window_size
-                        )
-                        | (
-                            recomb_map[recomb_map.columns[1]] ##position(bp)
-                            < tree.interval[0] - recomb_window_size
-                        )
+
+                num_muts = []
+                for node in tree.nodes():
+                    edge_id = tree.edge(node)
+                    edge = ts_edges[edge_id]
+                    num_muts.append(
+                        int(edge.metadata.decode("utf-8").rstrip("\x00").split(" ")[2])
                     )
-                ]
+
+                num_muts = np.array(num_muts)
+                no_of_mutations.append(np.mean(num_muts > 0))
+                chr_map.append(chr)
                 if (
-                        (
-                            tree.interval[0]
-                            >= cent_telo_hla[cent_telo_hla.chr == str(chr)].start - 500000
-                        )
-                        & (
-                            tree.interval[1]
-                            < cent_telo_hla[cent_telo_hla.chr == str(chr)].end + 500000
-                        )
-                    ).any():
+                    (
+                        tree.interval[0]
+                        >= cent_telo_hla[cent_telo_hla.chr == str(chr)].start - 500000
+                    )
+                    & (
+                        tree.interval[1]
+                        < cent_telo_hla[cent_telo_hla.chr == str(chr)].end + 500000
+                    )
+                ).any():
                     recomb_rate = np.nan
-                # elif len(recomb_events) > 1:
-                #     recomb_rate = (
-                #         recomb_events.iloc[-1][recomb_map.columns[3]] ##map(cm)
-                #         - recomb_events.iloc[0][recomb_map.columns[3]]
-                #     ) / (
-                #         recomb_events.iloc[-1][recomb_map.columns[1]] ##position(bp)
-                #         - recomb_events.iloc[0][recomb_map.columns[1]]
-                #     )
-                # else:
-                #     recomb_rate = np.nan  # recomb_events.iloc[0]["Rate(cM/Mb)"] * 1e-6
                 else:
-                    start_recomb_window = np.clip(tree.interval[0] - recomb_window_size, recomb_map_msprime.position.min(), recomb_map_msprime.position.max())
-                    end_recomb_window = np.clip(tree.interval[1] + recomb_window_size, recomb_map_msprime.position.min(), recomb_map_msprime.position.max())
-                    recomb_rate = 100*(recomb_map_msprime.get_cumulative_mass(end_recomb_window) - recomb_map_msprime.get_cumulative_mass(start_recomb_window))/(end_recomb_window - start_recomb_window)
+                    start_recomb_window = np.clip(
+                        tree.interval[0] - recomb_window_size,
+                        recomb_map_msprime.position.min(),
+                        recomb_map_msprime.position.max(),
+                    )
+                    end_recomb_window = np.clip(
+                        tree.interval[1] + recomb_window_size,
+                        recomb_map_msprime.position.min(),
+                        recomb_map_msprime.position.max(),
+                    )
+                    recomb_rate = (
+                        100
+                        * (
+                            recomb_map_msprime.get_cumulative_mass(end_recomb_window)
+                            - recomb_map_msprime.get_cumulative_mass(
+                                start_recomb_window
+                            )
+                        )
+                        / (end_recomb_window - start_recomb_window)
+                    )
                 recomb_rates.append(recomb_rate)
             tree.next()
         del tree
         del ts
         tree_left_bp_gen.extend(
-            recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(tree_left_bp_chr, recomb_map_msprime.position.min()), recomb_map_msprime.position.max())).tolist()
+            recomb_map_msprime.get_cumulative_mass(
+                np.minimum(
+                    np.maximum(tree_left_bp_chr, recomb_map_msprime.position.min()),
+                    recomb_map_msprime.position.max(),
+                )
+            ).tolist()
         )
         tree_right_bp_gen.extend(
-            recomb_map_msprime.get_cumulative_mass(np.minimum(np.maximum(tree_right_bp_chr, recomb_map_msprime.position.min()), recomb_map_msprime.position.max())).tolist()
+            recomb_map_msprime.get_cumulative_mass(
+                np.minimum(
+                    np.maximum(tree_right_bp_chr, recomb_map_msprime.position.min()),
+                    recomb_map_msprime.position.max(),
+                )
+            ).tolist()
         )
         tree_left_bp.extend(tree_left_bp_chr)
         tree_right_bp.extend(tree_right_bp_chr)
@@ -144,24 +170,21 @@ def compute_tree_stats(
         chr_map,
     )
 
+
 def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
     chrs = list(map(int, args.chrs.split(",")))
     sample_id_label = "_".join([str(e) for e in args.sample_id])
     recomb_rates_all = []
-    mutrate_opportunity_target_all = []
     tree_left_bp_all = []
     tree_right_bp_all = []
     tree_left_bp_gen_all = []
     tree_right_bp_gen_all = []
     chr_map_all = []
-    frac_branches_with_snp_target_all = []
-    mutrate_logpmf_target_all = []
-    num_snps_on_lineage_all = []    
-    b_values_all = []
+    frac_branches_with_snp_all = []
 
     for chrom_no, chrom in enumerate(chrs):
         if tree_stats_file_prefix is not None:
-            tree_stats_file_name = tree_stats_file_prefix + '_chr' + str(chrom) + ".pkl"
+            tree_stats_file_name = tree_stats_file_prefix + "_chr" + str(chrom) + ".pkl"
         else:
             tree_stats_file_name = args.output + "_tree_stats_chr" + str(chrom) + ".pkl"
         try:
@@ -193,7 +216,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
             ) = compute_tree_stats(
                 args,
                 poplabels,
-                ts_list[chrom_no:chrom_no + 1],
+                ts_list[chrom_no : chrom_no + 1],
                 [chrom],
                 args.rec,
                 args.sample_id,
@@ -222,7 +245,7 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
         tree_left_bp_gen_all.extend(tree_left_bp_gen)
         tree_right_bp_gen_all.extend(tree_right_bp_gen)
         chr_map_all.extend(chr_map)
-
+        frac_branches_with_snp_all.extend(no_of_mutations)
 
     return (
         recomb_rates_all,
@@ -231,4 +254,5 @@ def load_tree_stats(args, ts_list, poplabels, tree_stats_file_prefix=None):
         tree_left_bp_gen_all,
         tree_right_bp_gen_all,
         chr_map_all,
+        frac_branches_with_snp_all,
     )
