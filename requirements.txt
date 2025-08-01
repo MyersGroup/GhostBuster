@@ -9,7 +9,7 @@ pysnptools==0.5.13
 Requests==2.32.4
 rpy2==3.5.16
 scikit_learn==1.7.1
-scipy==1.16.1
+scipy==1.15
 seaborn==0.13.2
 statsmodels==0.14.2
 tqdm==4.66.5
