@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgsl-dev r-base
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+
+      - name: Run GhostBuster example
+        env:
+          MPLCONFIGDIR: ${{ runner.temp }}/mpl
+        run: |
+          mkdir -p output
+          python ghost_buster.py \
+            --genome_build hg37 \
+            --trees example/relate_chr \
+            --poplabels example/poplabels.txt \
+            --rec example/genetic_map_GRCh37_chr \
+            --sample_id 0 1 2 3 \
+            --chrs 22 \
+            --output output/relate
+
+      - name: Run LD dating example
+        env:
+          MPLCONFIGDIR: ${{ runner.temp }}/mpl
+        run: |
+          python ld_curve_dating.py \
+            --output output/relate \
+            --genome_build hg37 \
+            --mode 1date

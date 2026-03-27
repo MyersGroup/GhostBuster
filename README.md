@@ -5,6 +5,8 @@
 * `src/`: Supporting Python/R code (`plotting/`, `helper/`, and utility modules)
 * `real_data_mask/`: Genome-build mask files used for filtering
 
+Current support: GhostBuster currently only works with Relate-inferred trees.
+
 ## Installation
 ```
 conda create -n gb python=3.13 -y
@@ -154,3 +156,10 @@ python ld_curve_dating.py \
 - `<output>_<mode>ld_curve.pdf` stores the matrix of co-ancestry curves with fitted model curves.
 - `<output>_<mode>ld_curve_comp1.svg` stores the component-1 focused LD curve.
 - Refit variants are written with `_refit`, for example `<output>_<mode>_refitld_curve.pdf`.
+
+
+## Citation
+Loya et al. under review, "Genome-wide genealogies reveal deep admixtures forming modern humans"
+
+## Contact
+loyahrushikesh@gmail.com
