@@ -173,7 +173,7 @@ def e_m_step(
     n_epochs = len(epoch_intervals)
     n_unique_groups = len(unique_groups)
 
-    if args.load_gamma is not None and (not (iter == args.num_iters - 1 and iter > 0)):
+    if args.load_gamma is not None and (not (iter == args.num_iters - 1 and (not args.force_relate_gammas))):
         print("Using initial gamma specified in file: " + str(args.load_gamma))
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         for epoch in range(gamma_arr.shape[2]):
@@ -188,7 +188,7 @@ def e_m_step(
             ):
                 gamma_arr[:, :, epoch] = np.nan
 
-    if args.load_gamma is None or (iter == args.num_iters - 1 and iter > 0):
+    if args.load_gamma is None or (iter == args.num_iters - 1 and (not args.force_relate_gammas)):
         n = np.zeros(
             (args.num_clusters, n_unique_groups, n_epochs - 1),
             dtype="float64",
@@ -340,7 +340,7 @@ def e_m_step(
         pdb.set_trace()
 
     ## when load_gamma this plots coal. rates for all epochs
-    if iter == args.num_iters - 1 and iter > 0:
+    if iter == args.num_iters - 1 and (not args.force_relate_gammas):
         gamma_arr = n / d
 
     return own_membership_hmm, trans_prop, gamma_arr, tau, log_likelihood_hmm
@@ -1388,6 +1388,13 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
+        "-force_relate_gammas",
+        "--force_relate_gammas",
+        help="Force using relate gammas until the end (completely supervied GB)",
+        type=boolean,
+        default=False,
+    )
+    parser.add_argument(
         "-load_mask",
         "--load_mask",
         help="Load mask csv file with chr, tree_position_left",
@@ -1420,7 +1427,7 @@ if __name__ == "__main__":
         "--num_iters",
         help="Number of iterations for EM",
         type=int,
-        default=300,
+        default=200,
     )
     parser.add_argument(
         "-k",

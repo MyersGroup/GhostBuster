@@ -49,16 +49,18 @@ def plot_proportions():
             "bantukenya",
             "yoruba",
         ]:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_v3/back_to_africa_using_relate_gammas/"
+            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_v3/back_to_africa/"
         elif pop in ancient_labels:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_ancients/back_to_africa_using_relate_gammas/"
+            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_ancients/back_to_africa/"
         else:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/SGDP_only_moderns/back_to_africa_using_relate_gammas/"
+            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/SGDP_only_moderns/back_to_africa/"
         for file in glob.glob(
             prefix + str(pop) + "_overall_membership_*_sample_id_*.csv"
         ):
             df = pd.read_csv(file, sep="\s+")
-            prop_list.append(100 * (df["prob_1"] > 0.8).mean())
+            r = ((df['genpos'].shift(2) - df['genpos'].shift(-2))/(df['pos'].shift(2) - df['pos'].shift(-2)))
+            df = df.loc[r < r.quantile(0.5)]
+            prop_list.append(100 * (df["prob_1"] > 0.5).mean())
         prop_list_all.append(prop_list)
     data = pd.DataFrame(prop_list_all).transpose()
     print(data)
@@ -125,23 +127,23 @@ print(data)
 sc = m.scatter(
     x[:-5],
     y[:-5],
-    s=250,
+    s=350,
     c=c[:-5],
     vmin=0,
     vmax=5,
     cmap="Reds",
-    edgecolor="k",
+    edgecolor=None,
     marker="v",
 )
 m.scatter(
     x[-5:],
     y[-5:],
-    s=200,
+    s=300,
     c=c[-5:],
     vmin=0,
     vmax=5,
     cmap="Reds",
-    edgecolor="k",
+    edgecolor=None,
     marker=",",
 )
 
