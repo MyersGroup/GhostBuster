@@ -16,53 +16,6 @@ pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
 
-## List of options
-```
-python ghost_buster.py --help
-```
-
-The table below lists commonly used options. For the full list, run `python ghost_buster.py --help`.
-
-| Option                                  | Datatype            | Default        | Description                                                                                                           |
-|-----------------------------------------|---------------------|----------------|-----------------------------------------------------------------------------------------------------------------------|
-| `--sample_id`                           | list<int>           | `required`     | Enter space-separated list of the indices of haplotypes to analyze local ancestry for                                 |
-| `--trees`                               | string              | `None`         | Directory of tskit trees                                                                                              |
-| `--poplabels`                           | string              | `required`     | Population labels file                                                                                                |
-| `--rec`                                 | string              | `required`     | Filename of recombination map                                                                                         |
-| `--chrs`                                | list<int>           | `"1,2"`        | Comma-separated list of chromosomes to process                                                                        |
-| `--output`                              | string              | `""`           | Output prefix                                                                                                         |
-| `--num_clusters`                        | int                 | `2`            | Number of clusters to infer by EM                                                                                     |
-| `--mut_scaling`                         | boolean             | `True`         | Scale likelihood by presence of mutation on lineage (improves robustness to bottlenecks)                              |
-| `--ypg`                                 | float               | `28`           | Years per generation                                                                                                  |
-| `--node_persist_thresh`                 | float               | `0.5`          | Correlation threshold above which nodes are considered equivalent                                                     |
-| `--cm_grid`                             | float               | `None`         | Store local-ancestry information per centiMorgan                                                                      |
-| `--masking_threshold`                   | float               | `0.5`          | Remove top 100*x percentile of high-recombination regions                                                                 |
-| `--t_admix_guess`                       | string              | `None`         | Initial guess for time of admixture                                                                                   |
-| `--start_time`                          | float               | `4.5`          | Start time for population-size plots (log-scale)                                                                      |
-| `--end_time`                            | float               | `6`            | End time for population-size plots (log-scale)                                                                        |
-| `--num_epochs`                          | int                 | `9`            | Number of epochs                                                                                                      |
-| `--seed`                                | int                 | `2`            | Random seed for reproducibility                                                                                        |
-| `--force_build`                         | int                 | `10000`        | Force build size to subsample the trees (in bp)                                                                       |
-| `--num_iters`                           | int                 | `200`          | Number of EM iterations                                                                                                |
-| `--n_repeats`                           | int                 | `20`           | Number of EM restarts when randomly initializing local ancestry; best run chosen                                      |
-| `--sweep_num_iters`                     | int                 | `10`           | Number of EM iterations per random sweep                                                                               |
-| `--only_make_pickle_files`              | flag                | `False`        | Build tree/fixed/branch pickle files only; skips EM and forces `--num_iters 1 --n_repeats 1 --sweep_num_iters 1`     |
-| `--groups`                              | list<string>        | `None`         | Space-separated list of source groups (e.g. `Nea CHB`)                                                                 |
-| `--load_gamma`                          | string              | `None`         | Starting γ values from file                                                                                           |
-| `--load_mask`                           | string              | `None`         | Load mask CSV file (columns: chr, tree_position_left)                                                                 |
-| `--load_props`                          | string              | `None`         | Starting τ values from file or space-separated list                                                                   |
-| `--tree_stats_file_prefix`              | string              | `None`         | Prefix for output tree-statistics file                                                                                 |
-| `--branch_persistence_file_prefix`      | string              | `None`         | Prefix for output branch-persistence file                                                                              |
-| `--fixed_params_file_prefix`            | string              | `None`         | Prefix for output fixed-parameters file                                                                                |
-| `--load_membership`                     | string              | `None`         | Load membership array from `.npy` file                                                                                 |
-| `--genome_build`                        | string              | `None`         | Genome build for filtering (e.g. `hg38`, `hg37`, or `None`)                                                           |
-| `--gt_ref`                              | string              | `None`         | Local ancestry of the reference panel                                                                                  |
-| `--ignore_coal_between_targets`         | boolean             | `False`        | Ignore coalescence events between target samples                                                                       |
-| `--hmm`                                 | boolean             | `True`         | Run HMM (`True`) or treat windows as independent (`False`)                                                            |
-| `--ignore_first_epoch`                  | boolean             | `True`         | Ignore first epoch when calculating local ancestry in EM                                                              |
-| `--ignore_last_epoch`                   | boolean             | `True`         | Ignore last epoch when calculating local ancestry in EM                                                               |
-
-
 ## Examples
 ```
 mkdir output/
@@ -156,6 +109,52 @@ python ld_curve_dating.py \
 - `<output>_<mode>ld_curve.pdf` stores the matrix of co-ancestry curves with fitted model curves.
 - `<output>_<mode>ld_curve_comp1.svg` stores the component-1 focused LD curve.
 - Refit variants are written with `_refit`, for example `<output>_<mode>_refitld_curve.pdf`.
+
+## List of options
+```
+python ghost_buster.py --help
+```
+
+The table below lists commonly used options. For the full list, run `python ghost_buster.py --help`.
+
+| Option                                  | Datatype            | Default        | Description                                                                                                           |
+|-----------------------------------------|---------------------|----------------|-----------------------------------------------------------------------------------------------------------------------|
+| `--sample_id`                           | list<int>           | `required`     | Enter space-separated list of the indices of haplotypes to analyze local ancestry for                                 |
+| `--trees`                               | string              | `None`         | Directory of tskit trees                                                                                              |
+| `--poplabels`                           | string              | `required`     | Population labels file                                                                                                |
+| `--rec`                                 | string              | `required`     | Filename of recombination map                                                                                         |
+| `--chrs`                                | list<int>           | `"1,2"`        | Comma-separated list of chromosomes to process                                                                        |
+| `--output`                              | string              | `""`           | Output prefix                                                                                                         |
+| `--num_clusters`                        | int                 | `2`            | Number of clusters to infer by EM                                                                                     |
+| `--mut_scaling`                         | boolean             | `True`         | Scale likelihood by presence of mutation on lineage (improves robustness to bottlenecks)                              |
+| `--ypg`                                 | float               | `28`           | Years per generation                                                                                                  |
+| `--node_persist_thresh`                 | float               | `0.5`          | Correlation threshold above which nodes are considered equivalent                                                     |
+| `--cm_grid`                             | float               | `None`         | Store local-ancestry information per centiMorgan                                                                      |
+| `--masking_threshold`                   | float               | `0.5`          | Remove top 100*x percentile of high-recombination regions                                                                 |
+| `--t_admix_guess`                       | string              | `None`         | Initial guess for time of admixture                                                                                   |
+| `--start_time`                          | float               | `4.5`          | Start time for population-size plots (log-scale)                                                                      |
+| `--end_time`                            | float               | `6`            | End time for population-size plots (log-scale)                                                                        |
+| `--num_epochs`                          | int                 | `9`            | Number of epochs                                                                                                      |
+| `--seed`                                | int                 | `2`            | Random seed for reproducibility                                                                                        |
+| `--force_build`                         | int                 | `10000`        | Force build size to subsample the trees (in bp)                                                                       |
+| `--num_iters`                           | int                 | `200`          | Number of EM iterations                                                                                                |
+| `--n_repeats`                           | int                 | `20`           | Number of EM restarts when randomly initializing local ancestry; best run chosen                                      |
+| `--sweep_num_iters`                     | int                 | `10`           | Number of EM iterations per random sweep                                                                               |
+| `--only_make_pickle_files`              | flag                | `False`        | Build tree/fixed/branch pickle files only; skips EM and forces `--num_iters 1 --n_repeats 1 --sweep_num_iters 1`     |
+| `--groups`                              | list<string>        | `None`         | Space-separated list of source groups (e.g. `Nea CHB`)                                                                 |
+| `--load_gamma`                          | string              | `None`         | Starting γ values from file                                                                                           |
+| `--load_mask`                           | string              | `None`         | Load mask CSV file (columns: chr, tree_position_left)                                                                 |
+| `--load_props`                          | string              | `None`         | Starting τ values from file or space-separated list                                                                   |
+| `--tree_stats_file_prefix`              | string              | `None`         | Prefix for output tree-statistics file                                                                                 |
+| `--branch_persistence_file_prefix`      | string              | `None`         | Prefix for output branch-persistence file                                                                              |
+| `--fixed_params_file_prefix`            | string              | `None`         | Prefix for output fixed-parameters file                                                                                |
+| `--load_membership`                     | string              | `None`         | Load membership array from `.npy` file                                                                                 |
+| `--genome_build`                        | string              | `None`         | Genome build for filtering (e.g. `hg38`, `hg37`, or `None`)                                                           |
+| `--gt_ref`                              | string              | `None`         | Local ancestry of the reference panel                                                                                  |
+| `--ignore_coal_between_targets`         | boolean             | `False`        | Ignore coalescence events between target samples                                                                       |
+| `--hmm`                                 | boolean             | `True`         | Run HMM (`True`) or treat windows as independent (`False`)                                                            |
+| `--ignore_first_epoch`                  | boolean             | `True`         | Ignore first epoch when calculating local ancestry in EM                                                              |
+| `--ignore_last_epoch`                   | boolean             | `True`         | Ignore last epoch when calculating local ancestry in EM                                                               |
 
 
 ## Citation
