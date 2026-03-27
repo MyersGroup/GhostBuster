@@ -59,14 +59,15 @@ python ghost_buster.py --help
 
 ## Examples
 ```
+mkdir output/
 python ghost_buster.py \
     --genome_build hg37 \
-    --trees example/stdpopsim_homsap_chr \
+    --trees example/relate_chr \
     --poplabels example/poplabels.txt \
     --rec example/genetic_map_GRCh37_chr \
-    --sample_id 51 \
+    --sample_id 0 \
     --chr 22 \
-    --output example/stdpopsim_homsap
+    --output output/relate
 ```
 
 ## Running GhostBuster on a SLURM cluster
@@ -75,18 +76,18 @@ You can split the EM inference by chromosome (e.g. via a SLURM array) and then m
 #SBATCH --array=1-10
 python ghost_buster.py \
     --genome_build hg37 \
-    --trees example/stdpopsim_homsap_chr \
+    --trees example/relate_chr \
     --poplabels example/poplabels.txt \
     --rec example/genetic_map_GRCh37_chr \
-    --sample_id 51 \
+    --sample_id 0 \
     --chr ${SLURM_ARRAY_TASK_ID}$ \
-    --output example/stdpopsim_homsap \
+    --output output/relate \
     --num_iters 1 \
     --n_repeats 1 \
     --sweep_num_iters 1
 ```
 
-Once every chromosome has its pickle in `example/stdpopsim_homsap`, rerun GhostBuster without `--trees` to aggregate:
+Once every chromosome has its pickle in `example/relate`, rerun GhostBuster without `--trees` to aggregate:
 ```
 python ghost_buster.py \
     --genome_build hg37 \
@@ -94,5 +95,5 @@ python ghost_buster.py \
     --rec example/genetic_map_GRCh37_chr \
     --sample_id 51 \
     --chr 1,2,3,4,5,6,7,8,9,10 \
-    --output example/stdpopsim_homsap 
+    --output example/relate 
 ```
