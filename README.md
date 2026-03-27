@@ -2,7 +2,8 @@
 
 ## About the code
 * `ghost_buster.py`: Main script to run the EM and find ghost populations
-* `plotting/`: Supporting plotting scripts to get population size plots, PC, local ancestry accuracy
+* `src/`: Supporting Python/R code (`plotting/`, `helper/`, and utility modules)
+* `real_data_mask/`: Genome-build mask files used for filtering
 
 ## Installation
 ```

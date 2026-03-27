@@ -22,9 +22,9 @@ import msprime
 import bisect
 import statsmodels.api as sm
 
-from calc_tree_stats import load_tree_stats
-from calc_fixed_params import load_fixed_params
-from utils import (
+from src.calc_tree_stats import load_tree_stats
+from src.calc_fixed_params import load_fixed_params
+from src.utils import (
     filter_recomb_rate,
     load_mask_csv,
     write_coal,
@@ -36,7 +36,7 @@ from utils import (
     load_tadmix,
     get_target_branch_length,
 )
-from hmm_decode import Decode_grid
+from src.hmm_decode import Decode_grid
 
 warnings.filterwarnings("ignore")
 

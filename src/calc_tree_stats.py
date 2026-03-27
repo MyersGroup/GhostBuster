@@ -13,6 +13,9 @@ import copy
 import pdb
 import os
 import bisect
+MASK_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "real_data_mask"
+)
 
 
 def compute_tree_stats(
@@ -39,15 +42,12 @@ def compute_tree_stats(
 
     if args.genome_build in ["hg37", "hg38"]:
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__))
-            + "/"
-            + str(args.genome_build)
-            + "_real_data_mask.txt",
+            os.path.join(MASK_DIR, str(args.genome_build) + "_real_data_mask.txt"),
             sep="\t",
         )
     elif args.genome_build == "hg19":
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__)) + "/hg37_real_data_mask.txt",
+            os.path.join(MASK_DIR, "hg37_real_data_mask.txt"),
             sep="\t",
         )
     elif args.genome_build is None:
@@ -56,7 +56,7 @@ def compute_tree_stats(
     else:
         print("Make sure to use genome_build either hg37 or hg38")
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__)) + "/real_data_mask.txt", sep="\t"
+            os.path.join(MASK_DIR, "real_data_mask.txt"), sep="\t"
         )
 
     for chr_no, chr in enumerate(chrs):

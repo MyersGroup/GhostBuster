@@ -8,7 +8,7 @@ import copy
 from tqdm import tqdm
 import pickle
 import math
-from utils import make_numba_nested_list
+from src.utils import make_numba_nested_list
 import random
 import numba
 import time

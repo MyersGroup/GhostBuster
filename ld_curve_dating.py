@@ -9,7 +9,7 @@ from scipy.interpolate import make_interp_spline, BSpline
 import glob
 import argparse
 import os
-from utils import boolean
+from src.utils import boolean
 import numba
 from tqdm import tqdm
 
@@ -28,6 +28,9 @@ mpl.rcParams["ytick.major.size"] = 10  # Set global length for major y-ticks
 mpl.rcParams["xtick.major.width"] = 2  # Set global width for major x-ticks
 mpl.rcParams["ytick.major.width"] = 2  # Set global width for major y-ticks
 mpl.rcParams["font.family"] = "DejaVu Sans"
+MASK_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "real_data_mask"
+)
 
 
 def make_interp_spline_(x, y):
@@ -752,10 +755,7 @@ def run_ld_curve_dating(args):
     admixture_params_all_blocks = []
     if args.genome_build is not None:
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__))
-            + "/"
-            + str(args.genome_build)
-            + "_real_data_mask.txt",
+            os.path.join(MASK_DIR, str(args.genome_build) + "_real_data_mask.txt"),
             sep="\t",
         )
     else:
@@ -884,10 +884,7 @@ def run_get_segment_length(args):
     jn_blocks = 20
     if args.genome_build is not None:
         cent_telo_hla = pd.read_csv(
-            os.path.dirname(os.path.abspath(__file__))
-            + "/"
-            + str(args.genome_build)
-            + "_real_data_mask.txt",
+            os.path.join(MASK_DIR, str(args.genome_build) + "_real_data_mask.txt"),
             sep="\t",
         )
     else:

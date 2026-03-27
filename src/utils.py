@@ -16,7 +16,7 @@ from numba import jit
 from numba.typed import List
 import pickle
 import time
-from infer_node_persistence import get_coal_descendants, get_approx_node_persistence
+from src.infer_node_persistence import get_coal_descendants, get_approx_node_persistence
 
 
 def get_mut_scaling_grid():
