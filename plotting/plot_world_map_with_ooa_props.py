@@ -49,11 +49,11 @@ def plot_proportions():
             "bantukenya",
             "yoruba",
         ]:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_v3/deepadmix_nohmm/"
+            prefix = "data/hgdp_1gp_v3/deepadmix_nohmm/"
         elif pop in ancient_labels:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_ancients/deepadmix_nohmm/"
+            prefix = "data/hgdp_1gp_ancients/deepadmix_nohmm/"
         else:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/SGDP_only_moderns/deepadmix_nohmm/"
+            prefix = "data/SGDP_only_moderns/deepadmix_nohmm/"
         for file in glob.glob(
             prefix + str(pop) + "_overall_membership_*_sample_id_*.csv"
         ):

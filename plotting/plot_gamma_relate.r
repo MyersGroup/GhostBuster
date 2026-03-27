@@ -49,7 +49,7 @@ plot_coal_rates <- function(filepath, output_path) {
   ggsave(output_path, p, width = 6, height = 4, device = "svg", dpi = 400)
 }
 
-filepath    <- "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_ancients/Chagyrskaya_Denisova_san_mbuti_biaka.coal"
-output_path <- "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_ancients/Chagyrskaya_Denisova_coal_rates_afr.svg"
+filepath    <- "data/hgdp_1gp_ancients/Chagyrskaya_Denisova_san_mbuti_biaka.coal"
+output_path <- "data/hgdp_1gp_ancients/Chagyrskaya_Denisova_coal_rates_afr.svg"
 
 plot_coal_rates(filepath, output_path)

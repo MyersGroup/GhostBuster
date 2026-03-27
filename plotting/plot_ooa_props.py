@@ -73,11 +73,11 @@ def collect_props():
             "bantukenya",
             "yoruba",
         ]:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_v3/deepadmix_nohmm_upto300k/"
+            prefix = "data/hgdp_1gp_v3/deepadmix_nohmm_upto300k/"
         elif pop in ancients:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/hgdp_1gp_ancients/deepadmix_nohmm_upto300k/"
+            prefix = "data/hgdp_1gp_ancients/deepadmix_nohmm_upto300k/"
         else:
-            prefix = "/well/myers/users/tgh473/workspace/ghost_buster/SGDP_only_moderns/deepadmix_nohmm_upto300k/"
+            prefix = "data/SGDP_only_moderns/deepadmix_nohmm_upto300k/"
         for file in glob.glob(
             prefix + str(pop) + "_overall_membership_*_sample_id_*.csv"
         ):

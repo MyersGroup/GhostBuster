@@ -7,7 +7,7 @@ library(purrr)
 library(stats)
 library(parallel)
 library(reticulate)
-virtualenv_create(envname = "python_environment",python= "/apps/eb/2020b/skylake/software/Python/3.9.6-GCCcore-11.2.0/bin/python")
+virtualenv_create(envname = "python_environment",python= Sys.which("python3"))
 reticulate::use_virtualenv("python_environment", required = TRUE)
 np <- import("numpy")
 
@@ -19,7 +19,7 @@ recbins <- as.numeric(seq(0,binmax,binsize))
 L       <- length(recbins)
 
 filename_local_ancestry <- "../output/sgdp_punjabi_test_overall_membership_39.npy"	
-filename_mut <- "/well/myers/users/tgh473/workspace/ghost_buster/SGDP/result/SGDP_Africa"
+filename_mut <- "data/SGDP/result/SGDP_Africa"
 
 if(0){
 
@@ -47,7 +47,7 @@ if(0){
     }
     bp     <- (bp_raw[-length(bp_raw)] + bp_raw[-1])/2
 
-    rec <- read.table(paste0("/well/myers/users/tgh473/workspace/ghost_buster/msprime_maps_sgdp/genetic_map_GRCh37_chr",chr,".txt"), header = T)
+    rec <- read.table(paste0("data/msprime_maps_sgdp/genetic_map_GRCh37_chr",chr,".txt"), header = T)
     rec <- stepfun(as.numeric(rec[-1,2]), as.numeric(rec[,4]))
 
     recrates_start <- rec(bp_raw[-length(bp_raw)])
@@ -206,5 +206,4 @@ ggsave(p, file = "plot_coancestry.pdf", width = 10, height = 10)
 #Do a block bootstrap
 
 #also look at posterior vs recombination rate, posterior vs quality, posterior correlation to adjacent trees vs recombination rate
-
 
