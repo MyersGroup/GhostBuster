@@ -7,7 +7,6 @@ numpy==2.2
 pandas==2.3.1
 pysnptools==0.5.13
 Requests==2.32.4
-rpy2==3.5.16
 scikit_learn==1.7.1
 scipy==1.15
 seaborn==0.13.2
