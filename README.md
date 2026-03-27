@@ -60,6 +60,7 @@ python ghost_buster.py --help
 ## Examples
 ```
 mkdir output/
+
 python ghost_buster.py \
     --genome_build hg37 \
     --trees example/relate_chr \

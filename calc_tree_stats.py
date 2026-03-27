@@ -45,7 +45,7 @@ def compute_tree_stats(
             + "_real_data_mask.txt",
             sep="\t",
         )
-    elif args.genome_build is "hg19":
+    elif args.genome_build == "hg19":
         cent_telo_hla = pd.read_csv(
             os.path.dirname(os.path.abspath(__file__)) + "/hg37_real_data_mask.txt",
             sep="\t",
