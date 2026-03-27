@@ -831,6 +831,13 @@ def main(args):
         print(
             "Setting num_iters, num_iters and n_repeats to 1 as initial gamma and props are provided"
         )
+    if args.only_make_pickle_files:
+        args.num_iters = 1
+        args.sweep_num_iters = 1
+        args.n_repeats = 1
+        print(
+            "only_make_pickle_files=True: setting num_iters=1, sweep_num_iters=1, n_repeats=1"
+        )
 
     if args.load_gamma is not None:
         if ".coal" in args.load_gamma:
@@ -1191,6 +1198,10 @@ def main(args):
         exact_pos=exact_pos,
     )
 
+    if args.only_make_pickle_files:
+        print("only_make_pickle_files=True: stopping after generating pickle files.")
+        return
+
     if args.load_gamma:
         gamma_arr = load_gamma(args.load_gamma, args.groups, unique_groups)
         ## CAUTION: recheck this, removing gamma_arr outside the range
@@ -1428,6 +1439,11 @@ if __name__ == "__main__":
         help="Number of iterations for EM",
         type=int,
         default=200,
+    )
+    parser.add_argument(
+        "--only_make_pickle_files",
+        action="store_true",
+        help="Generate tree/fixed/branch pickle files only; skip EM and force num_iters=1, n_repeats=1, sweep_num_iters=1",
     )
     parser.add_argument(
         "-k",
