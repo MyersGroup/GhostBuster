@@ -82,6 +82,14 @@ This reads `output/relate_nohmm_0_1_2_3.coal` (or `.coal.all`) and `output/relat
 - `output/relate_gw_visual1.svg`
 - `output/relate_gw.svg`
 
+Required R packages are:
+
+`install.packages(c("ggplot2", "cowplot", "dplyr", "tidyr", "pammtools", "ggplotify", "nls2", "ggthemes", "reticulate"))`
+
+and
+
+`remotes::install_github("leospeidel/relater")`
+
 ## LD dating with `ld_curve_dating.py`
 `ld_curve_dating.py` assumes diploid samples by default and is most reliable when you have at least 2 diploid individuals (4 haplotypes) in the GhostBuster output.
 
