@@ -7,7 +7,7 @@
 
 Current support: GhostBuster currently only works with Relate-inferred trees.
 
-## Installation
+## Installation (~5-10mins)
 ```
 conda create -n gb python=3.13 -y
 conda activate gb
@@ -16,7 +16,7 @@ pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
 
-## Examples
+## Examples (~10mins)
 ```
 mkdir output/
 
